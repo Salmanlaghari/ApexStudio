@@ -86,12 +86,20 @@ internal fun EffectWorkspacePanel(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val thumbnails by vm.thumbnails.collectAsStateWithLifecycle()
-    var filterSamples by remember(originalClip.id) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    var effectSamples by remember(originalClip.id) { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     val filterSampleSource = thumbnails[originalClip.id]?.firstOrNull()?.second
+    val sampleIds = remember {
+        listOf(
+            WorkspaceEffectPresets.MONO, WorkspaceEffectPresets.WARM, WorkspaceEffectPresets.PIXELATE,
+            WorkspaceEffectPresets.CARTOON, WorkspaceEffectPresets.BUBBLE, WorkspaceEffectPresets.HEARTS,
+            WorkspaceEffectPresets.HEARTBEAT, WorkspaceEffectPresets.ICE, WorkspaceEffectPresets.SPLIT_2,
+            WorkspaceEffectPresets.SPLIT_3, WorkspaceEffectPresets.VFX_CHROMATIC_SPLIT,
+            WorkspaceEffectPresets.VFX_SCAN_GLITCH, WorkspaceEffectPresets.VFX_LIGHT_LEAK,
+            WorkspaceEffectPresets.VFX_VIGNETTE, WorkspaceEffectPresets.VFX_EDGE_GLOW
+        ) + WorkspaceFilterPresets.all.map { it.id }
+    }
     LaunchedEffect(originalClip.id, filterSampleSource) {
-        filterSamples = WorkspaceFilterThumbnailGenerator.generate(
-            context, filterSampleSource, WorkspaceFilterPresets.all.map { it.id }
-        )
+        effectSamples = WorkspaceFilterThumbnailGenerator.generate(context, filterSampleSource, sampleIds)
     }
     val editorState by vm.state.collectAsStateWithLifecycle()
     val livePlayerPositionMs by vm.playerPositionFlow.collectAsStateWithLifecycle(
@@ -383,7 +391,7 @@ internal fun EffectWorkspacePanel(
                             WorkspaceCategory.VISUAL -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                                 items(visualPresets, key = { it.id }) { preset ->
                                     WorkspacePresetCard(preset.label, preset.description, visualId == preset.id, !busy,
-                                        sampleImage = filterSamples[preset.id],
+                                        sampleImage = effectSamples[preset.id], id = preset.id,
                                         onHoldStart = { startHeldEffect(preset.id) }, onHoldEnd = ::finishHeldEffect) {
                                         selectVisual(preset.id)
                                     }
@@ -398,13 +406,13 @@ internal fun EffectWorkspacePanel(
                                     WorkspaceEffectPresets.VFX_EDGE_GLOW to "Edge Glow"
                                 )) { (id, label) ->
                                     WorkspacePresetCard(label, WorkspaceEffectPresets.label(id), visualId == id, !busy,
-                                        onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
+                                        sampleImage = effectSamples[id], id = id, onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
                                 }
                             }
                             WorkspaceCategory.SPLIT -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                                 items(listOf(WorkspaceEffectPresets.SPLIT_2 to "2 tiles", WorkspaceEffectPresets.SPLIT_3 to "3 tiles")) { (id, label) ->
                                     WorkspacePresetCard(label, "Repeats the same source in $label", visualId == id, !busy,
-                                        onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
+                                        sampleImage = effectSamples[id], id = id, onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
                                 }
                             }
                             WorkspaceCategory.TIME -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -495,7 +503,7 @@ internal fun EffectWorkspacePanel(
 
 @Composable
 private fun WorkspacePresetCard(label: String, description: String, selected: Boolean, enabled: Boolean,
-    sampleImage: ImageBitmap? = null,
+    sampleImage: ImageBitmap? = null, id: String = label,
     onHoldStart: (() -> Unit)? = null, onHoldEnd: ((Boolean) -> Unit)? = null, onClick: () -> Unit) {
     val currentClick by rememberUpdatedState(onClick)
     val currentStart by rememberUpdatedState(onHoldStart)
@@ -525,7 +533,7 @@ private fun WorkspacePresetCard(label: String, description: String, selected: Bo
         if (sampleImage != null) {
             Image(sampleImage, contentDescription = "$label sample preview", contentScale = ContentScale.Crop,
                 modifier = Modifier.width(76.dp).height(42.dp).clip(RoundedCornerShape(6.dp))
-                    .testTag("workspace-effect-sample-$label"))
+                    .testTag("workspace-effect-sample-$id"))
         } else {
             Icon(Icons.Default.MovieFilter, contentDescription = null, tint = EditorPalette.TextPrimary, modifier = Modifier.size(24.dp))
         }

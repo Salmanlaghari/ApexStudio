@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import com.apexstudio.app.domain.model.WorkspaceFilterPresetAdditions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -60,4 +61,46 @@ class WorkspaceFilterThumbnailGeneratorTest {
         assertTrue("The gallery should contain the original and 50+ added looks", ids.size >= 62)
         assertTrue("The sample catalog should produce a range of distinct looks", outputs.toSet().size > 20)
     }
+    @Test
+    fun `every non-filter effect has deterministic non-identity preview`() {
+        val source = Bitmap.createBitmap(88, 88, Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until height) for (x in 0 until width) {
+                setPixel(x, y, Color.rgb((24 + x * 17) % 256, (48 + y * 23) % 256, (90 + x * 11 + y * 7) % 256))
+            }
+        }
+        val ids = listOf(
+            "mono", "warm", "pixelate", "cartoon", "bubble", "hearts", "heartbeat", "ice",
+            "split2", "split3", "vfx_chromatic_split", "vfx_scan_glitch", "vfx_light_leak",
+            "vfx_vignette", "vfx_edge_glow"
+        )
+        ids.forEach { id ->
+            val first = WorkspaceFilterThumbnailGenerator.applyPreset(source, id)
+            val second = WorkspaceFilterThumbnailGenerator.applyPreset(source, id)
+            assertEquals("$id is nondeterministic", first.getPixel(5, 3), second.getPixel(5, 3))
+            assertTrue("$id silently produced identity", (0 until source.width * source.height).any { i ->
+                first.getPixel(i % source.width, i / source.width) != source.getPixel(i % source.width, i / source.width)
+            })
+        }
+    }
+
+    @Test
+    fun `hearts thumbnail renders the shader heart at its sample position`() {
+        val source = Bitmap.createBitmap(88, 88, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.rgb(30, 30, 30))
+        }
+        val hearts = WorkspaceFilterThumbnailGenerator.applyPreset(source, "hearts")
+        val heartCenter = hearts.getPixel(19, 63)
+
+        assertTrue(Color.red(heartCenter) > Color.blue(heartCenter))
+        assertNotEquals(source.getPixel(19, 63), heartCenter)
+    }
+
+    @Test
+    fun `unknown effect preview is rejected instead of returning identity`() {
+        val source = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        assertThrows(IllegalArgumentException::class.java) {
+            WorkspaceFilterThumbnailGenerator.applyPreset(source, "unknown-effect")
+        }
+    }
+
 }

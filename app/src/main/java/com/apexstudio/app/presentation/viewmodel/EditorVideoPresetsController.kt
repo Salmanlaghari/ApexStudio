@@ -1,8 +1,10 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import kotlinx.coroutines.flow.update
 
 /**
@@ -19,8 +21,6 @@ fun EditorViewModel.applyProjectVideoTextTemplate(
     val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
     val overlay = template.createTextOverlay()
 
-    // This is always an actual change: templates append a new overlay rather than replacing
-    // existing titles, and each call creates a fresh overlay id.
     pushUndo()
     updateClip(target.id) { clip -> clip.copy(textOverlays = clip.textOverlays + overlay) }
     _state.update { it.copy(selectedTextOverlayId = overlay.id, selectedStickerId = null) }
@@ -44,7 +44,10 @@ fun EditorViewModel.applyProjectVideoTextMotion(
     true
 }
 
-/** Applies one fixed look plus its fixed title atomically with a single undo entry. */
+/**
+ * Applies a fixed look and title to a deterministic montage of the captured V1 source.
+ * The source trim is divided into equal source-time shots; no transition is generated here.
+ */
 fun EditorViewModel.applyProjectVideoTemplate(
     projectId: String,
     expectedClip: MediaClip,
@@ -57,17 +60,94 @@ fun EditorViewModel.applyProjectVideoTemplate(
     val target = validatedVideoPresetTarget(
         projectId, expectedClip, requireSelectedClip = !allowUnselectedMainTrackTarget,
     ) ?: return@synchronized false
-    val overlay = title.createTextOverlay()
+    val blockReason = projectVideoTemplateBlockReason(target)
+    if (blockReason != null) return@synchronized false
 
-    pushUndo()
-    updateClip(target.id) { clip ->
-        clip.copy(projectVideoEffectId = effect.id, textOverlays = clip.textOverlays + overlay)
+    val shotCount = projectVideoTemplateShotCount(recipe.id)
+    val span = target.trimEndMs - target.trimStartMs
+    val boundaries = (0..shotCount).map { index ->
+        target.trimStartMs + (span * index) / shotCount
     }
-    _state.update { it.copy(selectedTextOverlayId = overlay.id, selectedStickerId = null) }
+    if (boundaries.zipWithNext().any { (start, end) -> end <= start }) return@synchronized false
+
+    val project = _state.value.project ?: return@synchronized false
+    val generated = (0 until shotCount).map { index ->
+        val shotStart = boundaries[index]
+        val shotEnd = boundaries[index + 1]
+        target.copy(
+            id = if (index == 0) target.id else "${target.id}_template_${recipe.id}_$index",
+            name = "${target.name} · Shot ${index + 1}",
+            trimStartMs = shotStart,
+            trimEndMs = shotEnd,
+            // A generated thumbnail is requested by the normal clip-id cache path.
+            thumbnail = null,
+            projectVideoEffectId = effect.id,
+            textOverlays = listOf(title.createTextOverlay()),
+        )
+    }
+    val targetIndex = project.clips.indexOfFirst { it.id == target.id }
+    if (targetIndex < 0) return@synchronized false
+    val updatedClips = project.clips.toMutableList().apply {
+        subList(targetIndex, targetIndex + 1).clear()
+        addAll(targetIndex, generated)
+    }
+    val remappedTransitions = project.transitions.map { transition ->
+        when {
+            transition.toClipId == target.id -> transition.copy(toClipId = generated.first().id)
+            transition.fromClipId == target.id -> transition.copy(fromClipId = generated.last().id)
+            else -> transition
+        }
+    }
+    val transitions = ProjectTransitionTimeline.normalizeTransitions(updatedClips, remappedTransitions)
+    val duration = computeTimelineDurationMs(updatedClips, project.audioTracks, transitions)
+    val updatedProject = project.copy(
+        clips = updatedClips,
+        transitions = transitions,
+        durationMs = duration,
+    ).syncSharedTimeline(refreshLegacyClipFields = true, refreshLegacyTextStickerFields = true)
+
+    // One snapshot and one persistence call make the whole montage one atomic edit.
+    pushUndo()
+    _state.update { state ->
+        val replacesSelectedClip = state.selectedClipId == target.id
+        state.copy(
+            project = updatedProject,
+            durationMs = duration,
+            canUndo = true,
+            canRedo = false,
+            // Keep a PiP (or other) selection exactly as captured by the panel.
+            selectedTextOverlayId = if (replacesSelectedClip) {
+                generated.first().textOverlays.first().id
+            } else state.selectedTextOverlayId,
+            selectedStickerId = if (replacesSelectedClip) null else state.selectedStickerId,
+        )
+    }
+    persistProject(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true,
+        refreshLegacyTextStickerFields = true,
+    )
     true
 }
 
-/** Applies a fixed, local GPU adjustment preset to the exact captured video clip. */
+/** A user-facing reason for the few clip states that cannot be split safely. */
+fun projectVideoTemplateBlockReason(clip: MediaClip): String? = when {
+    clip.speedPoints.size >= 2 -> "Templates need a constant-speed source; flatten its speed curve first."
+    clip.keyframes.keyframes.isNotEmpty() -> "Templates cannot safely split a clip with animated keyframes."
+    clip.textOverlays.isNotEmpty() -> "Templates cannot safely split a clip that already has clip titles."
+    clip.stickers.isNotEmpty() -> "Templates cannot safely split a clip with clip stickers."
+    clip.faceCropTrack != null -> "Templates cannot safely split a clip with a source-time face track."
+    clip.workspaceEffects.isNotEmpty() -> "Templates cannot safely split a clip with source-time effects."
+    else -> null
+}
+
+private fun projectVideoTemplateShotCount(templateId: String): Int = when (templateId) {
+    "warm-story" -> 3
+    "cool-moment" -> 4
+    else -> 0
+}
+
+/** Fixed, input-free effects are valid only on the exact captured V1 video clip. */
 fun EditorViewModel.applyProjectVideoEffect(
     projectId: String,
     expectedClip: MediaClip,
@@ -77,14 +157,12 @@ fun EditorViewModel.applyProjectVideoEffect(
     val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
     if (target.projectVideoEffectId == effect.id) return@synchronized true
 
-    // Snapshot only real changes. The persisted id is resolved by the shared color-matrix
-    // effect in preview and export; existing clip filter settings are left untouched.
     pushUndo()
     updateClip(target.id) { clip -> clip.copy(projectVideoEffectId = effect.id) }
     true
 }
 
-/** Captured selection boundary shared by both select-only video preset actions. */
+/** Captured selection boundary shared by all select-only video preset actions. */
 private fun EditorViewModel.validatedVideoPresetTarget(
     expectedProjectId: String,
     expectedClip: MediaClip,

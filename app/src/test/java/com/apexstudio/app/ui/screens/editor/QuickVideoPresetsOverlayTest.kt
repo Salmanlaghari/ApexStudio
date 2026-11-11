@@ -88,7 +88,7 @@ class QuickVideoPresetsOverlayTest {
 
         compose.onNodeWithText("Applies to main preview video: Dragon. PiP selection is unchanged.").assertExists()
         val recipe = com.apexstudio.app.data.template.ProjectVideoPresets.videoTemplates.first()
-        compose.onNodeWithText("Each recipe applies only its named color look and title as one undoable edit; it does not build a montage or change timing.").assertExists()
+        compose.onNodeWithText("Warm Story creates 3 timed shots; Cool Moment creates 4.", substring = true).assertExists()
         compose.onNodeWithText("Color: Warm Film · Title: Bold Title · YOUR STORY").assertExists()
         compose.onNodeWithTag("quick_video_template_${recipe.id}")
             .assertIsEnabled()
@@ -108,7 +108,7 @@ class QuickVideoPresetsOverlayTest {
             assertEquals("YOUR STORY", editedMain.textOverlays.single().text)
             assertEquals(pip, changed.clips.first { it.id == pip.id })
             assertEquals(pip.id, vm.state.value.selectedClipId)
-            assertEquals(editedMain.textOverlays.single().id, vm.state.value.selectedTextOverlayId)
+            assertEquals(null, vm.state.value.selectedTextOverlayId)
             assertEquals(1, vm.undoStack.size)
             assertEquals(project, vm.undoStack.single().project)
         }

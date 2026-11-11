@@ -53,6 +53,7 @@ internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPr
     val durationBlockReason = capturedClip?.let { clip ->
         com.apexstudio.app.data.video.VideoUpscaleEngine.sourceDurationBlockReason(clip.durationMs)
     }
+    val templateBlockReason = capturedClip?.let(::projectVideoTemplateBlockReason)
     val closePanel = {
         if (section == QuickVideoPresetSection.ENHANCE && upscale.processing) vm.cancelExistingVideoUpscale()
         onClose()
@@ -67,7 +68,7 @@ internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPr
             Text(section.title, style = MaterialTheme.typography.titleMedium)
             Text(when (section) {
                 QuickVideoPresetSection.ENHANCE -> "Create a sharper 3× version of a video in your project. Processing starts only when you tap Enhance."
-                QuickVideoPresetSection.TEMPLATES -> "Each recipe applies only its named color look and title as one undoable edit; it does not build a montage or change timing."
+                QuickVideoPresetSection.TEMPLATES -> "Warm Story creates 3 timed shots; Cool Moment creates 4. Each applies its named look and title, and one undo restores the original clip."
                 QuickVideoPresetSection.FILTERS -> "RGB color looks use the same shader in preview and export. HD labels describe color, not increased resolution."
             }, style = MaterialTheme.typography.bodySmall)
             if (section == QuickVideoPresetSection.ENHANCE && upscale.outputUri != null) {
@@ -85,6 +86,7 @@ internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPr
                 when {
                     capturedClip == null -> Text("No main-track media is available. Add a main-track video first.")
                     capturedClip.type != ClipType.VIDEO -> Text("The main preview is not a video. Move the playhead to a main-track video to use templates.")
+                    templateBlockReason != null -> Text(templateBlockReason, color = MaterialTheme.colorScheme.error)
                     !eligible -> Text("The main-preview video is not a usable project source. Check its source and trim, then try again.")
                     else -> Text("Applies to main preview video: ${capturedClip.name}. PiP selection is unchanged.")
                 }
@@ -92,7 +94,9 @@ internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPr
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 items(choices) { (id, label) ->
                     Column(Modifier.widthIn(max = 230.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OutlinedButton(enabled = eligible, onClick = {
+                        OutlinedButton(
+                            enabled = eligible && (section != QuickVideoPresetSection.TEMPLATES || templateBlockReason == null),
+                            onClick = {
                             val applied = target?.let { (projectId, clip) ->
                                 if (section == QuickVideoPresetSection.TEMPLATES) {
                                     vm.applyProjectVideoTemplate(projectId, clip, id, allowUnselectedMainTrackTarget = true)

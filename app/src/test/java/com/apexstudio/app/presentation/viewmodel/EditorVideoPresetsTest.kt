@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.StylisticEffectType
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -122,7 +123,7 @@ class EditorVideoPresetsTest {
     }
 
     @Test
-    fun `fixed video template preserves trim and speed adds styled full-window title and one undo restores original`() {
+    fun `video template creates timed shots with look and title and one undo restores original`() {
         val source = videoClip(trimStartMs = 2_000L, trimEndMs = 8_000L).copy(speedMultiplier = 2.5f)
         val vm = editor(source)
         val before = vm.state.value.project!!
@@ -134,11 +135,23 @@ class EditorVideoPresetsTest {
 
         assertTrue(vm.applyProjectVideoTemplate(before.id, captured, recipe.id))
         val changed = vm.state.value.project!!
-        val edited = changed.clips.first()
-        assertEquals(effect.id, edited.projectVideoEffectId)
-        assertEquals(source.trimStartMs, edited.trimStartMs)
-        assertEquals(source.trimEndMs, edited.trimEndMs)
-        assertEquals(source.speedMultiplier, edited.speedMultiplier, 0f)
+        val shots = changed.clips.take(3)
+        assertEquals(3, shots.size)
+        assertEquals(listOf(2_000L, 4_000L, 6_000L), shots.map { it.trimStartMs })
+        assertEquals(listOf(4_000L, 6_000L, 8_000L), shots.map { it.trimEndMs })
+        assertEquals(listOf("selected", "selected_template_warm-story_1", "selected_template_warm-story_2"), shots.map { it.id })
+        val composition = ProjectTransitionTimeline.build(changed.clips, changed.transitions)
+        assertEquals(
+            listOf("selected", "selected_template_warm-story_1", "selected_template_warm-story_2", "other"),
+            composition.entries.map { it.clip.id },
+        )
+        assertEquals(listOf(0L, 800L, 1_600L, 2_400L), composition.entries.map { it.timelineStartMs })
+        assertEquals(12_400L, composition.durationMs)
+        shots.forEach {
+            assertEquals(effect.id, it.projectVideoEffectId)
+            assertEquals(source.speedMultiplier, it.speedMultiplier, 0f)
+        }
+        val edited = shots.first()
         val title = edited.textOverlays.single()
         assertEquals(expectedTitle.text, title.text)
         assertEquals(expectedTitle.presetId, title.presetId)
@@ -212,6 +225,55 @@ class EditorVideoPresetsTest {
         assertEquals(3, overlays.size)
         assertNotEquals(overlays[1].id, overlays[2].id)
         assertEquals(2, vm.undoStack.size)
+    }
+
+    @Test
+    fun `cool moment creates four ordered shots and remaps only boundary transitions`() {
+        val previous = videoClip(id = "previous", uri = "file:///previous.mp4", durationMs = 2_000L, trimEndMs = 2_000L)
+        val target = videoClip(id = "target", uri = "file:///target.mp4", durationMs = 8_000L, trimEndMs = 8_000L)
+        val next = videoClip(id = "next", uri = "file:///next.mp4", durationMs = 2_000L, trimEndMs = 2_000L)
+        val project = Project("project", "Project", 12_000L, clips = listOf(previous, target, next), transitions = listOf(
+            com.apexstudio.app.domain.model.ClipTransition(fromClipId = previous.id, toClipId = target.id),
+            com.apexstudio.app.domain.model.ClipTransition(fromClipId = target.id, toClipId = next.id),
+        ))
+        val vm = EditorViewModel().also {
+            it._state.value = it.state.value.copy(project = project, selectedClipId = target.id)
+        }
+
+        assertTrue(vm.applyProjectVideoTemplate(project.id, target, "cool-moment"))
+        val changed = vm.state.value.project!!
+        val shots = changed.clips.filter { it.id == target.id || it.id.startsWith("target_template_cool-moment_") }
+        assertEquals(4, shots.size)
+        assertEquals(listOf(0L, 2_000L, 4_000L, 6_000L), shots.map { it.trimStartMs })
+        assertEquals(listOf(2_000L, 4_000L, 6_000L, 8_000L), shots.map { it.trimEndMs })
+        assertEquals(4, shots.map { it.id }.toSet().size)
+        assertTrue(shots.all { it.projectVideoEffectId == "cool-fade" && it.textOverlays.single().presetId == "title-elegant" })
+        assertEquals(previous.id to shots.first().id, changed.transitions.first().fromClipId to changed.transitions.first().toClipId)
+        assertEquals(shots.last().id to next.id, changed.transitions.last().fromClipId to changed.transitions.last().toClipId)
+        assertEquals(1, vm.undoStack.size)
+        vm.undo()
+        assertEquals(project, vm.state.value.project)
+    }
+
+    @Test
+    fun `montage on preview clip preserves unrelated PiP selection and overlay focus`() {
+        val target = videoClip(id = "main", uri = "file:///main.mp4", durationMs = 8_000L, trimEndMs = 8_000L)
+        val pip = videoClip(id = "pip", uri = "file:///pip.mp4", durationMs = 8_000L, trimEndMs = 8_000L)
+            .copy(type = ClipType.OVERLAY, trackIndex = 1)
+        val project = Project("project", "Project", 8_000L, clips = listOf(target, pip))
+        val vm = EditorViewModel().also {
+            it._state.value = it.state.value.copy(
+                project = project,
+                selectedClipId = pip.id,
+                selectedTextOverlayId = "pip-title",
+                selectedStickerId = "pip-sticker",
+            )
+        }
+
+        assertTrue(vm.applyProjectVideoTemplate(project.id, target, "warm-story", allowUnselectedMainTrackTarget = true))
+        assertEquals(pip.id, vm.state.value.selectedClipId)
+        assertEquals("pip-title", vm.state.value.selectedTextOverlayId)
+        assertEquals("pip-sticker", vm.state.value.selectedStickerId)
     }
 
     @Test

@@ -634,6 +634,13 @@ class ExportEngine(private val context: Context) {
                                 add(com.apexstudio.app.data.filter.LutFilterGlEffect(
                                     context, preset = null, preloaded = grade.toLutTexture()
                                 ))
+                                if (grade.sharpness > 0f) {
+                                    add(com.apexstudio.app.data.adjust.AdjustmentsGlEffect(
+                                        adjustments = com.apexstudio.app.domain.model.VideoAdjustments(
+                                            sharpness = grade.sharpness
+                                        )
+                                    ))
+                                }
                             }
                             config.signature?.let { signature ->
                                 addAll(buildSignatureExportEffects(signature, aspect))

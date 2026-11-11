@@ -84,13 +84,15 @@ internal fun colorPreviewSplitPosition(widthPx: Float, split: Float): Float =
 private val ColorStudioGradeSaver = Saver<MutableState<ColorStudioGrade>, List<Float>>(
     save = { state -> val grade = state.value; listOf(grade.brightness, grade.contrast, grade.saturation,
         grade.shadows.x, grade.shadows.y, grade.midtones.x, grade.midtones.y,
-        grade.highlights.x, grade.highlights.y) + grade.rCurve + grade.gCurve + grade.bCurve + grade.lumaCurve },
+        grade.highlights.x, grade.highlights.y) + grade.rCurve + grade.gCurve + grade.bCurve + grade.lumaCurve +
+        listOf(grade.hdr, grade.sharpness) },
     restore = { values ->
-        mutableStateOf(if (values.size != 29) ColorStudioGrade() else runCatching {
+        mutableStateOf(if (values.size != 29 && values.size != 31) ColorStudioGrade() else runCatching {
             ColorStudioGrade(values[0], values[1], values[2],
                 ColorWheelVector(values[3], values[4]), ColorWheelVector(values[5], values[6]),
                 ColorWheelVector(values[7], values[8]), values.subList(9, 14),
-                values.subList(14, 19), values.subList(19, 24), values.subList(24, 29))
+                values.subList(14, 19), values.subList(19, 24), values.subList(24, 29)
+            ).copy(hdr = values.getOrElse(29) { 0f }, sharpness = values.getOrElse(30) { 0f })
         }.getOrDefault(ColorStudioGrade()))
     }
 )
@@ -109,7 +111,9 @@ fun ColorStudioScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val exportUi by vm.export.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
-    var timelineComparison by rememberSaveable(projectId) { mutableStateOf(true) }
+    var timelineComparison by rememberSaveable(projectId, embedded, state.project?.id) {
+        mutableStateOf(!embedded || vm.colorStudioTimelineExportBlocker(ColorStudioGrade()) != null)
+    }
     var comparisonBusy by remember { mutableStateOf(false) }
     val candidates = remember(state.project?.clips) { ColorMediaIO.selectedSources(state.project?.clips.orEmpty()) }
     val initiallySelected = candidates.firstOrNull { it.id == state.selectedClipId } ?: candidates.firstOrNull()
@@ -284,6 +288,16 @@ fun ColorStudioScreen(
                             AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
                         }
                     }
+                    item {
+                        Column(Modifier.width(220.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            AdjustmentSlider("HDR Style", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
+                            AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
+                            Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                        }
+                    }
                 }
             }
         }
@@ -299,7 +313,7 @@ fun ColorStudioScreen(
                         exportBusy && timelinePreflight -> "Verifying timeline sources before export…"
                         exportBusy -> "Processing the selected source…"
                         clip?.type == ClipType.IMAGE -> "Export one graded still image only. This standalone source export does not include the project timeline/composition. Images above 12 MP or 5000 px per side are refused."
-                        clip?.type == ClipType.VIDEO -> "Export the entire selected source video as a separate MP4 with the same trilinear LUT. This does not apply project trims, speed changes, effects, overlays or composition. SDR 8-bit video up to 4K and 30 minutes only; HDR, unknown color transfer or unverified pixel formats are refused."
+                        clip?.type == ClipType.VIDEO -> "Export the entire selected source as a separate MP4 with the same SDR color grade and sharpness. This does not apply project trims, speed changes, effects, overlays or composition. SDR 8-bit video up to 4K and 30 minutes only; HDR, unknown color transfer or unverified pixel formats are refused."
                         else -> "Select an existing project image or video first."
                     })
                     Text("Timeline grading renders the supported project composition to a separate MP4. In Project timeline mode, Render Before / After compares two complete rendered snapshots; Share compared MP4 sends that exact After file. Selected source mode compares only one source frame. Originals and saved project edits remain unchanged.",

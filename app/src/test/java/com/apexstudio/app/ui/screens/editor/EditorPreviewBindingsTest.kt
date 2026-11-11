@@ -52,6 +52,19 @@ class EditorPreviewBindingsTest {
         assertEquals(1, binding.renderEffects.size)
     }
 
+    @Test fun `paused preview refresh key tracks numeric drafts but playing preview stays per-frame`() {
+        val initial = WorkspaceEffect(WorkspaceEffectPresets.FILTER_LAVENDER, 1_000L, 3_000L, intensity = 0.4f)
+        val changed = initial.copy(intensity = 0.8f, startMs = 1_500L)
+
+        assertEquals(listOf(initial), workspaceEffectPausedRefreshSnapshot(listOf(initial), isPlaying = false))
+        assertNotEquals(
+            workspaceEffectPausedRefreshSnapshot(listOf(initial), isPlaying = false),
+            workspaceEffectPausedRefreshSnapshot(listOf(changed), isPlaying = false),
+        )
+        assertEquals(null, workspaceEffectPausedRefreshSnapshot(listOf(initial), isPlaying = true))
+        assertEquals(null, workspaceEffectPausedRefreshSnapshot(listOf(changed), isPlaying = true))
+    }
+
     @Test fun `empty or invalid draft does not leave an effect attached to preview`() {
         val active = WorkspaceEffect(WorkspaceEffectPresets.FILTER_LAVENDER, 1_000L, 3_000L)
         assertEquals(1, workspaceEffectPreviewBinding(listOf(active)).renderEffects.size)

@@ -270,11 +270,14 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
     )
 
 /** Fixed lane identity gutter; the time canvas starts after this rail. */
-private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 88.dp
-private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 48.dp
+private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 64.dp
+private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 44.dp
+
+internal val TIMELINE_RULER_BACKGROUND = Color.White
+internal val TIMELINE_RULER_LABEL_COLOR = Color(0xFF1E293B)
 
 internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
-    minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.3f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
+    minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.24f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
 
 @Composable
 private fun FixedTimelineIdentityRail(
@@ -1764,8 +1767,8 @@ private fun TimelineTimeRuler(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-            .background(Color(0xFF111A2C))
-            .border(1.dp, Color(0xFF30405C), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+            .background(TIMELINE_RULER_BACKGROUND)
+            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
             .pointerInput(durationMs, msToDp) {
                 detectTapGestures(
                     onTap = { offset ->
@@ -1800,7 +1803,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f * 33.33f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFF475569),
+                                color = Color(0xFFD1D5DB),
                                 start = Offset(fXPx, h - 3f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1816,7 +1819,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f5 * 166.7f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFF64748B),
+                                color = Color(0xFF9CA3AF),
                                 start = Offset(fXPx, h - 5.5f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1828,7 +1831,7 @@ private fun TimelineTimeRuler(
                 // Half-second tick (15 frames at 30fps)
                 val halfXPx = ((secStartMs + 500L) * msToDp).dp.toPx()
                 drawLine(
-                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.6f) else Color(0xFF64748B),
+                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.8f) else Color(0xFF64748B),
                     start = Offset(halfXPx, h - if (secondWidthDp >= 180.dp) 8f else 6f),
                     end = Offset(halfXPx, h),
                     strokeWidth = if (secondWidthDp >= 180.dp) 1.5f else 1f
@@ -1836,7 +1839,7 @@ private fun TimelineTimeRuler(
 
                 // Full second tick
                 drawLine(
-                    color = Color(0xFF94A3B8),
+                    color = Color(0xFF475569),
                     start = Offset(secXPx, h - 12f),
                     end = Offset(secXPx, h),
                     strokeWidth = 1.5f
@@ -1845,7 +1848,7 @@ private fun TimelineTimeRuler(
 
             // Neutral baseline keeps timing separate from clip selection accents.
             drawLine(
-                color = Color(0xFF31415B),
+                color = Color(0xFFCBD5E1),
                 start = Offset(0f, h - 0.75f),
                 end = Offset(size.width, h - 0.75f),
                 strokeWidth = 1.5f
@@ -1892,7 +1895,7 @@ private fun TimelineTimeRuler(
                     Text(
                         // CapCut-style: compact MM:SS majors at every step.
                         text = TimeFormat.msToShort(sec * 1000L),
-                        color = Color(0xFF9EC9E8),
+                        color = TIMELINE_RULER_LABEL_COLOR,
                         fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold

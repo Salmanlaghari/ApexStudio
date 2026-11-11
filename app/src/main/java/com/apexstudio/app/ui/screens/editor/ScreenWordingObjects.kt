@@ -34,10 +34,7 @@ fun ScreenWordingObjects(
     isPlaying: Boolean,
     onSelectTextOverlay: ((String) -> Unit)? = null,
     onMoveTextOverlay: ((String, Float, Float) -> Unit)? = null,
-    onDeleteTextOverlay: ((String) -> Unit)? = null,
-    onDuplicateTextOverlay: ((String) -> Unit)? = null,
     onEditTextOverlay: ((String) -> Unit)? = null,
-    onSizeScaleChange: ((String, Float) -> Unit)? = null,
     // Sticker canvas editing (feature/sticker-library). All default null
     // so existing callers keep compiling; the editor passes real handlers.
     selectedStickerId: String? = null,
@@ -74,8 +71,10 @@ fun ScreenWordingObjects(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 2. Interactive Animated Text Overlays (Screen Positioned)
-        for (overlay in textOverlays) {
+        // 2. Interactive Animated Text Overlays (Screen Positioned). Keep the selected layer
+        // on top so its outline and drag target are clear when existing titles overlap.
+        val orderedTextOverlays = textOverlays.sortedBy { it.id == selectedTextOverlayId }
+        for (overlay in orderedTextOverlays) {
             val isSelected = overlay.id == selectedTextOverlayId
             AnimatedTextOverlayView(
                 overlay = overlay,
@@ -91,17 +90,8 @@ fun ScreenWordingObjects(
                     val dy = newY - overlay.y
                     onMoveTextOverlay?.invoke(overlay.id, dx, dy)
                 },
-                onSizeScaleChange = { scale ->
-                    onSizeScaleChange?.invoke(overlay.id, scale)
-                },
                 onEditText = {
                     onEditTextOverlay?.invoke(overlay.id)
-                },
-                onDelete = {
-                    onDeleteTextOverlay?.invoke(overlay.id)
-                },
-                onDuplicate = {
-                    onDuplicateTextOverlay?.invoke(overlay.id)
                 }
             )
         }

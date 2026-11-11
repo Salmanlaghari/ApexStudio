@@ -3,18 +3,10 @@ package com.apexstudio.app.ui.screens.editor
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -63,10 +55,7 @@ fun AnimatedTextOverlayView(
     isPlaying: Boolean,
     onSelect: () -> Unit,
     onPositionChange: (newX: Float, newY: Float) -> Unit,
-    onSizeScaleChange: (newScale: Float) -> Unit = {},
     onEditText: () -> Unit = {},
-    onDelete: () -> Unit = {},
-    onDuplicate: () -> Unit = {},
     captionTrackOverlays: List<TextOverlay> = listOf(overlay),
     modifier: Modifier = Modifier
 ) {
@@ -212,7 +201,7 @@ fun AnimatedTextOverlayView(
                     }
                 )
             }
-            .padding(10.dp) // Leave room for corner handles
+            .padding(10.dp) // Keep a generous touch margin while dragging the selected title.
     ) {
         // Main Text Box with Border and Background
         Box(
@@ -272,91 +261,7 @@ fun AnimatedTextOverlayView(
             )
         }
 
-        // CapCut-Style Interactive Corner Badges when selected
-        if (isSelected) {
-            // Top-Left: Delete (✕)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = (-6).dp, y = (-6).dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFE11D48))
-                    .clickable { onDelete() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Delete Text",
-                    tint = Color.White,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            // Top-Right: Quick Edit (✎)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 6.dp, y = (-6).dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(ApexPalette.NeonCyan)
-                    .clickable { onEditText() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Edit,
-                    contentDescription = "Edit Text Content",
-                    tint = Color.Black,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-
-            // Bottom-Left: Duplicate (⧉)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = (-6).dp, y = 6.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF6366F1))
-                    .clickable { onDuplicate() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Duplicate Text",
-                    tint = Color.White,
-                    modifier = Modifier.size(12.dp)
-                )
-            }
-
-            // Bottom-Right: Resize Handle (⤢)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 6.dp, y = 6.dp)
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .background(ApexPalette.NeonCyan)
-                    .pointerInput(overlay.id) {
-                        detectDragGestures { change, dragAmount ->
-                            change.consume()
-                            val delta = (dragAmount.x + dragAmount.y) / 80f
-                            val newScale = (currentScale + delta).coerceIn(0.4f, 4.0f)
-                            currentScale = newScale
-                            onSizeScaleChange(newScale)
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.OpenInFull,
-                    contentDescription = "Resize Text Size",
-                    tint = Color.Black,
-                    modifier = Modifier.size(13.dp)
-                )
-            }
-        }
+        // Keep selection to a simple outline. Text editing, size, duplicate and delete actions
+        // live in the editor dock/panel instead of covering the title and video preview.
     }
 }

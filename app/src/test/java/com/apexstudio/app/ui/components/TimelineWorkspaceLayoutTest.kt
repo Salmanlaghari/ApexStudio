@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -42,10 +43,16 @@ class TimelineWorkspaceLayoutTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun identityRailAdaptsToNarrowViewportsWithoutChangingStandardPhoneWidth() {
-        assertEquals(48f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
-        assertEquals(60f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
-        assertEquals(88f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
+    fun identityRailStaysCompactAndGivesMoreWidthToTheTimeline() {
+        assertEquals(44f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
+        assertEquals(48f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
+        assertEquals(64f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
+    }
+
+    @Test
+    fun secondRulerUsesAWhiteSurfaceWithReadableDarkLabels() {
+        assertEquals(Color.White, TIMELINE_RULER_BACKGROUND)
+        assertEquals(Color(0xFF1E293B), TIMELINE_RULER_LABEL_COLOR)
     }
 
     private fun clip(

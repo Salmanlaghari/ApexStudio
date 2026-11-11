@@ -1777,13 +1777,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                         )
                     }
                 },
-                onDeleteTextOverlay = { id -> textOwner?.let { vm.removeTextOverlay(it.id, id) } },
-                onDuplicateTextOverlay = { id -> textOwner?.let { vm.duplicateTextOverlay(it.id, id) } },
                 onEditTextOverlay = { id ->
                     vm.selectTextOverlay(id)
                     vm.openTextPanel()
                 },
-                onSizeScaleChange = { id, scale -> textOwner?.let { vm.setTextOverlaySize(it.id, id, scale) } },
                 // Sticker canvas editing (feature/sticker-library)
                 selectedStickerId = state.selectedStickerId,
                 onSelectSticker = { vm.selectSticker(it) },

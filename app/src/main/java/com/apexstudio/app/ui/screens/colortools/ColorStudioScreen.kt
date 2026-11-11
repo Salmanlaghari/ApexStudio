@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,7 +82,7 @@ private data class SourceFrame(val bitmap: Bitmap, val timeMs: Long)
 internal fun colorPreviewSplitPosition(widthPx: Float, split: Float): Float =
     widthPx.coerceAtLeast(0f) * split.coerceIn(0f, 1f)
 
-private val ColorStudioGradeSaver = Saver<MutableState<ColorStudioGrade>, List<Float>>(
+internal val ColorStudioGradeSaver = Saver<MutableState<ColorStudioGrade>, List<Float>>(
     save = { state -> val grade = state.value; listOf(grade.brightness, grade.contrast, grade.saturation,
         grade.shadows.x, grade.shadows.y, grade.midtones.x, grade.midtones.y,
         grade.highlights.x, grade.highlights.y) + grade.rCurve + grade.gCurve + grade.bCurve + grade.lumaCurve +
@@ -228,7 +229,8 @@ fun ColorStudioScreen(
                 Text("This Before/After is the selected source frame only, not a full-timeline preview.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 }
-                LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp), horizontalArrangement = Arrangement.spacedBy(7.dp),
+                LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
+                    .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     if (!timelineComparison) item {
                         Column(Modifier.width(246.dp).height(138.dp).clip(RoundedCornerShape(14.dp))
@@ -265,19 +267,6 @@ fun ColorStudioScreen(
                             Text("Whole-source export; trims/composition excluded.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
                         }
                     }
-                    item { WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.width(104.dp)) }
-                    item { WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.width(104.dp)) }
-                    item { WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.width(104.dp)) }
-                    item {
-                        Column(Modifier.width(250.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(7.dp)) {
-                            Text("RGBL CURVES", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            RgbCurvesCanvas(grade, curveChannel, curvePoint, { curveChannel = it }, { index, value ->
-                                curvePoint = index
-                                grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
-                            }, Modifier.fillMaxWidth().height(126.dp))
-                        }
-                    }
                     item {
                         Column(Modifier.width(230.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
                             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
@@ -296,6 +285,19 @@ fun ColorStudioScreen(
                             AdjustmentSlider("HDR Style", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
                             AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
                             Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                        }
+                    }
+                    item { WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.width(104.dp)) }
+                    item { WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.width(104.dp)) }
+                    item { WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.width(104.dp)) }
+                    item {
+                        Column(Modifier.width(250.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(7.dp)) {
+                            Text("RGBL CURVES", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            RgbCurvesCanvas(grade, curveChannel, curvePoint, { curveChannel = it }, { index, value ->
+                                curvePoint = index
+                                grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
+                            }, Modifier.fillMaxWidth().height(126.dp))
                         }
                     }
                 }

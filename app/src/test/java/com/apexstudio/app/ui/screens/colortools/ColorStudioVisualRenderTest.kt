@@ -5,8 +5,11 @@ import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import com.github.takahirom.roborazzi.RoborazziComposeOptions
 import com.github.takahirom.roborazzi.RoborazziComposeSizeOption
 import com.github.takahirom.roborazzi.RoborazziOptions
@@ -36,6 +39,18 @@ class ColorStudioVisualRenderTest {
 
         compose.onNodeWithText("This Before/After is the selected source frame only, not a full-timeline preview.")
             .assertIsDisplayed()
+    }
+
+    @Test fun compactPhoneStripExposesBrightnessHdrStyleAndSharpnessControls() {
+        val vm = EditorViewModel()
+        val clip = MediaClip("fixture", "Host layout fixture", "file:///test-only.mp4", 5_000L, trimEndMs = 5_000L)
+        vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
+        compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
+
+        compose.onNodeWithText("Brightness").assertIsDisplayed()
+        compose.onNodeWithTag("color_adjustment_controls").performScrollToNode(hasText("HDR Style"))
+        compose.onNodeWithText("HDR Style").assertIsDisplayed()
+        compose.onNodeWithText("Sharpness").assertIsDisplayed()
     }
 
     @Test fun productionColorWorkspaceFitsCompactPhoneEditorArea() {

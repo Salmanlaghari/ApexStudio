@@ -1320,6 +1320,15 @@ fun AddMediaMenuSheetOverlay(
  * Main video preview area. ColumnScope extension so the preview can consume
  * the remaining editor height, or the whole safe window area in fullscreen.
  */
+internal fun isPreviewFrameReadyForSource(
+    sourceId: String?,
+    renderedSourceId: String?,
+    generation: Long,
+    generationAtBind: Long,
+    isImage: Boolean,
+    hasPlayer: Boolean,
+): Boolean = isImage || (hasPlayer && sourceId != null && renderedSourceId == sourceId && generation > generationAtBind)
+
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     state: EditorState,
@@ -1357,6 +1366,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
     val faceReviewProgress by vm.faceTrackReview.collectAsStateWithLifecycle()
     val previewFrameGeneration by vm.previewFrameGeneration.collectAsStateWithLifecycle()
+    val previewFrameSourceId by vm.previewFrameSourceId.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
     val transitionPlan = remember(state.project?.clips, state.project?.transitions) {
         com.apexstudio.app.data.export.ProjectTransitionTimeline.build(
@@ -1409,8 +1419,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val frameGenerationAtBind = remember(mainPreviewClip?.id, previewPlayer) {
         previewFrameGeneration
     }
-    val firstFrameRendered = isTransitionPreview || mainPreviewClip?.type == ClipType.IMAGE ||
-        (previewPlayer != null && previewFrameGeneration > frameGenerationAtBind)
+    val firstFrameRendered = isPreviewFrameReadyForSource(
+        sourceId = mainPreviewClip?.id,
+        renderedSourceId = previewFrameSourceId,
+        generation = previewFrameGeneration,
+        generationAtBind = frameGenerationAtBind,
+        isImage = mainPreviewClip?.type == ClipType.IMAGE,
+        hasPlayer = previewPlayer != null,
+    )
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()

@@ -33,6 +33,9 @@ class EditorPreviewStageGeometryTest {
     fun liveSourceRatioWinsAndPersistedProjectRatioPreventsLandscapeFallbackFlash() {
         assertEquals(9f / 16f, editorPreviewStageAspectRatio(null, 9f / 16f, 16f / 9f), 0.0001f)
         assertEquals(16f / 9f, editorPreviewStageAspectRatio(16f / 9f, 9f / 16f, 1f), 0.0001f)
+        // Picker and AI-imported media share this resolver: valid decoded source geometry
+        // wins over a persisted/export composition ratio.
+        assertEquals(4f / 3f, editorPreviewStageAspectRatio(4f / 3f, 16f / 9f, 9f / 16f), 0.0001f)
         assertEquals(16f / 9f, editorPreviewStageAspectRatio(null, null, 16f / 9f), 0.0001f)
     }
 

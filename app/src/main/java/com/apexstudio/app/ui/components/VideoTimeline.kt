@@ -271,6 +271,74 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
 
 /** Small in-row identity chip: it overlays the time-zero edge instead of reserving a gutter. */
 @Composable
+private fun FixedTimelineIdentityRail(
+    hasMainVideo: Boolean,
+    showWaveformStrip: Boolean,
+    overlayLayers: List<Int>,
+    hasText: Boolean,
+    hasStickers: Boolean,
+    hasFx: Boolean,
+    originalAudioRows: Int,
+    musicRows: Int,
+    voiceRows: Int,
+    railScrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val railWidth = 88.dp
+    val railSurface = Color(0xF2172230)
+    Column(
+        modifier = modifier
+            .width(railWidth)
+            .fillMaxHeight()
+            .background(railSurface)
+            .border(1.dp, Color(0xFF33445D))
+            .testTag("timeline-identity-rail")
+            .zIndex(25f),
+    ) {
+        Box(Modifier.fillMaxWidth().height(TIMELINE_RULER_HEIGHT_DP.dp).background(Color(0xFF111A2C)), contentAlignment = Alignment.CenterStart) {
+            Text("TIME", color = Color(0xFF8FA4C1), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+        }
+        if (hasMainVideo) {
+            Box(Modifier.fillMaxWidth().height((10 + MAIN_VIDEO_LANE_HEIGHT_DP).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
+                TimelineLaneIdentity("V1 · Main", ApexPalette.NeonCyan)
+            }
+        }
+        if (showWaveformStrip) {
+            Box(Modifier.fillMaxWidth().height((10 + 36).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
+                TimelineLaneIdentity("V1 · Audio", Color(0xFF765BDB))
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(railScrollState)
+                .padding(top = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            overlayLayers.forEach { layer ->
+                Box(Modifier.fillMaxWidth().height(OVERLAY_LAYER_HEIGHT_DP.dp), contentAlignment = Alignment.CenterStart) {
+                    TimelineLaneIdentity("V${layer + 1} · Overlay", ApexPalette.NeonCyan)
+                }
+            }
+            if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = 40)
+            if (hasStickers) RailLabel("STICKER", Color(0xFFA88CFF), textLaneHeight = 40)
+            if (hasFx) RailLabel("FX", Color(0xFF42B9FF), textLaneHeight = 40)
+            repeat(originalAudioRows) { RailLabel("A0 · Source", Color(0xFF765BDB), AUDIO_LANE_ROW_HEIGHT_DP) }
+            repeat(musicRows) { RailLabel("A1 · Music", Color(0xFF47D7B2), AUDIO_LANE_ROW_HEIGHT_DP) }
+            repeat(voiceRows) { RailLabel("A2 · Voice/SFX", Color(0xFFFFB454), AUDIO_LANE_ROW_HEIGHT_DP) }
+        }
+    }
+}
+
+@Composable
+private fun RailLabel(label: String, accent: Color, textLaneHeight: Int) {
+    Box(Modifier.fillMaxWidth().height(textLaneHeight.dp), contentAlignment = Alignment.CenterStart) {
+        TimelineLaneIdentity(label, accent)
+    }
+}
+
+@Composable
 private fun TimelineLaneIdentity(label: String, accent: Color) {
     Text(
         text = label,
@@ -1362,6 +1430,19 @@ fun VideoTimeline(
                 }
             }
 
+            FixedTimelineIdentityRail(
+                hasMainVideo = hasMainVideo,
+                showWaveformStrip = showWaveformStrip,
+                overlayLayers = videoLayers.filter { it in 1..9 },
+                hasText = textOverlays.isNotEmpty(),
+                hasStickers = stickers.isNotEmpty(),
+                hasFx = hasFx,
+                originalAudioRows = originalVideoAudioTracks.size,
+                musicRows = musicTracks.size,
+                voiceRows = voiceTracks.size,
+                railScrollState = vScrollState,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
             // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
             // At canvas-root level (not inside the scrolled content) so it
             // spans the full visible height — pinned header included — and

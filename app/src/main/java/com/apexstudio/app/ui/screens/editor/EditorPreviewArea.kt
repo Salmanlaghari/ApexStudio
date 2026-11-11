@@ -606,10 +606,9 @@ fun VideoPreviewArea(
 
 internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float, rotationDegrees: Int = 0): Float? {
     val quarterTurn = ((rotationDegrees % 360) + 360) % 360 in setOf(90, 270)
-    val displayWidth = if (quarterTurn) height else width
-    val displayHeight = if (quarterTurn) width else height
-    return (displayWidth.toFloat() * pixelAspect / displayHeight.toFloat())
-        .takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
+    val codedDisplayAspect = width.toFloat() * pixelAspect / height.toFloat()
+    val displayAspect = if (quarterTurn) 1f / codedDisplayAspect else codedDisplayAspect
+    return displayAspect.takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
 }
 
 /**

@@ -162,6 +162,8 @@ class PhotoPreviewGeometryTest {
             displayedVideoAspect(1920, 1080, 1f, rotationDegrees = 90)!!,
             0.0001f
         )
+        // PAL non-square pixels: coded 720x576 * 16:15 = 4:3, then rotate to 3:4.
+        assertEquals(3f / 4f, displayedVideoAspect(720, 576, 16f / 15f, rotationDegrees = 90)!!, 0.0001f)
         assertEquals(
             16f / 9f,
             displayedVideoAspect(1920, 1080, 1f, rotationDegrees = 0)!!,

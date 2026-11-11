@@ -424,7 +424,7 @@ private fun EditorScreenContent(
                     )?.let { latencyMs ->
                         Log.i("PreviewStartupLatency", "selection_to_first_rendered_video_frame_ms=$latencyMs")
                     }
-                    vm.recordPreviewFrameRendered()
+                    vm.recordPreviewFrameRendered(player.currentMediaItem?.mediaId)
                 }
                 override fun onPlayerError(error: PlaybackException) {
                     val errorMsg = error.localizedMessage ?: error.errorCodeName
@@ -936,12 +936,14 @@ private fun EditorScreenContent(
                 player.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (transitionPreviewPlayer !== player) return
-                        if (playbackState == Player.STATE_READY) transitionPreviewReady = true
                         if (playbackState == Player.STATE_ENDED &&
                             vm.state.value.durationMs <= projectTransitionPlan.durationMs
                         ) vm.setPlaying(false)
                     }
 
+                    override fun onRenderedFirstFrame() {
+                        if (transitionPreviewPlayer === player) transitionPreviewReady = true
+                    }
                     override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                         if (transitionPreviewPlayer === player) vm.setVideoSize(videoSize.width, videoSize.height)
                     }

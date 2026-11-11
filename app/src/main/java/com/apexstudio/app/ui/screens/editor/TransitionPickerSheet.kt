@@ -45,7 +45,7 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CompletableDeferred
 import androidx.media3.common.Player
 
 /**
@@ -565,11 +565,20 @@ private fun PickerTransitionPreview(
             activePlayer = next
             next.volume = 0f
             next.repeatMode = Player.REPEAT_MODE_OFF
+            val playbackFailure = CompletableDeferred<Unit>()
             next.addListener(object : Player.Listener {
                 override fun onRenderedFirstFrame() { ready = true }
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_ENDED) {
+                        // Resume the short sample at the selected transition without polling playback time.
+                        next.seekTo(sample.transitionWindowStartMs)
+                        next.play()
+                    }
+                }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     ready = false
                     failed = true
+                    playbackFailure.complete(Unit)
                 }
             })
             val sourceEffectsByClipId = sample.plan.entries.associate { entry ->
@@ -586,14 +595,7 @@ private fun PickerTransitionPreview(
             next.seekTo(sample.transitionWindowStartMs)
             next.play()
             player = next
-            while (true) {
-                delay(40)
-                if (failed) break
-                if (next.currentPosition >= sample.transitionWindowEndMs || next.playbackState == Player.STATE_ENDED) {
-                    next.seekTo(sample.transitionWindowStartMs)
-                    next.play()
-                }
-            }
+            playbackFailure.await()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {

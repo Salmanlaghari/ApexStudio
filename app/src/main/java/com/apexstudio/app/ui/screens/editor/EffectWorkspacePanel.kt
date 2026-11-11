@@ -294,7 +294,7 @@ internal fun EffectWorkspacePanel(
                     fontSize = 16.sp, modifier = Modifier.weight(1f))
                 Text(when (category) {
                     WorkspaceCategory.TIME -> "Render & apply"
-                    WorkspaceCategory.TRANSITIONS -> "123 preview-only styles"
+                    WorkspaceCategory.TRANSITIONS -> "Real timeline/export transitions"
                     else -> "100+ real looks · preview + export"
                 },
                     fontSize = 11.sp, color = EditorPalette.TextSecondary)
@@ -435,9 +435,9 @@ internal fun EffectWorkspacePanel(
                                             onDismiss()
                                             vm.openTransitionPicker(originalClip.id, nextMainClip.id)
                                         }, modifier = Modifier.height(36.dp).testTag("workspace-open-transitions")) {
-                                            Text("Open preview-only picker", fontSize = 12.sp)
+                                            Text("Open transition picker", fontSize = 12.sp)
                                         }
-                                        Text("Existing styles preview in this panel only; clip-boundary effects are not rendered in the main timeline or whole-project export.",
+                                        Text("Transitions are real clip-boundary timeline/export effects. The picker uses the real shader when ready.",
                                             fontSize = 9.sp, color = EditorPalette.Warning, maxLines = 2)
                                     }
                                 }

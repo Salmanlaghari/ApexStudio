@@ -94,6 +94,7 @@ fun VideoPreviewArea(
     arFilterIntensity: Float = 0.85f,
     arFilterCustomText: String = "",
     playerError: String? = null,
+    transitionPreviewNotice: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
     fxIntensity: Float = 0f,
@@ -515,6 +516,19 @@ fun VideoPreviewArea(
             }
         }
     }
+
+        if (transitionPreviewNotice != null) {
+            Box(
+                Modifier.align(Alignment.TopCenter).padding(8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2B2110).copy(alpha = .94f))
+                    .border(1.dp, Color(0xFFFFD98A), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 9.dp, vertical = 6.dp)
+                    .semantics { contentDescription = "Transition preview notice: $transitionPreviewNotice" }
+            ) {
+                Text(transitionPreviewNotice, color = Color(0xFFFFD98A), fontSize = 10.sp, maxLines = 3)
+            }
+        }
 
         // Playback time is in the transport row; no filename/time/keyframe HUD covers the media.
         // Keyframe values stay in their editing panel; never cover the video with a debug HUD.

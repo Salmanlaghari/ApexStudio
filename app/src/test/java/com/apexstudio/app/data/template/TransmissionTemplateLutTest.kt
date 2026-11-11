@@ -2,6 +2,7 @@ package com.apexstudio.app.data.template
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.filter.FilterManifest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -87,6 +88,43 @@ class TransmissionTemplateLutTest {
         assertTrue(
             "Expected the full template catalog, got ${result.templates.size}",
             result.templates.isNotEmpty()
+        )
+    }
+
+    @Test
+    fun `shorts looks use supported LUTs and FX without synthetic royalty music`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        FilterManifest.initialize(context)
+        val shortsLooks = ShortsTemplateCatalog.asTransmissionTemplates()
+        val invalid = shortsLooks.filter { look ->
+            !look.shortsOnly ||
+                FilterManifest.presetById(look.filterId) == null ||
+                FxPreset.byId(look.fxPresetId) == null ||
+                look.royaltyTrackId.isNotBlank() ||
+                look.musicTitle.isNotBlank()
+        }
+
+        assertEquals(10, shortsLooks.size)
+        assertTrue("Invalid Shorts looks: ${invalid.map { it.id }}", invalid.isEmpty())
+    }
+
+    @Test
+    fun `music manifest validates and covers every Shorts recipe`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val raw = context.assets.open(ShortsMusicRepository.MANIFEST_ASSET).use { input ->
+            input.bufferedReader().readText()
+        }
+        val manifest = ShortsMusicRepository.parseAndValidateManifest(raw)
+        val manifestIds = manifest.assets.map { it.id }.toSet()
+
+        assertEquals(10, manifest.assets.size)
+        assertTrue(
+            "Every music credit should disclose template edits",
+            manifest.assets.all { it.changes.isNotBlank() && "Changes: ${it.changes}" in it.creditText }
+        )
+        assertTrue(
+            "Missing music assets for recipes",
+            ShortsTemplateCatalog.templates.all { it.musicAssetId in manifestIds }
         )
     }
 

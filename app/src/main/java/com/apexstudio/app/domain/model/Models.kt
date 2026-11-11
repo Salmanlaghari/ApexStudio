@@ -1114,7 +1114,14 @@ data class AudioTrack(
     /** Runtime-renderable recipe identity; null for imported and recorded audio. */
     val sfxEffectId: String? = null,
     /** Synthesis gain used to deterministically restore a cleared cached source. */
-    val sfxIntensity: Float = 1f
+    val sfxIntensity: Float = 1f,
+    /** Optional source license and attribution metadata for downloaded music. */
+    val sourceLicense: String? = null,
+    val sourceLicenseUrl: String? = null,
+    val attributionRequired: Boolean = false,
+    val attributionText: String? = null,
+    val sourcePageUrl: String? = null,
+    val sourceChanges: String? = null
 ) {
     /**
      * The kind of audio track, used by the mixer UI to label faders

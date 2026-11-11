@@ -103,7 +103,7 @@ fun TransmissionTemplatesPanel(
                     onClick = { onTemplateApplied(null) }
                 )
             }
-            items(templates, key = { it.id }) { template ->
+            items(templates.filterNot { it.shortsOnly }, key = { it.id }) { template ->
                 TransmissionTemplateTile(
                     label = template.name,
                     sublabel = resolveTransmissionTemplateSublabel(template),

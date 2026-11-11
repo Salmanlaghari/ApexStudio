@@ -3,6 +3,11 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.fx.FxPreset
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
+import com.apexstudio.app.data.template.ShortsMusicAsset
+import com.apexstudio.app.data.template.ShortsMusicRepository
+import com.apexstudio.app.data.template.ShortsTemplateCatalog
+import com.apexstudio.app.data.template.ShortsTemplateProjectFactory
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
@@ -10,6 +15,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlinx.serialization.json.Json
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -52,6 +59,54 @@ class EditorProjectExportControllerTest {
         val muted = music.copy(id = "muted", isMuted = true, isSolo = true)
         val edited = state.copy(project = state.project!!.copy(audioTracks = listOf(music, voice, muted)))
         assertEquals(listOf(voice), buildProjectExportConfig(edited, AudioStudioState(), settings).musicMixTracks)
+    }
+
+    @Test fun `Shorts factory output keeps its text and licensed music exportable`() {
+        val template = ShortsTemplateCatalog.byId("shorts_travel_adventure")!!
+        val sourceClip = first.copy(
+            id = "shorts-video", uri = "file:///shorts.mp4", durationMs = 45_000L,
+            trimStartMs = 0L, trimEndMs = 45_000L, trackIndex = 0, type = ClipType.VIDEO
+        )
+        val sourceProject = Project("shorts-project", "Shorts", 45_000L, clips = listOf(sourceClip))
+        val musicFile = File.createTempFile("shorts-export-test-", ".mp3")
+        try {
+            musicFile.writeBytes(byteArrayOf(1))
+            val url = ShortsMusicRepository.ALLOWED_URL_PREFIX + musicFile.name
+            val asset = ShortsMusicAsset(
+                id = template.musicAssetId, templateName = template.name,
+                trackTitle = "Verified test track", artist = "Test artist",
+                fileName = musicFile.name, downloadUrl = url,
+                sourcePageUrl = "https://example.org/source", sourceDownloadUrl = url,
+                mimeType = "audio/mpeg", bytes = musicFile.length(), durationMs = 45_000L,
+                sha256 = java.security.MessageDigest.getInstance("SHA-256").digest(musicFile.readBytes()).joinToString("") { "%02x".format(it) },
+                license = "CC BY 4.0",
+                licenseUrl = "https://creativecommons.org/licenses/by/4.0/",
+                attributionRequired = true, attribution = "Test artist — Verified test track",
+                changes = "Trimmed to the project duration"
+            )
+            val ready = ShortsTemplateProjectFactory.apply(sourceProject, template, asset, musicFile)
+            val editorState = EditorState(project = ready, selectedClipId = ready.clips.single().id)
+            val config = buildProjectExportConfig(editorState, AudioStudioState(), settings)
+
+            assertEquals(30_000L, ready.durationMs)
+            assertEquals(9f / 16f, ready.videoAspectRatio!!, 0f)
+            assertEquals("9:16", ProjectAspectRatio.exportPreset(ready.videoAspectRatio))
+            assertEquals(VideoFitMode.COVER, ready.clips.single().videoFitMode)
+            assertEquals(2, ready.clips.single().textOverlays.size)
+            assertEquals(asset.creditText, ready.audioTracks.single().attributionText)
+            assertEquals(asset.license, ready.audioTracks.single().sourceLicense)
+            assertTrue(ready.audioTracks.single().attributionRequired)
+            assertEquals(asset.changes, ready.audioTracks.single().sourceChanges)
+            assertEquals(ready.audioTracks, config.musicMixTracks)
+            assertNull(wholeProjectExportUnsupportedReason(editorState, AudioStudioState(), settings))
+            assertNull(projectCompositionUnsupportedReason(projectMainExportClips(editorState), config))
+            val restored = Json.decodeFromString(Project.serializer(), Json.encodeToString(Project.serializer(), ready))
+            assertEquals(asset.creditText, restored.audioTracks.single().attributionText)
+            assertEquals(asset.sourcePageUrl, restored.audioTracks.single().sourcePageUrl)
+            assertEquals(asset.changes, restored.audioTracks.single().sourceChanges)
+        } finally {
+            musicFile.delete()
+        }
     }
 
     @Test fun `global filter FX and grading are carried into project config`() {

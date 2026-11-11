@@ -44,6 +44,12 @@ object ClipTimeMapping {
     fun outputAtProjectTime(clips: List<MediaClip>, clip: MediaClip, projectMs: Long): Long =
         projectMs - SpeedCurveMath.timelineStartMsForClip(clips, clip)
 
+    /** Sticker-local output time, or null while the owning main clip is outside its project window. */
+    fun stickerOutputTimeAtProjectTime(clips: List<MediaClip>, clip: MediaClip, projectMs: Long): Long? {
+        val outputMs = outputAtProjectTime(clips, clip, projectMs)
+        return outputMs.takeIf { it >= 0L && it < mainClipDurationMs(clip) }
+    }
+
     fun sourceAtProjectTime(clips: List<MediaClip>, clip: MediaClip, projectMs: Long): Long {
         val elapsed = (projectMs - SpeedCurveMath.timelineStartMsForClip(clips, clip)).coerceAtLeast(0L)
         val sourceOffset = if (isMainVideo(clip)) mainSourceOffsetAtOutputMs(clip, elapsed) else {

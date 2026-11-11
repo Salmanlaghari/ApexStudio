@@ -277,8 +277,12 @@ object PackManager {
             jobs.remove(packId)
             when (result) {
                 is DownloadEngine.Result.Success -> {
+                    var installFailure: String? = null
                     val ok = withContext(Dispatchers.IO) {
                         try {
+                            require(pack.sizeBytes <= 0L || destFile.length() == pack.sizeBytes) {
+                                "Pack size mismatch: expected ${pack.sizeBytes} bytes, received ${destFile.length()}"
+                            }
                             // Unpack zips; single files are used as-is.
                             if (destFile.extension.equals("zip", ignoreCase = true)) {
                                 unzip(destFile, dir)
@@ -294,11 +298,12 @@ object PackManager {
                             true
                         } catch (e: Exception) {
                             Log.e(TAG, "Pack install failed: $packId", e)
+                            installFailure = e.message ?: e.javaClass.simpleName
                             false
                         }
                     }
                     updateItem(packId) {
-                        it.copy(state = if (ok) PackState.Downloaded else PackState.Failed("Install failed"))
+                        it.copy(state = if (ok) PackState.Downloaded else PackState.Failed(installFailure ?: "Install failed"))
                     }
                 }
                 is DownloadEngine.Result.Failed ->
@@ -330,6 +335,29 @@ object PackManager {
                 writeRegistry(appContext, reg.copy(packs = reg.packs - packId))
             }
             updateItem(packId) { it.copy(state = PackState.NotDownloaded) }
+        }
+    }
+
+    /** Remove and reinstall an already downloaded pack after an integrity failure. */
+    fun reinstall(context: Context, packId: String) {
+        val appContext = context.applicationContext
+        jobs.remove(packId)?.cancel()
+        scope.launch {
+            val removed = withContext(Dispatchers.IO) {
+                val dir = packDir(appContext, packId)
+                val dirRemoved = !dir.exists() || dir.deleteRecursively()
+                if (dirRemoved) {
+                    val registry = readRegistry(appContext)
+                    writeRegistry(appContext, registry.copy(packs = registry.packs - packId))
+                }
+                dirRemoved
+            }
+            if (!removed) {
+                updateItem(packId) { it.copy(state = PackState.Failed("Could not remove the damaged pack.")) }
+                return@launch
+            }
+            updateItem(packId) { it.copy(state = PackState.NotDownloaded) }
+            download(appContext, packId)
         }
     }
 

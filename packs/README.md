@@ -28,7 +28,7 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
       "id": "neon-filters",      // stable, unique; also the install dir name
       "name": "Neon Nights Filter Pack",
       "description": "...",
-      "category": "filters | transitions | effects | models | camera",
+      "category": "filters | transitions | effects | models | camera | stickers",
       "version": 1,              // integer; higher = update available
       "versionName": "1.0",      // display string
       "sizeBytes": 1796,         // exact byte size of the download
@@ -36,6 +36,7 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
       "sha256": "…",             // hex SHA-256 of the download; "" when n/a
       "minAppVersion": "1.0.0",  // hide pack on older app versions
       "entry": "filters.json",   // content descriptor inside the installed pack
+      "itemCount": 25,            // optional count of selectable pack entries
       "status": "available | coming_soon"
       // coming_soon packs render disabled ("Coming soon") — never a dead button
     }
@@ -44,8 +45,12 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
 ```
 
 Pack payloads: a single file (`.json`) is used as-is; a `.zip` is extracted
-after verification. The `entry` file is what the app reads after install
-(e.g. `filters.json` in the existing `PackFilter` schema).
+after verification. The app checks the advertised byte size and SHA-256 before
+installing. The `entry` file is what the app reads after install (for example,
+`filters.json` in the existing `PackFilter` schema). Animated-sticker ZIPs
+contain a `manifest.json` plus 25 Lottie files; each sticker record carries its
+own byte count and SHA-256, which the sticker repository checks before the
+asset appears in the editor.
 
 ## Publishing / updating packs
 
@@ -61,7 +66,7 @@ after verification. The `entry` file is what the app reads after install
 - Storage: app-specific external files dir (`…/Android/data/com.apexstudio.app/files/packs/<id>/`);
   no storage permission needed, removed on uninstall.
 - Downloads: `HttpURLConnection` with `Range` resume, 3 retries w/ backoff,
-  SHA-256 check, atomic `.part` → rename install. Zero new dependencies.
+  exact size + SHA-256 checks, atomic `.part` → rename install. Zero new dependencies.
 - Feature gating: `PackManager.requirePack(context, id)` — features call it and
   show the download prompt when the pack is missing (see `DownloadedPacks` for
   the filter-pack integration example).

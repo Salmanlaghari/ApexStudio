@@ -58,6 +58,8 @@ object PackManifestRepo {
         val sha256: String = "",
         val minAppVersion: String = "1.0.0",
         val entry: String = "",
+        /** Optional number of selectable items represented by the pack. */
+        val itemCount: Int = 0,
         /** "available" or "coming_soon". Coming-soon packs render disabled, never as dead buttons. */
         val status: String = "available"
     ) {
@@ -151,6 +153,7 @@ object PackManifestRepo {
         "effects" -> "Effect Packs"
         "models" -> "AI Models"
         "camera" -> "Camera & Lenses"
+        "stickers" -> "Animated Stickers"
         else -> category.replaceFirstChar { it.uppercase() }
     }
 }

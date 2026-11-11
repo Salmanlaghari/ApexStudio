@@ -55,10 +55,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import com.airbnb.lottie.compose.LottieAnimation
-import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.rememberLottieComposition
 import com.apexstudio.app.data.stickers.LottieFrameCache
+import com.apexstudio.app.data.stickers.StickerAssetResolver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -101,7 +101,8 @@ fun StickerCanvas(
     onRemoveSticker: (String) -> Unit,
     onCropSticker: (id: String, left: Float, top: Float, right: Float, bottom: Float) -> Unit,
     onCutoutSticker: (id: String, shape: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTimeMsByStickerId: Map<String, Long> = emptyMap()
 ) {
     val context = LocalContext.current
     val imageCache = remember { StickerImageCache(context) }
@@ -112,8 +113,8 @@ fun StickerCanvas(
         val canvasWpx = with(density) { maxWidth.toPx() }
         val canvasHpx = with(density) { maxHeight.toPx() }
 
-        val activeStickers = remember(stickers, currentTimeMs) {
-            stickers.filter { it.isActiveAt(currentTimeMs) }
+        val activeStickers = remember(stickers, currentTimeMs, currentTimeMsByStickerId) {
+            stickers.filter { it.isActiveAt(currentTimeMsByStickerId[it.id] ?: currentTimeMs) }
         }
         val selected = activeStickers.firstOrNull { it.id == selectedStickerId }
 
@@ -129,7 +130,7 @@ fun StickerCanvas(
                     StickerItem(
                         sticker = sticker,
                         isSelected = sticker.id == selectedStickerId,
-                        currentTimeMs = currentTimeMs,
+                        currentTimeMs = currentTimeMsByStickerId[sticker.id] ?: currentTimeMs,
                         canvasWpx = canvasWpx,
                         canvasHpx = canvasHpx,
                         imageCache = imageCache,
@@ -145,7 +146,8 @@ fun StickerCanvas(
 
             // Floating action bar above the selected sticker.
             if (selected != null && cropTargetId == null) {
-                val selKf = selected.effectiveTransformAt(currentTimeMs)
+                val selectedTimeMs = currentTimeMsByStickerId[selected.id] ?: currentTimeMs
+                val selKf = selected.effectiveTransformAt(selectedTimeMs)
                 StickerActionBar(
                     sticker = selected,
                     effX = (selected.x + selKf.translateX).coerceIn(0f, 1f),
@@ -224,6 +226,7 @@ private fun StickerItem(
     onRemoveSticker: (String) -> Unit
 ) {
     val density = LocalDensity.current
+    val context = LocalContext.current
     val latest by rememberUpdatedState(sticker)
 
     // Keyframe-interpolated transform at the playhead: the sticker's
@@ -322,7 +325,7 @@ private fun StickerItem(
         if (isLottie) {
             // Phase 4: animated Lottie sticker — real looping animation.
             val composition by rememberLottieComposition(
-                LottieCompositionSpec.Asset(latest.assetPath!!)
+                StickerAssetResolver.compositionSpec(context, latest.assetPath!!)
             )
             LottieAnimation(
                 composition = composition,

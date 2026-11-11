@@ -48,6 +48,7 @@ fun ScreenWordingObjects(
     onCutoutSticker: ((String, String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     captionTimeMs: Long = currentTimeMs,
+    stickerTimeMsById: Map<String, Long> = emptyMap(),
 ) {
     BoxWithConstraints(modifier = modifier) {
         val screenW = maxWidth
@@ -68,7 +69,8 @@ fun ScreenWordingObjects(
             onRemoveSticker = { onRemoveSticker?.invoke(it) },
             onCropSticker = { id, l, t, r, b -> onCropSticker?.invoke(id, l, t, r, b) },
             onCutoutSticker = { id, shape -> onCutoutSticker?.invoke(id, shape) },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            currentTimeMsByStickerId = stickerTimeMsById
         )
 
         // 2. Interactive Animated Text Overlays (Screen Positioned). Keep the selected layer

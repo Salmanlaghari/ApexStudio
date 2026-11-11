@@ -66,6 +66,7 @@ fun StickerPanel(
     modifier: Modifier = Modifier,
     selectedSticker: StickerOverlay? = null,
     totalTimelineMs: Long = 0L,
+    canAddStickers: Boolean = true,
     onUpdateSticker: ((StickerOverlay) -> Unit)? = null,
     onDuplicate: ((String) -> Unit)? = null,
     onDelete: ((String) -> Unit)? = null
@@ -158,12 +159,12 @@ fun StickerPanel(
 
         if (showAnimated) {
             Text(
-                "Separate bundled animated pack; static sticker search does not filter it.",
+                "Download animated packs on demand, or browse the small bundled library.",
                 color = ApexPalette.TextSecondary,
                 fontSize = 10.sp
             )
             Spacer(Modifier.height(6.dp))
-            AnimatedStickerGrid(onAddSticker = onAddSticker)
+            AnimatedStickerGrid(onAddSticker = onAddSticker, canAddStickers = canAddStickers)
         } else {
         // Tag-based search
         OutlinedTextField(
@@ -206,6 +207,14 @@ fun StickerPanel(
         )
 
         Spacer(Modifier.height(4.dp))
+
+        if (!canAddStickers) {
+            Text(
+                "Add a main-track video clip before applying stickers.",
+                color = androidx.compose.ui.graphics.Color(0xFFFFB86B),
+                fontSize = 10.sp
+            )
+        }
 
         // Category tabs
         LazyRow(
@@ -270,6 +279,7 @@ fun StickerPanel(
                         StickerCell(
                             entry = entry,
                             imageCache = imageCache,
+                            enabled = canAddStickers,
                             onClick = { onAddSticker(entry.assetUri, entry.category, entry.name) }
                         )
                     }
@@ -298,6 +308,7 @@ fun StickerPanel(
 private fun StickerCell(
     entry: StickerEntry,
     imageCache: StickerImageCache,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
     var bitmap by remember(entry.id) { mutableStateOf<Bitmap?>(null) }
@@ -317,7 +328,7 @@ private fun StickerCell(
             .clip(RoundedCornerShape(10.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                        .then(if (bitmap != null) Modifier.clickable { onClick() } else Modifier),
+                        .then(if (bitmap != null && enabled) Modifier.clickable { onClick() } else Modifier),
         contentAlignment = Alignment.Center
     ) {
         val bmp = bitmap

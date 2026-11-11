@@ -7,7 +7,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
@@ -115,7 +114,8 @@ class TextPanelModerationTest {
 
         compose.onNodeWithTag("text-quick-guide").assertIsDisplayed()
         compose.onNodeWithText("2 · Add your words").assertIsDisplayed()
-        compose.onNodeWithTag("text-empty-add").performScrollTo().performClick()
+        compose.onNodeWithTag("text-empty-add").performScrollTo().assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(1, addCalls) }
     }
 
@@ -131,7 +131,9 @@ class TextPanelModerationTest {
 
         compose.onNodeWithTag("text-starter-gallery").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("text-card-swipe-hint").assertExists()
-        compose.onNodeWithTag("text-starter-style-${starter.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("text-starter-style-${starter.id}")
+            .performScrollTo().assertIsDisplayed()
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(starter.id, applied?.id) }
     }
 

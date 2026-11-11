@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -413,10 +414,21 @@ fun TextPanel(
             Text("Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it.",
                 color = ApexPalette.TextSecondary, fontSize = 11.sp, lineHeight = 15.sp,
                 modifier = Modifier.padding(vertical = 8.dp))
-            Button(onClick = onAdd, modifier = Modifier.fillMaxWidth().testTag("text-empty-add")) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Add text to video")
+            Box(
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.NeonCyan)
+                    .clickable(role = Role.Button, onClick = onAdd)
+                    .testTag("text-empty-add")
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF0A0E1A))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add text to video", color = Color(0xFF0A0E1A), fontWeight = FontWeight.SemiBold)
+                }
             }
             return@Column
         }
@@ -1286,9 +1298,11 @@ fun TextPanel(
                     modifier = Modifier.fillMaxWidth()
                 )
                 val matchingDesignMotions = TextDesignMotionPack.search(designMotionQuery)
+                Text("Swipe samples sideways to browse; tap a preview to apply it.",
+                    color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    modifier = Modifier.fillMaxWidth().height(76.dp)
+                    modifier = Modifier.fillMaxWidth().height(76.dp).testTag("text-design-motion-results")
                 ) {
                     items(matchingDesignMotions, key = { it.id }) { preset ->
                         val current = selected.presetId == preset.id
@@ -1405,12 +1419,12 @@ private fun TextPresetSampleCard(
             .clip(RoundedCornerShape(9.dp))
             .background(cardBackground)
             .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
                 this.selected = isSelected
                 contentDescription = "${preset.name} preview; tap to apply this style"
             }
-            .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1444,12 +1458,12 @@ private fun TextDesignMotionSampleCard(
             .clip(RoundedCornerShape(9.dp))
             .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
             .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
                 this.selected = isSelected
                 contentDescription = "${preset.designName} style with ${preset.motionName} motion; tap to apply"
             }
-            .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalArrangement = Arrangement.Center
     ) {

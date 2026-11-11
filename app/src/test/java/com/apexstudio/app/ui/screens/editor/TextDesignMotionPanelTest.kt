@@ -38,7 +38,7 @@ class TextDesignMotionPanelTest {
         compose.onNode(hasSetTextAction())
             .performScrollTo()
             .performTextInput("amber typewriter")
-        compose.onNodeWithText("Amber Frame").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Amber Frame · Typewriter").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertNotNull(chosen)
             assertEquals("TYPEWRITER", chosen!!.animationType)

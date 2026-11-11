@@ -115,7 +115,7 @@ class TextPanelModerationTest {
 
         compose.onNodeWithTag("text-quick-guide").assertIsDisplayed()
         compose.onNodeWithText("2 · Add your words").assertIsDisplayed()
-        compose.onNodeWithTag("text-empty-add").performClick()
+        compose.onNodeWithTag("text-empty-add").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, addCalls) }
     }
 

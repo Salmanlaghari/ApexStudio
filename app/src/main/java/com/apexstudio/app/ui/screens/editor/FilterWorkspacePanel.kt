@@ -589,8 +589,6 @@ internal fun FilterWorkspacePanel(
                                 modifier = Modifier.testTag("filter-remove")
                             ) { Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground) }
                         }
-                        state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                            ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
                 }
 
@@ -643,6 +641,8 @@ internal fun FilterWorkspacePanel(
             }
 
             // Pinned cancellation and commit actions remain visible while cards scroll.
+            state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { onPreviewClip(originalClip); onDismiss() }, modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                 Button(

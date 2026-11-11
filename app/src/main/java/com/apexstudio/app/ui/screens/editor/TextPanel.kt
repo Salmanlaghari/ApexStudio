@@ -1405,12 +1405,12 @@ private fun TextPresetSampleCard(
             .clip(RoundedCornerShape(9.dp))
             .background(cardBackground)
             .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
                 this.selected = isSelected
                 contentDescription = "${preset.name} preview; tap to apply this style"
             }
+            .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -1444,12 +1444,12 @@ private fun TextDesignMotionSampleCard(
             .clip(RoundedCornerShape(9.dp))
             .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
             .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
                 this.selected = isSelected
                 contentDescription = "${preset.designName} style with ${preset.motionName} motion; tap to apply"
             }
+            .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 5.dp),
         verticalArrangement = Arrangement.Center
     ) {

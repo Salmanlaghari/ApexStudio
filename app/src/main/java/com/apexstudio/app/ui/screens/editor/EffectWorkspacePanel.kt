@@ -473,15 +473,15 @@ internal fun EffectWorkspacePanel(
                             WorkspaceCategory.VISUAL -> "Tap a preset for the selected range, or hold a preset during playback and release to mark its range. Procedural GLSL, not AI."
                             WorkspaceCategory.TRANSITIONS -> "Transitions are chosen at clip junctions. The transition picker discloses current playback/export limits."
                         }, fontSize = 10.sp, lineHeight = 13.sp, color = EditorPalette.TextSecondary)
-                        targetReason?.let { Text(it, color = EditorPalette.Warning, fontSize = 10.sp) }
-                            ?: editorState.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp) }
-                            ?: editorState.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp) }
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                 }
             }
 
             // Cancel and Apply remain reachable regardless of the active horizontal card.
+            targetReason?.let { Text(it, color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }
+                ?: editorState.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }
+                ?: editorState.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }
             Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { renderJob?.cancel(); resetPreview(); onDismiss() }, modifier = Modifier.testTag("workspace-cancel")) { Text("Cancel", color = foreground) }
                 Button(enabled = targetReason == null && editorState.playerError == null && !busy && heldEffectStart == null && (visualId != null || rendered != null), onClick = {

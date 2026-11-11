@@ -152,8 +152,8 @@ class EffectWorkspacePanelTest {
         }
         choosePreset("Monochrome")
         compose.runOnIdle { vm._state.value = vm.state.value.copy(previewOnlyError = "Transition preview unavailable") }
-        compose.onNodeWithText("Apply").assertIsEnabled().performClick()
         compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
+        compose.onNodeWithText("Apply").assertIsEnabled().performClick()
         compose.runOnIdle {
             val savedProject = vm.state.value.project!!
             val saved = savedProject.clips.single()

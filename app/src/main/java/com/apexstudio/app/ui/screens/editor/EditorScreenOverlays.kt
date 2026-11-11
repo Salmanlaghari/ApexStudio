@@ -215,7 +215,8 @@ fun GpuFilterPanelOverlay(
                 onApplyToAllClips = { vm.applyGpuFilterToAllClips() },
                 onReset = { vm.resetGpuFilter() },
                 onClose = { vm.closeGpuFilterPanel() },
-                onApplyOneTapLook = { vm.applyGpuFilterProfilePreset(it) }
+                onApplyOneTapLook = { vm.applyGpuFilterProfilePreset(it) },
+                onRefreshLutThumbnails = { vm.refreshFilterThumbnailsFromVideo(force = true) }
             )
         }
     }

@@ -327,6 +327,7 @@ object PackManager {
     /** Delete a pack's files and registry entry. */
     fun delete(context: Context, packId: String) {
         val appContext = context.applicationContext
+        val wasFilterPack = _packsState.value.any { it.pack.id == packId && it.pack.category == "filters" }
         cancel(appContext, packId)
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -335,6 +336,10 @@ object PackManager {
                 writeRegistry(appContext, reg.copy(packs = reg.packs - packId))
             }
             updateItem(packId) { it.copy(state = PackState.NotDownloaded) }
+            if (wasFilterPack) {
+                runCatching { DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(appContext) }
+                    .onFailure { Log.w(TAG, "Filter registry refresh after pack deletion failed", it) }
+            }
         }
     }
 

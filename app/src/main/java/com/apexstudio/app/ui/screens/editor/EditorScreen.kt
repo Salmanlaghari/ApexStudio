@@ -151,6 +151,7 @@ private fun EditorScreenContent(
     val mediaPicker = remember { MediaPickerHelper(context) }
     val mediaImportProgress by mediaPicker.importProgress.collectAsStateWithLifecycle()
     val filterEngine = remember { LutFilterEngine(context) }
+    val downloadedFilterRegistryVersion by com.apexstudio.app.data.filter.FilterManifest.downloadedRegistryVersion.collectAsStateWithLifecycle()
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var transitionPreviewPlayer by remember(projectId) { mutableStateOf<CompositionPlayer?>(null) }
     var transitionPreviewReady by remember(projectId) { mutableStateOf(false) }
@@ -625,7 +626,7 @@ private fun EditorScreenContent(
             )
     }
 
-    val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts) {
+    val activePreset: com.apexstudio.app.data.filter.FilterPreset? = remember(state.activeFilterId, state.customImportedLuts, downloadedFilterRegistryVersion) {
         state.activeFilterId?.let { id ->
             filterEngine.manifest.filters.firstOrNull { it.id == id }
                 ?: state.customImportedLuts.firstOrNull { it.id == id }
@@ -654,6 +655,7 @@ private fun EditorScreenContent(
 
     val currentEffects = remember(
         activePreset,
+        downloadedFilterRegistryVersion,
         previewGpuFilterStageConfig,
         state.gpuFilterCompareMode,
         state.lutCompareMode,

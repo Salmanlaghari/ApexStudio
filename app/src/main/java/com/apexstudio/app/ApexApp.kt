@@ -6,6 +6,11 @@ import android.util.Log
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.crashlog.CrashLog
 import com.apexstudio.app.data.filter.FilterManifest
+import com.apexstudio.app.data.packs.download.DownloadedPacks
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.io.PrintWriter
@@ -16,6 +21,7 @@ import java.util.Locale
 
 class ApexApp : Application() {
     val isDebug: Boolean = true
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
@@ -28,6 +34,17 @@ class ApexApp : Application() {
         // Scan bundled LUTs so FilterManifest.presetById() resolves template filters.
         // initialize() handles its own exceptions internally.
         FilterManifest.initialize(this)
+        // Rehydrate installed downloadable LUTs without delaying the first editor frame.
+        appScope.launch {
+            runCatching {
+                val cachedCatalog = com.apexstudio.app.data.packs.download.PackManifestRepo
+                    .readCachedManifest(this@ApexApp)
+                if (cachedCatalog != null) {
+                    DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(this@ApexApp, cachedCatalog)
+                }
+            }
+                .onFailure { Log.w("ApexApp", "Installed filter packs could not be loaded", it) }
+        }
 
         // A leftover breadcrumb is useful context, but cannot prove a native crash.
         val marker = CrashMarker.readAndConsume(this)

@@ -1,0 +1,310 @@
+{
+  "generatedAtIndependentOfWallClock": true,
+  "outputDirectory": "packs/filter-source (source generator); output files are generated into a caller-selected directory",
+  "count": 30,
+  "lut3DSize": 17,
+  "perFileValidation": {
+    "everyFile": {
+      "dataTriples": 4913,
+      "finite": true,
+      "inRange": true,
+      "nonIdentity": true
+    },
+    "distinctSampleGridSignatures": 30
+  },
+  "files": [
+    {
+      "id": "amber-drift",
+      "name": "Amber Drift",
+      "category": "warm",
+      "file": "amber-drift.cube",
+      "sizeBytes": 177061,
+      "sha256": "693ec3f31aad087b4141cf24241f552c8e888efac6c4f91dd980a045f55bb83f"
+    },
+    {
+      "id": "apricot-haze",
+      "name": "Apricot Haze",
+      "category": "warm",
+      "file": "apricot-haze.cube",
+      "sizeBytes": 177063,
+      "sha256": "c2b3fd7ab37602e0beb1a82465916a1561ff4c62b02d7ffb15b11aadfb0690a1"
+    },
+    {
+      "id": "copper-glow",
+      "name": "Copper Glow",
+      "category": "warm",
+      "file": "copper-glow.cube",
+      "sizeBytes": 177061,
+      "sha256": "b33645cf2b25c298afdf5909a06fec1171d01fe9279c69397e0e7bb826701531"
+    },
+    {
+      "id": "sunlit-clay",
+      "name": "Sunlit Clay",
+      "category": "warm",
+      "file": "sunlit-clay.cube",
+      "sizeBytes": 177061,
+      "sha256": "c0efd4cc117b23a7842d2b28c785cf680b41fc8a338f39f827e81f2801ee7762"
+    },
+    {
+      "id": "rosewood-air",
+      "name": "Rosewood Air",
+      "category": "warm",
+      "file": "rosewood-air.cube",
+      "sizeBytes": 177063,
+      "sha256": "d1b808f4860a08fb333d392112ba0f6abfe945a4c6ca803d1ca526d313036e67"
+    },
+    {
+      "id": "cinder-bloom",
+      "name": "Cinder Bloom",
+      "category": "warm",
+      "file": "cinder-bloom.cube",
+      "sizeBytes": 177063,
+      "sha256": "7a8f6e5f1dbc5c1811234b60f23ece34e85b1b169194267744463fc47ecf57ef"
+    },
+    {
+      "id": "moss-window",
+      "name": "Moss Window",
+      "category": "nature",
+      "file": "moss-window.cube",
+      "sizeBytes": 177063,
+      "sha256": "61cb8f403bbf24b2453fad052876e72a8eed64b5a075cfae80114f2597e28972"
+    },
+    {
+      "id": "fern-shadow",
+      "name": "Fern Shadow",
+      "category": "nature",
+      "file": "fern-shadow.cube",
+      "sizeBytes": 177063,
+      "sha256": "d9e3640308707250d1d059ff2c7a5dc4042e584c5bdb8fd42894198043febf10"
+    },
+    {
+      "id": "olive-mist",
+      "name": "Olive Mist",
+      "category": "nature",
+      "file": "olive-mist.cube",
+      "sizeBytes": 177061,
+      "sha256": "f4777a73ccd1acd58f390fe1b6930aa7a4b7c4637fd9a533c5f554926b5fbbdb"
+    },
+    {
+      "id": "pine-afterglow",
+      "name": "Pine Afterglow",
+      "category": "nature",
+      "file": "pine-afterglow.cube",
+      "sizeBytes": 177069,
+      "sha256": "cf31d861c11861dc3c2c925b99d33ae7ad27856fc593d4cf074d3c2002d8d4e3"
+    },
+    {
+      "id": "meadow-fade",
+      "name": "Meadow Fade",
+      "category": "nature",
+      "file": "meadow-fade.cube",
+      "sizeBytes": 177063,
+      "sha256": "fc9d8fc0e218e4f593be81d67d0d09221fec5e8c237f2eb21b09d585c5b4d95a"
+    },
+    {
+      "id": "sage-current",
+      "name": "Sage Current",
+      "category": "nature",
+      "file": "sage-current.cube",
+      "sizeBytes": 177065,
+      "sha256": "dd2160631e2494be2279bd0962490a9799b29c3a09532b0e35cdf56a166ab4cf"
+    },
+    {
+      "id": "coastal-glass",
+      "name": "Coastal Glass",
+      "category": "cool",
+      "file": "coastal-glass.cube",
+      "sizeBytes": 177065,
+      "sha256": "198bb6ce25fb1ea2077fe619d205bff8fab9d8f61705cbd954786cb11a3d2be9"
+    },
+    {
+      "id": "blue-hour",
+      "name": "Blue Hour",
+      "category": "cool",
+      "file": "blue-hour.cube",
+      "sizeBytes": 177057,
+      "sha256": "1e886d3d0778caeaaa7c4290ba40dda19c58d05995e28ebfbc8fa6cafe595a96"
+    },
+    {
+      "id": "ink-tide",
+      "name": "Ink Tide",
+      "category": "cool",
+      "file": "ink-tide.cube",
+      "sizeBytes": 177055,
+      "sha256": "428199a5f0cc00867aaa2a2524f05139b429992be346491713fb2e4be0f44137"
+    },
+    {
+      "id": "violet-slate",
+      "name": "Violet Slate",
+      "category": "cool",
+      "file": "violet-slate.cube",
+      "sizeBytes": 177063,
+      "sha256": "22fe52a8c00a3d140d2553ad012d1d8b09b9c9f37e2eb43a5539073c22bea90e"
+    },
+    {
+      "id": "frosted-lagoon",
+      "name": "Frosted Lagoon",
+      "category": "cool",
+      "file": "frosted-lagoon.cube",
+      "sizeBytes": 177067,
+      "sha256": "6e6792eebb9893260096b0197a9272640533017aeaa5969807014b11bea9aabd"
+    },
+    {
+      "id": "plum-current",
+      "name": "Plum Current",
+      "category": "cool",
+      "file": "plum-current.cube",
+      "sizeBytes": 177063,
+      "sha256": "da79ae6926296ccf5e9123a926604be1d72fd6c1961dcc37a247a6d5d3a94853"
+    },
+    {
+      "id": "chalk-soft",
+      "name": "Chalk Soft",
+      "category": "mono",
+      "file": "chalk-soft.cube",
+      "sizeBytes": 177059,
+      "sha256": "5139e2191755b851ad646b0e7eb6c03c1ee1a51c350caca3685e44168d29a52d"
+    },
+    {
+      "id": "silver-paper",
+      "name": "Silver Paper",
+      "category": "mono",
+      "file": "silver-paper.cube",
+      "sizeBytes": 177063,
+      "sha256": "fc9a86512107caeca0d2be725f6ad6ac3bad3fb32286337199d65d955ce0c777"
+    },
+    {
+      "id": "graphite-air",
+      "name": "Graphite Air",
+      "category": "mono",
+      "file": "graphite-air.cube",
+      "sizeBytes": 177063,
+      "sha256": "79de6e1c6876df359faa120858a2f4a903255a4ba91786c10948c82b724cf2c3"
+    },
+    {
+      "id": "pearl-shadow",
+      "name": "Pearl Shadow",
+      "category": "mono",
+      "file": "pearl-shadow.cube",
+      "sizeBytes": 177063,
+      "sha256": "075fc6423d75c72425ede6e71e2d01488630de6101e341276a322c0a583df983"
+    },
+    {
+      "id": "charcoal-lift",
+      "name": "Charcoal Lift",
+      "category": "mono",
+      "file": "charcoal-lift.cube",
+      "sizeBytes": 177065,
+      "sha256": "b6a7d779be16adee60fb2fd626bee3ce2e91f93f5c50e746292052cd14163592"
+    },
+    {
+      "id": "linen-gray",
+      "name": "Linen Gray",
+      "category": "mono",
+      "file": "linen-gray.cube",
+      "sizeBytes": 177059,
+      "sha256": "a27a1a554ada1d6623891af2ce815af4eb6289255fc086bc9ba9ab0015a2221e"
+    },
+    {
+      "id": "pastel-pulse",
+      "name": "Pastel Pulse",
+      "category": "creative",
+      "file": "pastel-pulse.cube",
+      "sizeBytes": 177067,
+      "sha256": "8209bf4745521736d06141852c69d71e11f1528e7611461dbb73e1738924382a"
+    },
+    {
+      "id": "citrus-echo",
+      "name": "Citrus Echo",
+      "category": "creative",
+      "file": "citrus-echo.cube",
+      "sizeBytes": 177065,
+      "sha256": "7fad75d94c087eb21b6715fde6fffab78209d20ed2fd2387f040eb069eefbe33"
+    },
+    {
+      "id": "berry-film",
+      "name": "Berry Film",
+      "category": "creative",
+      "file": "berry-film.cube",
+      "sizeBytes": 177063,
+      "sha256": "7ce078ad2120903b1ac6714cd34234881766298b5c73a00ab8bc547983b38cf1"
+    },
+    {
+      "id": "teal-coral",
+      "name": "Teal Coral",
+      "category": "creative",
+      "file": "teal-coral.cube",
+      "sizeBytes": 177063,
+      "sha256": "18511d3e1c2693d216e2918c1461ee2634205bb960a656396eb16d5b2200659f"
+    },
+    {
+      "id": "violet-sun",
+      "name": "Violet Sun",
+      "category": "creative",
+      "file": "violet-sun.cube",
+      "sizeBytes": 177063,
+      "sha256": "f4d6c981846c5c764b1e5ce02c393654f57bb8353a4563b6017b7d91d8cb8c2b"
+    },
+    {
+      "id": "quiet-neon",
+      "name": "Quiet Neon",
+      "category": "creative",
+      "file": "quiet-neon.cube",
+      "sizeBytes": 177063,
+      "sha256": "9c4581fdda193530a00896e45e9056f4a1c2e5efa904d6dfa05c9f434bd597fb"
+    }
+  ],
+  "archive": {
+    "path": "apexstudio-lut-filters-vol-01.zip",
+    "sizeBytes": 2214440,
+    "sha256": "16c512815214a62519d6080e31b9dea926769572b31514f2fff6ef14b84b8094",
+    "memberCount": 31,
+    "members": [
+      "manifest.json",
+      "amber-drift.cube",
+      "apricot-haze.cube",
+      "copper-glow.cube",
+      "sunlit-clay.cube",
+      "rosewood-air.cube",
+      "cinder-bloom.cube",
+      "moss-window.cube",
+      "fern-shadow.cube",
+      "olive-mist.cube",
+      "pine-afterglow.cube",
+      "meadow-fade.cube",
+      "sage-current.cube",
+      "coastal-glass.cube",
+      "blue-hour.cube",
+      "ink-tide.cube",
+      "violet-slate.cube",
+      "frosted-lagoon.cube",
+      "plum-current.cube",
+      "chalk-soft.cube",
+      "silver-paper.cube",
+      "graphite-air.cube",
+      "pearl-shadow.cube",
+      "charcoal-lift.cube",
+      "linen-gray.cube",
+      "pastel-pulse.cube",
+      "citrus-echo.cube",
+      "berry-film.cube",
+      "teal-coral.cube",
+      "violet-sun.cube",
+      "quiet-neon.cube"
+    ],
+    "safeMemberPaths": true
+  },
+  "deterministicGenerationInstructions": [
+    "Run: python3 generate_luts.py [OUTPUT_DIRECTORY] (defaults to ./generated)",
+    "The generator uses only Python standard-library math, json, hashlib, pathlib, and zipfile.",
+    "It enumerates RGB samples in blue-major, green-middle, red-minor order for LUT_3D_SIZE 17 (17^3 = 4913 triples).",
+    "Each transform applies explicit exposure, smoothstep toe shaping, contrast, luminance-based saturation, index-seeded channel cross-talk, category palette biases, and bounded creative modulation; all output channels are clipped to [0,1].",
+    "No network access, third-party files, brand/vendor LUTs, timestamps, or random sources are used."
+  ],
+  "validation": {
+    "allPassed": true,
+    "issues": [],
+    "archiveMembersSafe": true,
+    "archiveMembersExact": true
+  }
+}

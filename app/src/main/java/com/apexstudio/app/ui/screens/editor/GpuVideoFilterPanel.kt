@@ -64,10 +64,47 @@ fun GpuVideoFilterPanel(
     onReset: () -> Unit,
     onClose: () -> Unit,
     onApplyOneTapLook: (String) -> Unit = {},
+    onRefreshLutThumbnails: () -> Unit = {},
+    loadPackCatalog: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     var effectCategoryFilter by remember { mutableStateOf("All") }
     val effectCategories = listOf("All", "Artistic", "Cinematic", "Retro", "Distortion", "Stylistic")
+    val packContext = LocalContext.current
+    var packsReady by remember { mutableStateOf(GpuColorProfiles.hasPackProfiles()) }
+    var dlVersion by remember { mutableIntStateOf(0) }
+    val dlPacks by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsState()
+    val downloadedFilterRegistryVersion by FilterManifest.downloadedRegistryVersion.collectAsState()
+    val panelManifest = remember(manifest, downloadedFilterRegistryVersion) {
+        FilterManifest.withDownloadedPresets(manifest)
+    }
+    LaunchedEffect(packContext, loadPackCatalog) {
+        if (!loadPackCatalog) return@LaunchedEffect
+        com.apexstudio.app.data.packs.download.PackManager.refreshSync(packContext)
+        withContext(Dispatchers.IO) {
+            com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
+            com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
+        }
+        packsReady = true
+        dlVersion++
+    }
+    val downloadedPackIds = dlPacks
+        .filter {
+            it.pack.category == "filters" &&
+                it.state == com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded
+        }
+        .map { it.pack.id }
+        .toSet()
+    LaunchedEffect(downloadedPackIds, loadPackCatalog) {
+        if (!loadPackCatalog) return@LaunchedEffect
+        if (downloadedPackIds.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
+            }
+            dlVersion++
+        }
+    }
+    LaunchedEffect(downloadedFilterRegistryVersion) { onRefreshLutThumbnails() }
 
     Column(
         modifier = modifier
@@ -462,43 +499,7 @@ fun GpuVideoFilterPanel(
                 }
             }
 
-            // Filtered Profiles List (Phase 2: includes pack profiles; PR-C: + downloaded packs).
-            // Pack profiles register async (IO thread); packsReady re-keys the
-            // cached list so pack filters appear on first panel open.
-            val packContext = LocalContext.current
-            var packsReady by remember { mutableStateOf(GpuColorProfiles.hasPackProfiles()) }
-            var dlVersion by remember { mutableStateOf(0) }
-            val dlPacks by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsState()
-            LaunchedEffect(Unit) {
-                // Await the catalog so the downloadable section below is
-                // populated before the list first renders.
-                com.apexstudio.app.data.packs.download.PackManager.refreshSync(packContext)
-                withContext(Dispatchers.IO) {
-                    com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
-                    com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
-                }
-                packsReady = true
-            }
-            // Re-register only when the SET of downloaded pack ids changes —
-            // not on every progress tick of an in-flight download.
-            // derivedStateOf emits only when the resulting set's *content*
-            // changes, so the effect below never restarts spuriously.
-            val downloadedPackIds by remember {
-                derivedStateOf {
-                    dlPacks
-                        .filter { it.state == com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded }
-                        .map { it.pack.id }
-                        .toSet()
-                }
-            }
-            LaunchedEffect(downloadedPackIds) {
-                if (downloadedPackIds.isNotEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
-                    }
-                    dlVersion++
-                }
-            }
+            // Downloaded profile and LUT catalogs are refreshed at panel scope above.
             val filteredProfiles = remember(profileCategoryFilter, packsReady, dlVersion) {
                 val all = GpuColorProfiles.ALL_WITH_DOWNLOADED
                 if (profileCategoryFilter == "All") all
@@ -911,7 +912,7 @@ fun GpuVideoFilterPanel(
                     }
 
                     // Manifest Presets
-                    manifest.filters.forEach { preset ->
+                    panelManifest.filters.forEach { preset ->
                         val isSelected = config.filterPresetId == preset.id
                         val thumb = lutThumbnails[preset.id]
                         Box(
@@ -961,6 +962,28 @@ fun GpuVideoFilterPanel(
                                 )
                             }
                         }
+                    }
+                }
+                val downloadableLutPacks = dlPacks.filter {
+                    it.pack.category == "filters" &&
+                        it.pack.payloadType == com.apexstudio.app.data.filter.DownloadedLutFilterRepository.PAYLOAD_TYPE &&
+                        it.pack.isAvailable
+                }
+                if (downloadableLutPacks.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Downloadable LUT Filters",
+                        color = ApexPalette.TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "Download once; the ${downloadableLutPacks.sumOf { it.pack.itemCount }} LUTs become available above for preview and export.",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 10.sp
+                    )
+                    downloadableLutPacks.forEach { item ->
+                        DownloadableFilterPackRow(item = item)
                     }
                 }
             }
@@ -1297,6 +1320,9 @@ private fun DownloadableFilterPackRow(
     val pack = item.pack
     // The gate: content is only usable when the pack is installed.
     val unlocked = com.apexstudio.app.data.packs.download.PackManager.requirePack(context, pack.id)
+    val itemCountLabel = pack.itemCount.takeIf { it > 0 }?.let { count ->
+        "$count ${if (pack.payloadType == com.apexstudio.app.data.filter.DownloadedLutFilterRepository.PAYLOAD_TYPE) "LUTs" else "presets"}"
+    } ?: "filter presets"
 
     Row(
         modifier = Modifier
@@ -1317,8 +1343,8 @@ private fun DownloadableFilterPackRow(
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                if (unlocked) "Downloaded — filters are in the list above"
-                else "${com.apexstudio.app.data.packs.download.PackManifestRepo.formatSize(pack.sizeBytes)} • tap Download to unlock ${pack.name}",
+                if (unlocked) "Downloaded — $itemCountLabel ready in the Filters tab"
+                else "${com.apexstudio.app.data.packs.download.PackManifestRepo.formatSize(pack.sizeBytes)} • $itemCountLabel • tap Download to unlock ${pack.name}",
                 color = ApexPalette.TextSecondary,
                 fontSize = 11.sp,
                 maxLines = 2

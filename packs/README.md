@@ -37,6 +37,7 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
       "minAppVersion": "1.0.0",  // hide pack on older app versions
       "entry": "filters.json",   // content descriptor inside the installed pack
       "itemCount": 25,            // optional count of selectable pack entries
+      "payloadType": "filter_profiles", // optional parser contract; cube_lut_v1 is verified .cube LUT content
       "status": "available | coming_soon"
       // coming_soon packs render disabled ("Coming soon") — never a dead button
     }
@@ -50,7 +51,10 @@ installing. The `entry` file is what the app reads after install (for example,
 `filters.json` in the existing `PackFilter` schema). Animated-sticker ZIPs
 contain a `manifest.json` plus 25 Lottie files; each sticker record carries its
 own byte count and SHA-256, which the sticker repository checks before the
-asset appears in the editor.
+asset appears in the editor. LUT archives use `payloadType: "cube_lut_v1"`; each
+`.cube` file is independently size/hash-checked, parsed, and validated before it
+can appear in the filter gallery. Downloaded LUTs are reverified when loaded for
+preview, sample thumbnails, and export.
 
 ## Publishing / updating packs
 

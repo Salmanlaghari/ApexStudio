@@ -12,6 +12,7 @@ import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.projectVideoTemplateBlockReason
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTemplate
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextMotion
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoEffect
@@ -31,15 +32,19 @@ fun ProjectVideoPresetsOverlay(
         }
     } }
     var feedback by remember { mutableStateOf<String?>(null) }
+    val templateBlockReason = target?.second?.let(::projectVideoTemplateBlockReason)
+    val videoEligible = target?.second?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+        it.durationMs > 0L && it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs } == true
     fun finish(applied: Boolean) {
         if (applied) onClose()
         else feedback = "Nothing changed. Select a current project video and reopen this panel."
     }
     ProjectVideoPresetsPanel(
-        eligible = target?.second?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
-            it.durationMs > 0L && it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs } == true,
+        eligible = videoEligible,
+        templateEligible = videoEligible && templateBlockReason == null,
         targetName = target?.second?.name,
         feedback = feedback,
+        templateBlockReason = templateBlockReason,
         onTextTemplate = { id -> finish(target?.let { vm.applyProjectVideoTextTemplate(it.first, it.second, id) } == true) },
         onVideoEffect = { id -> finish(target?.let { vm.applyProjectVideoEffect(it.first, it.second, id) } == true) },
         onClose = onClose,
@@ -62,7 +67,9 @@ internal fun ProjectVideoPresetsPanel(
     onClose: () -> Unit,
     onVideoTemplate: (String) -> Unit = {},
     onTextMotion: (String) -> Unit = {},
-    onLearnedUpscale: (() -> Unit)? = null
+    onLearnedUpscale: (() -> Unit)? = null,
+    templateEligible: Boolean = eligible,
+    templateBlockReason: String? = null
 ) {
     ModalBottomSheet(onDismissRequest = onClose,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -72,11 +79,16 @@ internal fun ProjectVideoPresetsPanel(
             Text("Project video tools", style = MaterialTheme.typography.titleLarge)
             Text("Fixed local editing choices; no text or prompt input. Color presets are deterministic, not AI.",
                 style = MaterialTheme.typography.bodySmall)
-            Text(if (eligible) "Selected video: $targetName" else "Select an existing main-track video clip in this project. Still images, audio and overlays are not supported.")
+            Text(if (eligible) "Selected video: $targetName"
+                else "Select an existing main-track video clip in this project. Still images, audio and overlays are not supported.")
             Text("Video Templates · Fixed Combo", style = MaterialTheme.typography.titleMedium)
-            Text("Each template applies a fixed color look and fixed title together as one undoable change.", style = MaterialTheme.typography.bodySmall)
+            Text(when {
+                templateEligible -> "Warm Story creates 3 timed shots; Cool Moment creates 4. Each applies its named look and title, and one undo restores the original clip."
+                templateBlockReason != null -> templateBlockReason
+                else -> "Select a valid main-track video to apply a montage."
+            }, style = MaterialTheme.typography.bodySmall)
             ProjectVideoPresets.videoTemplates.forEach { preset ->
-                OutlinedButton(onClick = { onVideoTemplate(preset.id) }, enabled = eligible,
+                OutlinedButton(onClick = { onVideoTemplate(preset.id) }, enabled = templateEligible,
                     modifier = Modifier.fillMaxWidth().testTag("video_template_${preset.id}")) {
                     Text(preset.label)
                 }

@@ -54,6 +54,33 @@ class ProjectVideoPresetsPanelTest {
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
     }
 
+    @Test fun unsafeMontageSourceKeepsSafeTitleAndEffectActionsEnabled() {
+        var textApplied = false
+        var effectApplied = false
+        compose.setContent { MaterialTheme {
+            ProjectVideoPresetsPanel(
+                eligible = true,
+                targetName = "Animated clip",
+                feedback = null,
+                onTextTemplate = { textApplied = true },
+                onVideoEffect = { effectApplied = true },
+                onClose = {},
+                onVideoTemplate = {},
+                templateEligible = false,
+                templateBlockReason = "Templates cannot safely split an animated source.",
+            )
+        } }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithText("Templates cannot safely split an animated source.").assertExists()
+        compose.onNodeWithTag("video_template_warm-story").assertIsNotEnabled()
+        val text = ProjectVideoPresets.textTemplates.first()
+        compose.onNodeWithTag("video_text_template_${text.id}").activateVisibleControl()
+        compose.runOnIdle { assertEquals(true, textApplied) }
+        val effect = ProjectVideoPresets.effects.first()
+        compose.onNodeWithTag("video_effect_${effect.id}").activateVisibleControl()
+        compose.runOnIdle { assertEquals(true, effectApplied) }
+    }
+
     @Test fun noVideoMeansAllPresetActionsAreDisabled() {
         compose.setContent { MaterialTheme {
             ProjectVideoPresetsPanel(false, null, null, { error("No image editing") }, { error("No image editing") }, {})

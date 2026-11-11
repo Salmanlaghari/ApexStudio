@@ -925,6 +925,21 @@ private fun EditorScreenContent(
         projectTransitionPlan.transitions.all {
             com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.transition.type)
         }
+    val transitionPreviewNotice = if (projectTransitionPlan.transitions.isNotEmpty() && !transitionPreviewEligible) {
+        com.apexstudio.app.data.export.transitionPreviewBlocker(
+            plan = projectTransitionPlan,
+            effectsRepresentable = transitionPreviewEffectsRepresentable,
+            gpuFilterCompareMode = state.gpuFilterCompareMode,
+            lutCompareMode = state.lutCompareMode,
+            activeArFilterId = state.activeArFilterId,
+            coverText = state.coverText,
+            hasSignature = state.project?.signature != null,
+            hasGlobalStickers = state.project?.stickers.orEmpty().isNotEmpty(),
+            hasGlobalDrawings = state.project?.videoDrawings.orEmpty().isNotEmpty(),
+        )?.let { com.apexstudio.app.data.export.transitionPreviewBlockerMessage(it) }
+            ?.plus(" Whole-project export still includes saved transitions.")
+            ?: "The full transition preview is unavailable for this project. Whole-project export still includes saved transitions."
+    } else null
     LaunchedEffect(projectId, previewPlaybackSuspended, transitionPreviewEligible) {
         if (previewPlaybackSuspended || !transitionPreviewEligible) {
             transitionPreviewPlayer = null
@@ -1357,6 +1372,7 @@ private fun EditorScreenContent(
             exoPlayer = exoPlayer,
             previewPlayer = activePreviewPlayer,
             isTransitionPreview = transitionPreviewReady,
+            transitionPreviewNotice = transitionPreviewNotice,
             isCoverMode = isCoverMode,
             isTimelineFocusMode = isTimelineFocusMode,
             isFullscreenPreview = state.isFullscreenPreview,

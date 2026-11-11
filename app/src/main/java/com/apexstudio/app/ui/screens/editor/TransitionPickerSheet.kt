@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -44,6 +45,8 @@ import kotlin.math.PI
 import kotlin.math.atan2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import androidx.media3.common.Player
 
 /**
  * Professional Video Transitions Bottom Sheet UI Component.
@@ -109,26 +112,16 @@ fun TransitionPickerSheet(
         mutableStateOf(TransitionCategory.ALL)
     }
 
-    val selectedDef = remember(selectedTypeId, packsReady, glProReady) {
-        TransitionLibrary.getById(selectedTypeId)
-            ?.takeIf { com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.id) }
-            ?: TransitionLibrary.allTransitions().firstOrNull {
-                com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(it.id)
-            }
-            ?: TransitionLibrary.allTransitions().first()
+    // The picker keeps a local draft; only the existing Apply callbacks persist it.
+    val pickerPreview = remember(fromClip, toClip, selectedTypeId, durationMs) {
+        if (selectedTypeId == "none") null else
+            com.apexstudio.app.data.export.buildBoundedTransitionPreviewSample(
+                fromClip ?: return@remember null,
+                toClip ?: return@remember null,
+                selectedTypeId,
+                durationMs
+            )
     }
-
-    // Animation progress for the live transition previewer (0f -> 1f loop)
-    val infiniteTransition = rememberInfiniteTransition(label = "TransitionLoop")
-    val previewProgress by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "progress"
-    )
 
     Column(
         modifier = modifier
@@ -207,42 +200,14 @@ fun TransitionPickerSheet(
 
         Spacer(Modifier.height(14.dp))
 
-        // Live Transition Visual Canvas Preview — uses the REAL end frame of
-        // Clip A and start frame of Clip B so the preview shows what the
-        // transition will actually look like (not gradient placeholders).
-        val context = LocalContext.current
-        var clipABitmap by remember(fromClip?.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
-        var clipBBitmap by remember(toClip?.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
-        LaunchedEffect(fromClip?.id, toClip?.id) {
-            clipABitmap = fromClip?.let { clip ->
-                try {
-                    val uri = com.apexstudio.app.data.media.MediaUriResolver
-                        .resolvePlayableUri(context, clip.uri).toString()
-                    // Last frame of Clip A (what the transition starts from)
-                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
-                        context, uri, (clip.trimEndMs - 100).coerceAtLeast(0)
-                    )
-                } catch (e: Exception) { null }
-            }
-            clipBBitmap = toClip?.let { clip ->
-                try {
-                    val uri = com.apexstudio.app.data.media.MediaUriResolver
-                        .resolvePlayableUri(context, clip.uri).toString()
-                    // First frame of Clip B (what the transition ends on)
-                    com.apexstudio.app.data.media.VideoThumbnailExtractor.extractFrame(
-                        context, uri, clip.trimStartMs
-                    )
-                } catch (e: Exception) { null }
-            }
-        }
-        TransitionLivePreview(
-            selectedType = selectedDef.id,
-            progress = previewProgress,
-            clipABitmap = clipABitmap,
-            clipBBitmap = clipBBitmap,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(110.dp)
+        // Real shader preview. The illustrative canvas below is used only when
+        // Media3 cannot build/play this sample; it is never presented as export parity.
+        PickerTransitionPreview(
+            fromClip = fromClip,
+            toClip = toClip,
+            selectedType = selectedTypeId,
+            sample = pickerPreview,
+            modifier = Modifier.fillMaxWidth().height(110.dp)
         )
 
         Spacer(Modifier.height(12.dp))
@@ -570,12 +535,103 @@ fun TransitionPickerSheet(
     }
 }
 
-/**
- * Animated real-time visual canvas demonstrating how the selected transition
- * transforms outgoing Clip A into incoming Clip B.
- */
 @Composable
-private fun TransitionLivePreview(
+private fun PickerTransitionPreview(
+    fromClip: MediaClip?,
+    toClip: MediaClip?,
+    selectedType: String,
+    sample: com.apexstudio.app.data.export.TransitionPreviewSample?,
+    modifier: Modifier,
+) {
+    val context = LocalContext.current
+    var player by remember { mutableStateOf<androidx.media3.transformer.CompositionPlayer?>(null) }
+    var ready by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(fromClip?.id, toClip?.id, selectedType, sample) {
+        player = null
+        ready = false
+        failed = false
+        if (selectedType == "none") {
+            ready = true
+            return@LaunchedEffect
+        }
+        if (sample == null || fromClip == null || toClip == null ||
+            !com.apexstudio.app.data.gl.PackedTransitionGlEffect.supportsTransitionType(selectedType)) {
+            failed = true; return@LaunchedEffect
+        }
+        var activePlayer: androidx.media3.transformer.CompositionPlayer? = null
+        try {
+            val next = com.apexstudio.app.data.export.createProjectTransitionPreviewPlayer(context)
+            activePlayer = next
+            next.volume = 0f
+            next.repeatMode = Player.REPEAT_MODE_OFF
+            next.addListener(object : Player.Listener {
+                override fun onRenderedFirstFrame() { ready = true }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    ready = false
+                    failed = true
+                }
+            })
+            val sourceEffectsByClipId = sample.plan.entries.associate { entry ->
+                entry.clip.id to com.apexstudio.app.data.effect.WorkspaceEffectGlEffect.createEffects(
+                    entry.clip.workspaceEffects,
+                    sourceTimeOffsetMs = entry.sourceStartMs
+                )
+            }
+            val composition = com.apexstudio.app.data.export.buildProjectTransitionPreviewComposition(
+                context, sample.plan, 960, 540, sourceEffectsByClipId
+            )
+            next.setComposition(composition)
+            next.prepare()
+            next.seekTo(sample.transitionWindowStartMs)
+            next.play()
+            player = next
+            while (true) {
+                delay(40)
+                if (failed) break
+                if (next.currentPosition >= sample.transitionWindowEndMs || next.playbackState == Player.STATE_ENDED) {
+                    next.seekTo(sample.transitionWindowStartMs)
+                    next.play()
+                }
+            }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ready = false
+            failed = true
+        } finally {
+            activePlayer?.runCatching { pause(); release() }
+            if (player === activePlayer) player = null
+        }
+    }
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0B0E14)).border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))) {
+        when {
+            selectedType == "none" -> {
+                Row(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxHeight().background(Brush.linearGradient(listOf(Color(0xFF1E1B4B), Color(0xFF312E81)))))
+                    Box(Modifier.weight(1f).fillMaxHeight().background(Brush.linearGradient(listOf(Color(0xFF065F46), Color(0xFF047857), Color(0xFF0E7490)))))
+                }
+                Text("No transition · hard cut", color = Color.White, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(6.dp))
+            }
+            player != null && !failed -> AndroidView(
+                factory = { ctx -> android.view.LayoutInflater.from(ctx).inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView },
+                update = { it.player = player }, modifier = Modifier.fillMaxSize()
+            )
+            failed -> {
+                IllustrativeTransitionFallback(selectedType, 0.5f, null, null, Modifier.fillMaxSize())
+                Text("Illustrative fallback · real shader preview unavailable", color = Color(0xFFFFD98A), fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
+            }
+            else -> Unit
+        }
+        if (!ready && !failed) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.65f)), contentAlignment=Alignment.Center) {
+            Column(horizontalAlignment=Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.size(22.dp), color=ApexPalette.NeonCyan, strokeWidth=2.dp); Text("Loading real shader preview…", color=Color.White, fontSize=10.sp) }
+        }
+    }
+}
+
+/** Explicitly labelled illustrative fallback used only when real shader playback is unavailable. */
+@Composable
+private fun IllustrativeTransitionFallback(
     selectedType: String,
     progress: Float,
     clipABitmap: android.graphics.Bitmap?,
@@ -593,9 +649,7 @@ private fun TransitionLivePreview(
             val h = size.height
             val p = progress.coerceIn(0f, 1f)
 
-            // Real clip frames (fall back to gradients while loading).
-            // Clip A = last frame of the outgoing clip, Clip B = first frame
-            // of the incoming clip — so the preview shows the ACTUAL transition.
+            // Optional source frames make the fallback understandable; this is not the export shader.
             val clipAImage = clipABitmap?.asImageBitmap()
             val clipBImage = clipBBitmap?.asImageBitmap()
             val clipABrush = Brush.linearGradient(

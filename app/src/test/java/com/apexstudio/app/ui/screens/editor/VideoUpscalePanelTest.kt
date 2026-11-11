@@ -29,24 +29,24 @@ class VideoUpscalePanelTest {
         compose.onNodeWithTag("cancel_project_video_upscale").assertDoesNotExist()
     }
 
-    @Test fun ownersTwoMinute59SecondSourceIsBlockedBeforeProcessing() {
+    @Test fun ownersTwoMinute59SecondSourceCanStartProcessing() {
         compose.setContent { MaterialTheme { VideoUpscalePanel(true, VideoUpscaleUiState(),
-            onApply = { error("Long source must not start") }, onCancel = {}, onClose = {},
-            sourceDurationMs = 179_000L) } }
+            onApply = {}, onCancel = {}, onClose = {}, sourceDurationMs = 179_466L) } }
         compose.mainClock.advanceTimeBy(1000)
-        compose.onNodeWithTag("video_upscale_duration_blocker").assertIsDisplayed()
-        compose.onNodeWithText("This video is 02:59 long", substring = true).assertExists()
-        compose.onNodeWithText("a timeline trim will not shorten the source", substring = true).assertExists()
-        compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
+        compose.onNodeWithTag("video_upscale_duration_blocker").assertDoesNotExist()
+        compose.onNodeWithText("5 minutes (up to 9,000 frames)", substring = true).assertExists()
+        compose.onNodeWithText("a timeline trim does not shorten the source", substring = true).assertExists()
+        compose.onNodeWithTag("apply_project_video_upscale").assertIsEnabled()
         compose.onNodeWithTag("cancel_project_video_upscale").assertDoesNotExist()
     }
 
-    @Test fun thirtySecondSourceDoesNotHaveADurationBlocker() {
+    @Test fun sourcePastFiveMinutesRemainsBlocked() {
         compose.setContent { MaterialTheme { VideoUpscalePanel(true, VideoUpscaleUiState(),
-            onApply = {}, onCancel = {}, onClose = {}, sourceDurationMs = 30_000L) } }
+            onApply = { error("Over-limit source must not start") }, onCancel = {}, onClose = {}, sourceDurationMs = 300_001L) } }
         compose.mainClock.advanceTimeBy(1000)
-        compose.onNodeWithTag("video_upscale_duration_blocker").assertDoesNotExist()
-        compose.onNodeWithTag("apply_project_video_upscale").assertIsEnabled()
+        compose.onNodeWithTag("video_upscale_duration_blocker").assertIsDisplayed()
+        compose.onNodeWithText("05:00 or shorter", substring = true).assertExists()
+        compose.onNodeWithTag("apply_project_video_upscale").assertIsNotEnabled()
     }
 
     @Test fun imageOrStaleTargetCannotStartProcessing() {

@@ -29,11 +29,11 @@ class QuickVideoPresetsOverlayTest {
     @Test fun enhanceOffersClearVideoActionAndConciseTruthfulLimits() {
         val clip = MediaClip(
             id = "video", name = "Video", uri = "file:///video.mp4",
-            durationMs = 10_000L, trimEndMs = 10_000L,
+            durationMs = 179_466L, trimEndMs = 179_466L,
         )
         val vm = EditorViewModel().also {
             it._state.value = it.state.value.copy(
-                project = Project("project", "Project", 10_000L, clips = listOf(clip)),
+                project = Project("project", "Project", 179_466L, clips = listOf(clip)),
                 selectedClipId = clip.id,
             )
         }
@@ -43,8 +43,10 @@ class QuickVideoPresetsOverlayTest {
 
         compose.onNodeWithTag("quick_enhance_espcn").assertExists().assertIsEnabled()
         compose.onNodeWithText("Create a sharper 3× version of a video in your project", substring = true).assertExists()
-        compose.onNodeWithText("Works with videos up to 640×360 (portrait up to 360×640), 30 seconds and 30 fps.", substring = true).assertExists()
+        compose.onNodeWithText("Works with videos up to 640×360 (portrait up to 360×640), 5 minutes (up to 9,000 frames) and 30 fps.", substring = true).assertExists()
         compose.onNodeWithText("Preview and export use the enhanced video; Undo restores the original.", substring = true).assertExists()
+        compose.onNodeWithTag("quick_enhance_status").assertDoesNotExist()
+        compose.onNodeWithTag("quick_enhance_espcn").assertIsEnabled()
         compose.onNodeWithText("Enhance video").assertExists()
     }
     @Test fun switchingProjectAndSelectionRetargetsTheOpenPresetPanel() {

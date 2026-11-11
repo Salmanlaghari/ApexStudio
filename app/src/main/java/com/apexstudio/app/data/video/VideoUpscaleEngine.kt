@@ -39,7 +39,7 @@ import kotlin.coroutines.coroutineContext
 object VideoUpscaleEngine {
     const val MAX_INPUT_WIDTH = 640
     const val MAX_INPUT_HEIGHT = 360
-    const val MAX_DURATION_MS = 30_000L
+    const val MAX_DURATION_MS = 5 * 60_000L
     const val SCALE = 3
     private const val MAX_OUTPUT_WIDTH = 1920
     private const val MAX_OUTPUT_HEIGHT = 1080
@@ -47,7 +47,7 @@ object VideoUpscaleEngine {
     private const val MAX_PROCESSING_MS = 30 * 60 * 1000L
     private const val MAX_AUDIO_SAMPLE_BYTES = 8 * 1024 * 1024
     private const val MAX_FPS = 30
-    private const val MAX_FRAMES = 900L
+    private const val MAX_FRAMES = 9_000L
     private const val MIME_AVC = MediaFormat.MIMETYPE_VIDEO_AVC
     private const val CODEC_TIMEOUT_US = 10_000L
     private const val IMAGE_DEADLINE_MS = 10_000L
@@ -77,7 +77,9 @@ object VideoUpscaleEngine {
         val clock = java.lang.String.format(java.util.Locale.US, "%02d:%02d", totalSeconds / 60L, totalSeconds % 60L)
         val duration = if (durationMs % 1000L == 0L) clock else clock +
             java.lang.String.format(java.util.Locale.US, ".%03d", durationMs % 1000L)
-        return "This video is $duration long. Choose a source video of 00:30 or shorter; a timeline trim will not shorten the source."
+        val maxSeconds = MAX_DURATION_MS / 1000L
+        val maximum = java.lang.String.format(java.util.Locale.US, "%02d:%02d", maxSeconds / 60L, maxSeconds % 60L)
+        return "This video is $duration long. Choose a source video of $maximum or shorter; a timeline trim will not shorten the source."
     }
 
     /** Validates practical device bounds before allocating a model session or large frame buffers. */
@@ -88,9 +90,9 @@ object VideoUpscaleEngine {
         require(landscapeOrSmallFrame || portraitOrSmallFrame) {
             "AI Video Upscale supports source frames up to 640×360 only (portrait up to 360×640)."
         }
-        require(durationMs in 1..MAX_DURATION_MS) { "AI Video Upscale supports videos up to 30 seconds." }
+        require(durationMs in 1..MAX_DURATION_MS) { "AI Video Upscale supports videos up to 5 minutes." }
         require(frameRate in 1..MAX_FPS) { "AI Video Upscale supports up to 30 frames per second." }
-        require((durationMs * frameRate + 999L) / 1000L <= MAX_FRAMES) { "Video exceeds the 900-frame processing limit." }
+        require((durationMs * frameRate + 999L) / 1000L <= MAX_FRAMES) { "Video exceeds the 9,000-frame processing limit." }
         require(rotation in setOf(0, 90, 180, 270)) { "Unsupported video rotation metadata." }
         val info = SourceInfo(width, height, durationMs, rotation, frameRate)
         require(maxOf(info.outputWidth, info.outputHeight) <= MAX_OUTPUT_WIDTH &&
@@ -359,7 +361,7 @@ object VideoUpscaleEngine {
                             } finally { image.close() }
                             drainEncoder(false)
                             frames++
-                            check(frames <= MAX_FRAMES) { "Video exceeds the 900-frame processing limit." }
+                            check(frames <= MAX_FRAMES) { "Video exceeds the 9,000-frame processing limit." }
                             val now = android.os.SystemClock.elapsedRealtime()
                             if (now - lastProgressAtMs >= 250L) {
                                 lastProgressAtMs = now

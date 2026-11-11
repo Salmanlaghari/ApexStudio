@@ -746,9 +746,18 @@ fun EditorViewModel.setStickerCrop(
 fun EditorViewModel.setStickerCutout(stickerId: String, shape: String) =
     updateSticker(stickerId) { it.copy(cutoutShape = shape) }
 
-/** Add a bundled PNG sticker from the library to the project canvas. */
+/** Add a bundled or downloaded sticker to a main-track video clip for preview and export. */
 fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: String) {
-    if (_state.value.project == null || assetPath.isBlank()) return
+    if (assetPath.isBlank()) return
+    val state = _state.value
+    val project = state.project ?: return
+    val targetClip = state.selectedClipId?.let { selectedId ->
+        project.clips.firstOrNull {
+            it.id == selectedId && it.type == com.apexstudio.app.domain.model.ClipType.VIDEO && it.trackIndex == 0
+        }
+    } ?: project.clips.firstOrNull {
+        it.type == com.apexstudio.app.domain.model.ClipType.VIDEO && it.trackIndex == 0
+    } ?: return
     pushUndo()
     val newSticker = StickerOverlay(
         symbolOrUri = "",
@@ -762,8 +771,13 @@ fun EditorViewModel.addStickerAsset(assetPath: String, name: String, category: S
     )
     _state.update { st ->
         val proj = st.project ?: return@update st
+        if (proj.clips.none { it.id == targetClip.id && it.type == com.apexstudio.app.domain.model.ClipType.VIDEO && it.trackIndex == 0 }) {
+            return@update st
+        }
         st.copy(
-            project = proj.copy(stickers = proj.stickers + newSticker),
+            project = proj.copy(clips = proj.clips.map { clip ->
+                if (clip.id == targetClip.id) clip.copy(stickers = clip.stickers + newSticker) else clip
+            }),
             selectedStickerId = newSticker.id,
             stickerPanelOpen = false
         )

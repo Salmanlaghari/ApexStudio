@@ -20,6 +20,16 @@ class ClipTimeMappingTest {
         assertEquals(-20_000L, ClipTimeMapping.outputAtProjectTime(listOf(overlay), overlay, 0L))
     }
 
+    @Test fun stickerClockIsClipRelativeAndInactiveOutsideOwnerWindow() {
+        val first = clip("first")
+        val second = clip("second", 5_000L).copy(speedMultiplier = 2f)
+        val clips = listOf(first, second)
+
+        assertEquals(250L, ClipTimeMapping.stickerOutputTimeAtProjectTime(clips, second, 10_250L))
+        assertNull(ClipTimeMapping.stickerOutputTimeAtProjectTime(clips, second, 9_999L))
+        assertNull(ClipTimeMapping.stickerOutputTimeAtProjectTime(clips, second, 12_500L))
+    }
+
     @Test fun secondClipUsesItsOwnSourceNotAbsoluteProjectPlayhead() {
         val first = clip("first")
         val second = clip("second", 20_000L).copy(trimStartMs = 4_000L)

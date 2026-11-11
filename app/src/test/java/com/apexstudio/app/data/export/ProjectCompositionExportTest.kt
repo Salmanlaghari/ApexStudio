@@ -190,6 +190,18 @@ class ProjectCompositionExportTest {
             emoji.sizeScale,
             0f
         )
+
+        val downloadedSticker = StickerOverlay(
+            id = "downloaded-lottie",
+            symbolOrUri = "stickerpack://animated-stickers-vol-01/aps-001-love-01.json",
+            assetPath = "stickerpack://animated-stickers-vol-01/aps-001-love-01.json",
+            category = "Love",
+            name = "Heartbeat",
+            startMs = 0L,
+            endMs = 2_000L
+        )
+        val downloadedStickerClip = source.copy(stickers = source.stickers + downloadedSticker)
+        assertNull(projectCompositionUnsupportedReason(listOf(downloadedStickerClip), ExportEngine.ExportConfig()))
     }
 
     @Test

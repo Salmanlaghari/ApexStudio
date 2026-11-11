@@ -1,0 +1,45 @@
+{
+  "total_stickers": 100,
+  "category_distribution": {
+    "Love": 10,
+    "Party": 10,
+    "Nature": 10,
+    "Animals": 10,
+    "Food": 10,
+    "Travel": 10,
+    "Sports": 10,
+    "Reactions": 10,
+    "Symbols": 10,
+    "Tech": 10
+  },
+  "unique_motif_keys": 100,
+  "unique_normalized_geometry_signatures": 100,
+  "uncompressed_sticker_bytes": 680576,
+  "compressed_zip_bytes": 109116,
+  "packs": [
+    {
+      "pack": 1,
+      "files": 25,
+      "zip_bytes": 27820,
+      "sha256": "34cb5c563f6078e706ed064fdfc8676a1d99e44f8cc713f0548945d437151416"
+    },
+    {
+      "pack": 2,
+      "files": 25,
+      "zip_bytes": 28707,
+      "sha256": "fcfeb9986bb54ee9edf0bbf217826bb11b6d2d4442a5947b4e16776a362c7f1e"
+    },
+    {
+      "pack": 3,
+      "files": 25,
+      "zip_bytes": 26666,
+      "sha256": "58771ca38256620a5329dd90f1457daa4cdb00dd10b72d5e660added69114a93"
+    },
+    {
+      "pack": 4,
+      "files": 25,
+      "zip_bytes": 25923,
+      "sha256": "5067c1e4b97fca16fed2cfcb98291334dbb78be4eaddab0f5b4ad593f98aa302"
+    }
+  ]
+}

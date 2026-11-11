@@ -46,28 +46,39 @@ class EditorChallengeControllerTest {
         assertEquals(before, vm.state.value.project)
         assertTrue(vm.undoStack.isEmpty())
     }
-    @Test fun bundledStickerInsertionPreservesMetadataAndHistory() {
+    @Test fun stickerAssetsAttachToSelectedVideoClipAndPreserveHistory() {
         val vm = editor()
         val before = vm.state.value.project!!
         vm.addStickerAsset(assetPath = "stickers/star.png", name = "Star", category = "Shapes")
-        val sticker = vm.state.value.project!!.stickers.single()
+        val after = vm.state.value.project!!
+        val sticker = after.clips.single().stickers.single()
         assertEquals("Star", sticker.name)
         assertEquals("Shapes", sticker.category)
         assertEquals("stickers/star.png", sticker.assetPath)
+        assertTrue("new stickers must be clip-local so project export can include them", after.stickers.isEmpty())
         assertEquals(before, vm.undoStack.single().project)
         vm.undo()
         assertEquals(before, vm.state.value.project)
+    }
+
+    @Test fun stickerInsertionWithoutMainVideoDoesNotCreateAnUnexportableOverlay() {
+        val vm = editor()
+        val before = vm.state.value.project!!.copy(clips = emptyList())
+        vm._state.value = vm.state.value.copy(project = before, selectedClipId = null)
+        vm.addStickerAsset(assetPath = "stickerpack://test/sticker.json", name = "Test", category = "love")
+        assertEquals(before, vm.state.value.project)
+        assertTrue(vm.undoStack.isEmpty())
     }
 
     @Test fun deletingStickerIsUndoableAndMissingIdDoesNotPolluteHistory() {
         val vm = editor()
         vm.addStickerAsset(assetPath = "stickers/star.png", name = "Star", category = "Shapes")
         val beforeDelete = vm.state.value.project!!
-        val sticker = beforeDelete.stickers.single()
+        val sticker = beforeDelete.clips.single().stickers.single()
         vm.removeSticker("missing")
         assertEquals(1, vm.undoStack.size)
         vm.removeSticker(sticker.id)
-        assertTrue(vm.state.value.project!!.stickers.isEmpty())
+        assertTrue(vm.state.value.project!!.clips.single().stickers.isEmpty())
         assertEquals(2, vm.undoStack.size)
         vm.undo()
         assertEquals(beforeDelete, vm.state.value.project)

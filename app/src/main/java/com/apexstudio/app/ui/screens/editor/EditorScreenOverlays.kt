@@ -815,6 +815,11 @@ fun StickerPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.stickerPanelOpen) return
+    val targetVideoClip = state.project?.let { project ->
+        project.clips.firstOrNull {
+            it.id == state.selectedClipId && it.type == ClipType.VIDEO && it.trackIndex == 0
+        } ?: project.clips.firstOrNull { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+    }
     val selectedSticker = state.project?.let { project ->
         (project.stickers + project.clips.flatMap { it.stickers })
             .firstOrNull { it.id == state.selectedStickerId }
@@ -831,7 +836,10 @@ fun StickerPanelOverlay(
                 onAddSticker = { assetPath, cat, name -> vm.addStickerAsset(assetPath = assetPath, category = cat, name = name) },
                 onClose = { vm.closeStickerPanel() },
                 selectedSticker = selectedSticker,
-                totalTimelineMs = state.durationMs,
+                totalTimelineMs = targetVideoClip?.let {
+                    com.apexstudio.app.domain.model.ClipTimeMapping.mainClipDurationMs(it)
+                } ?: state.durationMs,
+                canAddStickers = targetVideoClip != null,
                 onUpdateSticker = { updated -> vm.updateStickerProperties(updated.id) { updated } },
                 onDuplicate = { id -> vm.duplicateSticker(id) },
                 onDelete = { id -> vm.removeSticker(id) }
@@ -1589,8 +1597,19 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             }
         }
 
+    val stickerOwnerClip = if (isTransitionPreview) null else
+        selectedClip?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+            ?: state.project?.clips?.firstOrNull { it.type == ClipType.VIDEO && it.trackIndex == 0 }
     val stickers = if (isTransitionPreview) emptyList() else
-        (state.project?.stickers ?: emptyList()) + (selectedClip?.stickers ?: emptyList())
+        state.project?.stickers.orEmpty() + stickerOwnerClip?.stickers.orEmpty()
+    val stickerTimeMsById = buildMap {
+        stickerOwnerClip?.let { owner ->
+            val previewTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.stickerOutputTimeAtProjectTime(
+                state.project?.clips.orEmpty(), owner, state.currentTimeMs
+            ) ?: -1L
+            owner.stickers.forEach { put(it.id, previewTimeMs) }
+        }
+    }
     val textOwners = previewTextOwners(mainPreviewClip, overlayClips, state.playerPositionMs)
         .let { owners -> if (isTransitionPreview) owners.filter { it?.type == ClipType.OVERLAY } else owners }
     val faceCropConfig = if (isTransitionPreview) null else
@@ -1791,7 +1810,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 onRemoveSticker = { vm.removeSticker(it) },
                 onCropSticker = { id, l, t, r, b -> vm.setStickerCrop(id, l, t, r, b) },
                 onCutoutSticker = { id, shape -> vm.setStickerCutout(id, shape) },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                stickerTimeMsById = stickerTimeMsById
             )
             }
             SignaturePreviewOverlay(
@@ -1831,7 +1851,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             )
         }
 
-        val activeTrayStickers = stickers.filter { it.isActiveAt(state.playerPositionMs) }
+        val activeTrayStickers = stickers.filter {
+            it.isActiveAt(stickerTimeMsById[it.id] ?: state.currentTimeMs)
+        }
         var stickerTrayDismissed by remember(state.project?.id, state.selectedStickerId, stickers.map { it.id }) {
             mutableStateOf(false)
         }

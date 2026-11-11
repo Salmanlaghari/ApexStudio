@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.util.Log
 import android.util.LruCache
-import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieDrawable
 
 /**
@@ -42,21 +41,16 @@ object LottieFrameCache {
     /**
      * True for sticker asset paths that are Lottie animations.
      *
-     * Recognises BOTH asset locations so every pack resolves the
-     * same way: the seven original animations under `assets/lottie/`
-     * and the 22-entry animated pack under `assets/stickers/animated/`
-     * (Bug 2 — the old prefix-only check made the new pack invisible to
-     * the canvas and to the export shader).
+     * Recognises bundled assets and the stable `stickerpack://` paths
+     * stored for verified on-demand packs. The same resolver is used by
+     * the picker, editor canvas, and export shader.
      *
      * Anything else ending in `.json` is rejected on purpose: the static
      * packs are `.webp` / `.svg` and must keep falling through to the
      * image path.
      */
-    fun isLottieAsset(assetPath: String?): Boolean {
-        if (assetPath == null || !assetPath.endsWith(".json")) return false
-        return assetPath.startsWith("lottie/") ||
-            assetPath.startsWith("stickers/animated/")
-    }
+    fun isLottieAsset(assetPath: String?): Boolean =
+        StickerAssetResolver.isLottieSticker(assetPath)
 
     /**
      * Returns the cached frame strip for [assetPath] (assets-relative, e.g.
@@ -65,10 +59,13 @@ object LottieFrameCache {
      */
     @Synchronized
     fun frames(context: Context, assetPath: String): List<Bitmap>? {
-        cache.get(assetPath)?.let { return it }
+        val resolvedCacheKey = if (StickerAssetResolver.isPackUri(assetPath)) {
+            val file = StickerAssetResolver.downloadedFile(context, assetPath) ?: return null
+            "$assetPath:${file.length()}:${file.lastModified()}"
+        } else assetPath
+        cache.get(resolvedCacheKey)?.let { return it }
         return try {
-            val result = LottieCompositionFactory.fromAssetSync(context, assetPath)
-            val composition = result.value
+            val composition = StickerAssetResolver.loadComposition(context, assetPath)
                 ?: run {
                     Log.w(TAG, "Lottie composition failed: $assetPath")
                     return null
@@ -85,7 +82,7 @@ object LottieFrameCache {
                 drawable.draw(Canvas(bmp))
                 frames += bmp
             }
-            cache.put(assetPath, frames)
+            cache.put(resolvedCacheKey, frames)
             frames
         } catch (e: Exception) {
             Log.w(TAG, "Lottie frame render failed: $assetPath", e)

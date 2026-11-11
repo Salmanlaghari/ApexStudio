@@ -1,8 +1,13 @@
 package com.apexstudio.app.data.stickers
 
 import android.content.Context
+import com.apexstudio.app.data.packs.download.PackManager
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.security.MessageDigest
 
 /**
  * A single entry of the animated sticker pack (Bug 2).
@@ -29,7 +34,13 @@ data class AnimatedStickerEntry(
     val name: String,
     val category: String,
     val tags: List<String> = emptyList(),
-    val searchHaystack: String = ""
+    val searchHaystack: String = "",
+    val packId: String? = null,
+    val bytes: Long? = null,
+    val sha256: String = "",
+    val license: String = "",
+    val source: String = "",
+    val motifKey: String = ""
 )
 
 /** Manifest as read from `animated/manifest.json`. `animations` is the data. */
@@ -42,6 +53,16 @@ private data class AnimatedStickerManifest(
     val attribution: String = "",
     val count: Int = 0,
     val animations: List<AnimatedStickerEntry> = emptyList()
+)
+
+@Serializable
+private data class DownloadedAnimatedStickerManifest(
+    val stickers: List<AnimatedStickerEntry> = emptyList()
+)
+
+data class DownloadedStickerCatalog(
+    val entries: List<AnimatedStickerEntry>,
+    val errors: List<String>
 )
 
 /**
@@ -107,7 +128,7 @@ object AnimatedStickerRepository {
      */
     fun parse(raw: String): List<AnimatedStickerEntry> = try {
         json.decodeFromString<AnimatedStickerManifest>(raw).animations
-            .filter { it.file.isNotBlank() }
+            .filter { isSafeRelativeFile(it.file) }
             .distinctBy { it.id }
             .map { entry ->
                 entry.copy(
@@ -123,8 +144,102 @@ object AnimatedStickerRepository {
         emptyList()
     }
 
-    /** `file:///android_asset/...` URI usable by `LottieCompositionSpec.Asset` callers. */
-    fun assetUri(entry: AnimatedStickerEntry): String = "$ASSET_PREFIX${entry.file}"
+    /** Parse installed ZIP manifests and expose only files whose pinned bytes/hash still match. */
+    suspend fun loadDownloaded(
+        context: Context,
+        packs: List<PackManager.PackUiItem>
+    ): DownloadedStickerCatalog = withContext(Dispatchers.IO) {
+        val entries = mutableListOf<AnimatedStickerEntry>()
+        val errors = mutableListOf<String>()
+        val ready = packs.filter {
+            it.pack.category == "stickers" &&
+                (it.state == PackManager.PackState.Downloaded ||
+                    it.state == PackManager.PackState.UpdateAvailable)
+        }
+        for (item in ready) {
+            val pack = item.pack
+            val root = PackManager.packDir(context.applicationContext, pack.id).canonicalFile
+            val manifestFile = try {
+                File(root, pack.entry).canonicalFile.takeIf {
+                    it.path.startsWith(root.path + File.separator) && it.isFile
+                }
+            } catch (_: Exception) { null }
+            if (manifestFile == null) {
+                errors += "${pack.name}: pack manifest is missing or outside the install folder."
+                continue
+            }
+            val packEntries = parseDownloaded(manifestFile.readText(), pack.id)
+            if (packEntries.isEmpty() || (pack.itemCount > 0 && packEntries.size != pack.itemCount)) {
+                errors += "${pack.name}: expected ${pack.itemCount} sticker records, found ${packEntries.size}."
+                continue
+            }
+            var invalidFiles = 0
+            packEntries.forEach { entry ->
+                val file = StickerAssetResolver.downloadedFile(context, assetUri(entry))
+                val expectedBytes = entry.bytes
+                val verified = try {
+                    file != null && expectedBytes != null && file.length() == expectedBytes &&
+                        entry.sha256.matches(Regex("^[a-f0-9]{64}$")) && sha256(file) == entry.sha256
+                } catch (_: Exception) { false }
+                if (!verified) {
+                    invalidFiles++
+                } else {
+                    entries += entry
+                }
+            }
+            if (invalidFiles > 0) {
+                errors += "${pack.name}: $invalidFiles sticker file(s) failed size/SHA-256 verification."
+            }
+        }
+        DownloadedStickerCatalog(entries, errors)
+    }
+
+    /** Parse the entry manifest inside one verified ZIP pack. */
+    fun parseDownloaded(raw: String, packId: String): List<AnimatedStickerEntry> = try {
+        json.decodeFromString<DownloadedAnimatedStickerManifest>(raw).stickers
+            .filter { entry ->
+                isSafeRelativeFile(entry.file) && entry.bytes != null &&
+                    entry.bytes > 0L && entry.sha256.matches(Regex("^[a-f0-9]{64}$"))
+            }
+            .distinctBy { it.id }
+            .map { entry ->
+                StickerAssetResolver.packUri(packId, entry.file)
+                entry.copy(
+                    category = entry.category.lowercase(),
+                    packId = packId,
+                    searchHaystack = buildString {
+                        append(entry.name.lowercase())
+                        append(' ')
+                        append(entry.category.lowercase())
+                        entry.tags.forEach { tag -> append(' '); append(tag.lowercase()) }
+                    }
+                )
+            }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** Bundled Android-asset path or stable `stickerpack://` path for an installed download. */
+    fun assetUri(entry: AnimatedStickerEntry): String = entry.packId?.let {
+        StickerAssetResolver.packUri(it, entry.file)
+    } ?: "$ASSET_PREFIX${entry.file}"
+
+    private fun isSafeRelativeFile(path: String): Boolean =
+        path.isNotBlank() && !path.startsWith('/') && '\\' !in path &&
+            path.split('/').all { it.isNotBlank() && it != "." && it != ".." }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
 
     /**
      * Category names in their first-seen manifest order — this is what

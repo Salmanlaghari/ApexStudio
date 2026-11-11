@@ -269,7 +269,9 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
         voiceAndSfx = tracks.filter { it.kind == AudioTrack.Kind.SFX },
     )
 
-/** Small in-row identity chip: it overlays the time-zero edge instead of reserving a gutter. */
+/** Fixed lane identity gutter; the time canvas starts after this rail. */
+private val TIMELINE_IDENTITY_RAIL_WIDTH = 88.dp
+
 @Composable
 private fun FixedTimelineIdentityRail(
     hasMainVideo: Boolean,
@@ -278,17 +280,18 @@ private fun FixedTimelineIdentityRail(
     hasText: Boolean,
     hasStickers: Boolean,
     hasFx: Boolean,
+    textLaneHeight: Int,
+    stickerLaneHeight: Int,
     originalAudioRows: Int,
     musicRows: Int,
     voiceRows: Int,
     railScrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
-    val railWidth = 88.dp
     val railSurface = Color(0xF2172230)
     Column(
         modifier = modifier
-            .width(railWidth)
+            .width(TIMELINE_IDENTITY_RAIL_WIDTH)
             .fillMaxHeight()
             .background(railSurface)
             .border(1.dp, Color(0xFF33445D))
@@ -321,8 +324,8 @@ private fun FixedTimelineIdentityRail(
                     TimelineLaneIdentity("V${layer + 1} · Overlay", ApexPalette.NeonCyan)
                 }
             }
-            if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = 40)
-            if (hasStickers) RailLabel("STICKER", Color(0xFFA88CFF), textLaneHeight = 40)
+            if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = textLaneHeight)
+            if (hasStickers) RailLabel("STICKER", Color(0xFFA88CFF), textLaneHeight = stickerLaneHeight)
             if (hasFx) RailLabel("FX", Color(0xFF42B9FF), textLaneHeight = 40)
             repeat(originalAudioRows) { RailLabel("A0 · Source", Color(0xFF765BDB), AUDIO_LANE_ROW_HEIGHT_DP) }
             repeat(musicRows) { RailLabel("A1 · Music", Color(0xFF47D7B2), AUDIO_LANE_ROW_HEIGHT_DP) }
@@ -971,7 +974,7 @@ fun VideoTimeline(
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
-        val viewportWidthDp = maxWidth
+        val viewportWidthDp = (maxWidth - TIMELINE_IDENTITY_RAIL_WIDTH).coerceAtLeast(1.dp)
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1041,6 +1044,7 @@ fun VideoTimeline(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(start = TIMELINE_IDENTITY_RAIL_WIDTH)
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
                         .scrollable(
@@ -1214,6 +1218,7 @@ fun VideoTimeline(
                     modifier = Modifier
                         .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
+                        .padding(start = TIMELINE_IDENTITY_RAIL_WIDTH)
                         .background(EditorPalette.BgSurface)
                         .horizontalScroll(scrollState)
                         .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
@@ -1437,6 +1442,8 @@ fun VideoTimeline(
                 hasText = textOverlays.isNotEmpty(),
                 hasStickers = stickers.isNotEmpty(),
                 hasFx = hasFx,
+                textLaneHeight = textLaneHeight,
+                stickerLaneHeight = stickerLaneHeight,
                 originalAudioRows = originalVideoAudioTracks.size,
                 musicRows = musicTracks.size,
                 voiceRows = voiceTracks.size,
@@ -1459,7 +1466,8 @@ fun VideoTimeline(
                     // Provider, not a snapshot read: reading
                     // scrollState.value here would recompose the whole
                     // timeline on every scroll frame.
-                    scrollOffsetPx = { scrollState.value.toFloat() }
+                    scrollOffsetPx = { scrollState.value.toFloat() },
+                    modifier = Modifier.offset(x = TIMELINE_IDENTITY_RAIL_WIDTH)
                 )
             }
             // NOTE: the canvas Box stays open — the Zoom HUD + multi-select

@@ -153,6 +153,9 @@ class TimelineWorkspaceLayoutTest {
     fun fixedIdentityRailStaysVisibleWhenTimeContentScrollsHorizontally() {
         composeRule.setContent { workspace(widthDp = 360, heightDp = 300, clips = listOf(clip("main", durationMs = 120_000L))) }
         composeRule.waitForIdle()
+        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val firstClipBounds = composeRule.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the first clip starts after the fixed rail instead of being obscured", firstClipBounds.left >= railBounds.right - 1f)
         val before = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
         composeRule.runOnIdle { composeRule.onNodeWithTag("timeline-test-root").fetchSemanticsNode() }
         composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput { swipe(start = Offset(300f, 14f), end = Offset(40f, 14f), durationMillis = 200) }

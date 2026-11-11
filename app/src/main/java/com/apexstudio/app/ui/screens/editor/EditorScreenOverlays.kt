@@ -1327,7 +1327,9 @@ internal fun isPreviewFrameReadyForSource(
     generationAtBind: Long,
     isImage: Boolean,
     hasPlayer: Boolean,
-): Boolean = isImage || (hasPlayer && sourceId != null && renderedSourceId == sourceId && generation > generationAtBind)
+    isTransitionFrameRendered: Boolean = false,
+): Boolean = isTransitionFrameRendered || isImage ||
+    (hasPlayer && sourceId != null && renderedSourceId == sourceId && generation > generationAtBind)
 
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
@@ -1426,6 +1428,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         generationAtBind = frameGenerationAtBind,
         isImage = mainPreviewClip?.type == ClipType.IMAGE,
         hasPlayer = previewPlayer != null,
+        // EditorScreen sets this only from the transition player's
+        // onRenderedFirstFrame callback, never from STATE_READY.
+        isTransitionFrameRendered = isTransitionPreview,
     )
     BoxWithConstraints(
         modifier = Modifier

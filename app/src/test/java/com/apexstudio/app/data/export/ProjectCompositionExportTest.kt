@@ -333,7 +333,7 @@ class ProjectCompositionExportTest {
     @Test
     fun `Color Studio grade runs through eligible project composition but malformed values block export`() {
         val grade = ColorStudioGrade(brightness = 0.1f, contrast = 1.2f,
-            shadows = ColorWheelVector(0.2f, -0.3f))
+            shadows = ColorWheelVector(0.2f, -0.3f), hdr = 0.45f, sharpness = 0.7f)
         assertNull(projectCompositionUnsupportedReason(
             listOf(clip(), clip("second")), ExportEngine.ExportConfig(colorStudioGrade = grade)
         ))
@@ -344,6 +344,9 @@ class ProjectCompositionExportTest {
             listOf(clip()), ExportEngine.ExportConfig(colorStudioGrade = grade.copy(
                 highlights = ColorWheelVector(2f, 0f)
             ))
+        )!!.contains("invalid Color Studio grade"))
+        assertTrue(projectCompositionUnsupportedReason(
+            listOf(clip()), ExportEngine.ExportConfig(colorStudioGrade = grade.copy(sharpness = 1.1f))
         )!!.contains("invalid Color Studio grade"))
     }
 

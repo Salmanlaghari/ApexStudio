@@ -10,7 +10,7 @@ import kotlin.math.*
 @Serializable
 data class ColorWheelVector(val x: Float = 0f, val y: Float = 0f)
 
-/** Standalone, non-destructive SDR color grade. No inference, prompts or generated media. */
+/** Standalone SDR grade. HDR control is a soft-shoulder tone map, not HDR mastering/output. */
 @Serializable
 data class ColorStudioGrade(
     val brightness: Float = 0f,
@@ -22,7 +22,11 @@ data class ColorStudioGrade(
     val rCurve: List<Float> = IDENTITY_CURVE,
     val gCurve: List<Float> = IDENTITY_CURVE,
     val bCurve: List<Float> = IDENTITY_CURVE,
-    val lumaCurve: List<Float> = IDENTITY_CURVE
+    val lumaCurve: List<Float> = IDENTITY_CURVE,
+    /** HDR-style SDR tone mapping, 0..1; output remains conventional SDR. */
+    val hdr: Float = 0f,
+    /** Spatial unsharp amount, 0..1; deliberately not encoded in the 3D LUT. */
+    val sharpness: Float = 0f
 ) {
     companion object { val IDENTITY_CURVE = listOf(0f, 0.25f, 0.5f, 0.75f, 1f) }
 }
@@ -32,6 +36,8 @@ fun ColorStudioGrade.hasValidRenderParameters(): Boolean =
     brightness.isFinite() && brightness in -1f..1f &&
         contrast.isFinite() && contrast in 0f..2f &&
         saturation.isFinite() && saturation in 0f..2f &&
+        hdr.isFinite() && hdr in 0f..1f &&
+        sharpness.isFinite() && sharpness in 0f..1f &&
         listOf(shadows, midtones, highlights).all { it.x.isFinite() && it.x in -1f..1f && it.y.isFinite() && it.y in -1f..1f } &&
         listOf(rCurve, gCurve, bCurve, lumaCurve).all { curve ->
             curve.size == 5 && curve.all { it.isFinite() && it in 0f..1f }
@@ -64,6 +70,8 @@ class ColorStudioLut(grade: ColorStudioGrade, val size: Int = 33) {
     private val brightness = finite(grade.brightness, 0f).coerceIn(-1f, 1f)
     private val contrast = finite(grade.contrast, 1f).coerceIn(0f, 2f)
     private val saturation = finite(grade.saturation, 1f).coerceIn(0f, 2f)
+    private val hdr = finite(grade.hdr, 0f).coerceIn(0f, 1f)
+    private val sharpness = finite(grade.sharpness, 0f).coerceIn(0f, 1f)
     private val shadows = wheel(grade.shadows)
     private val midtones = wheel(grade.midtones)
     private val highlights = wheel(grade.highlights)
@@ -92,8 +100,12 @@ class ColorStudioLut(grade: ColorStudioGrade, val size: Int = 33) {
             val curvedLuma = adjusted[0] * 0.2126f + adjusted[1] * 0.7152f + adjusted[2] * 0.0722f
             val targetLuma = evaluate(master, curvedLuma)
             for (c in 0..2) {
-                cube[base + c] = (if (curvedLuma > 0.00001f) adjusted[c] * targetLuma / curvedLuma else targetLuma)
+                val color = (if (curvedLuma > 0.00001f) adjusted[c] * targetLuma / curvedLuma else targetLuma)
                     .coerceIn(0f, 1f)
+                // This shared SDR tone map lifts midtones and rolls off highlights.
+                val toneMapped = color / (color + 1f)
+                val toneAdjusted = color + (toneMapped * 1.8f - color) * (hdr * 0.7f)
+                cube[base + c] = (color + (toneAdjusted - color) * hdr).coerceIn(0f, 1f)
             }
         }
     }
@@ -113,7 +125,58 @@ class ColorStudioLut(grade: ColorStudioGrade, val size: Int = 33) {
             output.recycle()
             throw error
         }
-        return output
+        if (sharpness <= 0f) return output
+        return try {
+            applySpatialSharpness(output, sharpness).also { output.recycle() }
+        } catch (error: Throwable) {
+            if (!output.isRecycled) output.recycle()
+            throw error
+        }
+    }
+
+    /** Match the editor GL unsharp stage: 0.4 center + 0.15 per cardinal neighbor. */
+    private fun applySpatialSharpness(source: Bitmap, strength: Float): Bitmap {
+        val width = source.width
+        val height = source.height
+        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val center = IntArray(width)
+        val above = IntArray(width)
+        val below = IntArray(width)
+        val row = IntArray(width)
+        val amount = strength * 1.6f
+        try {
+            for (y in 0 until height) {
+                source.getPixels(center, 0, width, 0, y, width, 1)
+                source.getPixels(above, 0, width, 0, (y - 1).coerceAtLeast(0), width, 1)
+                source.getPixels(below, 0, width, 0, (y + 1).coerceAtMost(height - 1), width, 1)
+                for (x in 0 until width) {
+                    row[x] = sharpenPixel(
+                        center[x], center[(x - 1).coerceAtLeast(0)], center[(x + 1).coerceAtMost(width - 1)],
+                        above[x], below[x], amount
+                    )
+                }
+                output.setPixels(row, 0, width, 0, y, width, 1)
+            }
+            return output
+        } catch (error: Throwable) {
+            output.recycle()
+            throw error
+        }
+    }
+
+    private fun sharpenPixel(center: Int, left: Int, right: Int, above: Int, below: Int, amount: Float): Int {
+        var result = center and -0x1000000
+        for (channel in 0..2) {
+            val shift = 16 - channel * 8
+            val value = ((center ushr shift) and 255) / 255f
+            val soft = value * 0.4f + (
+                ((left ushr shift) and 255) + ((right ushr shift) and 255) +
+                    ((above ushr shift) and 255) + ((below ushr shift) and 255)
+                ) / 255f * 0.15f
+            val sharpened = (value + (value - soft) * amount).coerceIn(0f, 1f)
+            result = result or ((sharpened * 255f).roundToInt().coerceIn(0, 255) shl shift)
+        }
+        return result
     }
 
     fun processColor(argb: Int): Int {

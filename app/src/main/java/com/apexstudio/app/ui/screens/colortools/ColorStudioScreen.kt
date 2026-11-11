@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,16 +82,18 @@ private data class SourceFrame(val bitmap: Bitmap, val timeMs: Long)
 internal fun colorPreviewSplitPosition(widthPx: Float, split: Float): Float =
     widthPx.coerceAtLeast(0f) * split.coerceIn(0f, 1f)
 
-private val ColorStudioGradeSaver = Saver<MutableState<ColorStudioGrade>, List<Float>>(
+internal val ColorStudioGradeSaver = Saver<MutableState<ColorStudioGrade>, List<Float>>(
     save = { state -> val grade = state.value; listOf(grade.brightness, grade.contrast, grade.saturation,
         grade.shadows.x, grade.shadows.y, grade.midtones.x, grade.midtones.y,
-        grade.highlights.x, grade.highlights.y) + grade.rCurve + grade.gCurve + grade.bCurve + grade.lumaCurve },
+        grade.highlights.x, grade.highlights.y) + grade.rCurve + grade.gCurve + grade.bCurve + grade.lumaCurve +
+        listOf(grade.hdr, grade.sharpness) },
     restore = { values ->
-        mutableStateOf(if (values.size != 29) ColorStudioGrade() else runCatching {
+        mutableStateOf(if (values.size != 29 && values.size != 31) ColorStudioGrade() else runCatching {
             ColorStudioGrade(values[0], values[1], values[2],
                 ColorWheelVector(values[3], values[4]), ColorWheelVector(values[5], values[6]),
                 ColorWheelVector(values[7], values[8]), values.subList(9, 14),
-                values.subList(14, 19), values.subList(19, 24), values.subList(24, 29))
+                values.subList(14, 19), values.subList(19, 24), values.subList(24, 29)
+            ).copy(hdr = values.getOrElse(29) { 0f }, sharpness = values.getOrElse(30) { 0f })
         }.getOrDefault(ColorStudioGrade()))
     }
 )
@@ -109,7 +112,9 @@ fun ColorStudioScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val exportUi by vm.export.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
-    var timelineComparison by rememberSaveable(projectId) { mutableStateOf(true) }
+    var timelineComparison by rememberSaveable(projectId, embedded, state.project?.id) {
+        mutableStateOf(!embedded || vm.colorStudioTimelineExportBlocker(ColorStudioGrade()) != null)
+    }
     var comparisonBusy by remember { mutableStateOf(false) }
     val candidates = remember(state.project?.clips) { ColorMediaIO.selectedSources(state.project?.clips.orEmpty()) }
     val initiallySelected = candidates.firstOrNull { it.id == state.selectedClipId } ?: candidates.firstOrNull()
@@ -224,7 +229,8 @@ fun ColorStudioScreen(
                 Text("This Before/After is the selected source frame only, not a full-timeline preview.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 }
-                LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp), horizontalArrangement = Arrangement.spacedBy(7.dp),
+                LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
+                    .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     if (!timelineComparison) item {
                         Column(Modifier.width(246.dp).height(138.dp).clip(RoundedCornerShape(14.dp))
@@ -261,6 +267,26 @@ fun ColorStudioScreen(
                             Text("Whole-source export; trims/composition excluded.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
                         }
                     }
+                    item {
+                        Column(Modifier.width(230.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("LIGHT & COLOR", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            AdjustmentSlider("Brightness", grade.brightness, -1f..1f, ApexPalette.NeonCyan, { grade = grade.copy(brightness = it) })
+                            AdjustmentSlider("Contrast", grade.contrast, 0f..2f, ApexPalette.NeonPurple, { grade = grade.copy(contrast = it) })
+                            AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
+                        }
+                    }
+                    item {
+                        Column(Modifier.width(220.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            AdjustmentSlider("HDR Style", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
+                            AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
+                            Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                        }
+                    }
                     item { WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.width(104.dp)) }
                     item { WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.width(104.dp)) }
                     item { WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.width(104.dp)) }
@@ -272,16 +298,6 @@ fun ColorStudioScreen(
                                 curvePoint = index
                                 grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
                             }, Modifier.fillMaxWidth().height(126.dp))
-                        }
-                    }
-                    item {
-                        Column(Modifier.width(230.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("LIGHT & COLOR", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            AdjustmentSlider("Brightness", grade.brightness, -1f..1f, ApexPalette.NeonCyan, { grade = grade.copy(brightness = it) })
-                            AdjustmentSlider("Contrast", grade.contrast, 0f..2f, ApexPalette.NeonPurple, { grade = grade.copy(contrast = it) })
-                            AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
                         }
                     }
                 }
@@ -299,7 +315,7 @@ fun ColorStudioScreen(
                         exportBusy && timelinePreflight -> "Verifying timeline sources before export…"
                         exportBusy -> "Processing the selected source…"
                         clip?.type == ClipType.IMAGE -> "Export one graded still image only. This standalone source export does not include the project timeline/composition. Images above 12 MP or 5000 px per side are refused."
-                        clip?.type == ClipType.VIDEO -> "Export the entire selected source video as a separate MP4 with the same trilinear LUT. This does not apply project trims, speed changes, effects, overlays or composition. SDR 8-bit video up to 4K and 30 minutes only; HDR, unknown color transfer or unverified pixel formats are refused."
+                        clip?.type == ClipType.VIDEO -> "Export the entire selected source as a separate MP4 with the same SDR color grade and sharpness. This does not apply project trims, speed changes, effects, overlays or composition. SDR 8-bit video up to 4K and 30 minutes only; HDR, unknown color transfer or unverified pixel formats are refused."
                         else -> "Select an existing project image or video first."
                     })
                     Text("Timeline grading renders the supported project composition to a separate MP4. In Project timeline mode, Render Before / After compares two complete rendered snapshots; Share compared MP4 sends that exact After file. Selected source mode compares only one source frame. Originals and saved project edits remain unchanged.",

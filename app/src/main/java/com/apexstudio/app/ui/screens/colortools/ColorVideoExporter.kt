@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.ColorStudioLut
+import com.apexstudio.app.data.color.hasValidRenderParameters
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.FFprobeKit
@@ -68,6 +69,7 @@ internal object ColorVideoExporter {
 
     /** Writes an independent MP4. The input is the full original source, not the project trim or composition. */
     suspend fun export(context: Context, uri: Uri, grade: ColorStudioGrade): File {
+        require(grade.hasValidRenderParameters()) { "Color adjustment values are outside the supported range." }
         val info = inspect(context, uri)
         require(info.supported) { info.reason ?: "Selected video is unsupported." }
         currentCoroutineContext().ensureActive()
@@ -81,7 +83,7 @@ internal object ColorVideoExporter {
             currentCoroutineContext().ensureActive()
             // executeWithArgumentsAsync keeps native encoding off the caller/main thread.
             // Paths remain separate arguments; no shell interpolation is performed.
-            val filter = "lut3d=file=${cubeFile.absolutePath}:interp=trilinear"
+            val filter = buildVideoFilter(cubeFile.absolutePath, grade)
             val args = arrayOf(
                 "-y", "-i", input.absolutePath,
                 "-map", "0:v:0", "-map", "0:a?",
@@ -103,6 +105,21 @@ internal object ColorVideoExporter {
             input.delete()
             cube?.delete()
         }
+    }
+
+    internal fun buildVideoFilter(cubePath: String, grade: ColorStudioGrade): String {
+        require(grade.hasValidRenderParameters()) { "Color adjustment values are outside the supported range." }
+        val filters = mutableListOf("lut3d=file=$cubePath:interp=trilinear")
+        if (grade.sharpness > 0f) {
+            val amount = grade.sharpness * 1.6f
+            val edge = String.format(Locale.US, "%.3f", -0.15f * amount)
+            val center = String.format(Locale.US, "%.3f", 1f + 0.6f * amount)
+            val matrix = "0 $edge 0 $edge $center $edge 0 $edge 0"
+            filters += "format=gbrp"
+            filters += "convolution=0m='$matrix':1m='$matrix':2m='$matrix':0rdiv=1:1rdiv=1:2rdiv=1"
+            filters += "format=yuv420p"
+        }
+        return filters.joinToString(",")
     }
 
     private suspend fun executeCancellable(arguments: Array<String>): FFmpegSession {

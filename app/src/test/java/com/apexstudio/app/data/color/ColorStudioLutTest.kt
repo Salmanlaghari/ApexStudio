@@ -48,6 +48,31 @@ class ColorStudioLutTest {
         assertTrue((lifted and 255) in 0..255)
     }
 
+    @Test fun hdrStyleLiftsMidtonesRollsOffHighlightsAndSharpnessEnhancesSpatialEdges() {
+        val sample = 0xFF606060.toInt()
+        val baseline = ColorStudioLut(ColorStudioGrade()).processColor(sample)
+        val hdrStyle = ColorStudioLut(ColorStudioGrade(hdr = 1f)).processColor(sample)
+        assertTrue(((hdrStyle ushr 16) and 255) > ((baseline ushr 16) and 255))
+
+        val highlight = 0xFFF0F0F0.toInt()
+        val baselineHighlight = ColorStudioLut(ColorStudioGrade()).processColor(highlight)
+        val rolledOffHighlight = ColorStudioLut(ColorStudioGrade(hdr = 1f)).processColor(highlight)
+        assertTrue(((rolledOffHighlight ushr 16) and 255) < ((baselineHighlight ushr 16) and 255))
+
+        val source = Bitmap.createBitmap(3, 3, Bitmap.Config.ARGB_8888)
+        for (y in 0..2) for (x in 0..2) source.setPixel(x, y, 0xFF4D4D4D.toInt())
+        source.setPixel(1, 1, 0xFF999999.toInt())
+        val result = ColorStudioLut(ColorStudioGrade(sharpness = 1f)).process(source)
+        try {
+            assertTrue(((result.getPixel(1, 1) ushr 16) and 255) > 0x99)
+            assertTrue(((result.getPixel(0, 1) ushr 16) and 255) < 0x4D)
+            assertEquals(0xFF, result.getPixel(1, 1) ushr 24)
+        } finally {
+            source.recycle()
+            result.recycle()
+        }
+    }
+
     @Test fun alphaIsPreservedForEveryPixelInFreshProcessedBitmap() {
         val source = Bitmap.createBitmap(3, 1, Bitmap.Config.ARGB_8888)
         source.setPixel(0, 0, 0x00123456)
@@ -128,10 +153,12 @@ class ColorStudioLutTest {
         assertFalse(ColorStudioGrade(contrast = 2.1f).hasValidRenderParameters())
         assertFalse(ColorStudioGrade(shadows = ColorWheelVector(1.1f, 0f)).hasValidRenderParameters())
         assertFalse(ColorStudioGrade(gCurve = listOf(0f, 0.2f, Float.NaN, 0.8f, 1f)).hasValidRenderParameters())
+        assertFalse(ColorStudioGrade(hdr = Float.NaN).hasValidRenderParameters())
+        assertFalse(ColorStudioGrade(sharpness = 1.1f).hasValidRenderParameters())
     }
 
     @Test fun generatedGlTextureMatchesTheSharedCpuLutAtEveryLatticeNode() {
-        val grade = ColorStudioGrade(brightness = 0.08f, contrast = 1.2f,
+        val grade = ColorStudioGrade(brightness = 0.08f, contrast = 1.2f, hdr = 0.45f, sharpness = 0.6f,
             shadows = ColorWheelVector(-0.3f, 0.2f), lumaCurve = listOf(0f, 0.2f, 0.55f, 0.8f, 1f))
         val size = 5
         val lut = ColorStudioLut(grade, size)

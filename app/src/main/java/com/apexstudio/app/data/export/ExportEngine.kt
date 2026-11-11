@@ -608,6 +608,12 @@ class ExportEngine(private val context: Context) {
                                 }
                             )?.let(::add)
                             speedPair?.second?.let(::add)
+                            // Grade footage pixels before clip-attached titles and stickers so
+                            // overlay colors remain authored; project signatures/drawings are
+                            // likewise composed above the grade below.
+                            config.colorStudioGrade?.let { grade ->
+                                addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
+                            }
                             // These windows are clip-output-relative: the trimmed sequence item starts at 0,
                             // and the caption/sticker effects follow speed processing on that output clock.
                             val aspect = outputWidth.toFloat() / outputHeight
@@ -626,14 +632,6 @@ class ExportEngine(private val context: Context) {
                                         aspect
                                     ))
                                 }
-                            }
-                            // Apply to the completed clip image, including clip-attached foreground art,
-                            // identically for each sequence item. Unsupported extra tracks are rejected
-                            // by projectCompositionUnsupportedReason before this render path is reached.
-                            config.colorStudioGrade?.let { grade ->
-                                add(com.apexstudio.app.data.filter.LutFilterGlEffect(
-                                    context, preset = null, preloaded = grade.toLutTexture()
-                                ))
                             }
                             config.signature?.let { signature ->
                                 addAll(buildSignatureExportEffects(signature, aspect))

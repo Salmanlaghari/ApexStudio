@@ -20,6 +20,7 @@ import java.io.File
 
 import com.apexstudio.app.domain.model.timeline.sharedVideoClip
 fun EditorViewModel.setPlayerError(error: String?) = _state.update { it.copy(playerError = error) }
+fun EditorViewModel.setPreviewOnlyError(error: String?) = _state.update { it.copy(previewOnlyError = error) }
 
 fun EditorViewModel.setSelectedResolution(res: String) {
     updateExport { it.copy(resolution = ExportResolution.canonical(res)) }

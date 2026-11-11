@@ -114,6 +114,7 @@ internal fun FilterWorkspacePanel(
 
     val targetReason = workspaceApplyTargetReason(projectId, state.project, state.selectedClipId, originalClip)
     val enabled = targetReason == null
+    val mayApply = enabled && state.playerError == null
 
     LaunchedEffect(effects, enabled) {
         onPreviewClip(if (enabled) originalClip.copy(workspaceEffects = effects) else originalClip)
@@ -130,7 +131,6 @@ internal fun FilterWorkspacePanel(
 
     fun previewPreset(id: String) {
         vm.setPlaying(false)
-        vm.setPlayerError(null)
         selectedId = id
         val currentIdx = selectedIndex
         val entry = currentDraft().copy(id = id)
@@ -340,8 +340,10 @@ internal fun FilterWorkspacePanel(
                                 Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground)
                             }
                         }
-                        state.playerError?.let { Text("Preview unavailable: $it. You can still Apply; check playback after closing.",
+                        state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.",
                             color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.",
+                                color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
 
                     Column(Modifier.fillMaxWidth().testTag("filter-customize-card")) {
@@ -381,8 +383,8 @@ internal fun FilterWorkspacePanel(
                     TextButton(onClick = { onPreviewClip(originalClip); onDismiss() },
                         modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                     Button(onClick = {
-                        if (enabled && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
-                    }, enabled = enabled && dirty,
+                        if (mayApply && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
+                    }, enabled = mayApply && dirty,
                         modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
                         colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)) {
                         Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp))
@@ -587,7 +589,8 @@ internal fun FilterWorkspacePanel(
                                 modifier = Modifier.testTag("filter-remove")
                             ) { Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground) }
                         }
-                        state.playerError?.let { Text("Preview unavailable: $it. You can still Apply; check playback after closing.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                            ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
                 }
 
@@ -644,9 +647,9 @@ internal fun FilterWorkspacePanel(
                 TextButton(onClick = { onPreviewClip(originalClip); onDismiss() }, modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                 Button(
                     onClick = {
-                        if (enabled && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
+                        if (mayApply && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
                     },
-                    enabled = enabled && dirty,
+                    enabled = mayApply && dirty,
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
                     colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)
                 ) {

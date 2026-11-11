@@ -151,7 +151,7 @@ class EffectWorkspacePanelTest {
             }
         }
         choosePreset("Monochrome")
-        compose.runOnIdle { vm.setPlayerError("Shader unavailable") }
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(previewOnlyError = "Transition preview unavailable") }
         compose.onNodeWithText("Apply").assertIsEnabled().performClick()
         compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
         compose.runOnIdle {
@@ -182,6 +182,20 @@ class EffectWorkspacePanelTest {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertTrue(vm.undoStack.isEmpty())
         }
+    }
+
+    @Test fun `source playback error remains blocking after selecting an effect`() {
+        val vm = editor()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
+            }
+        }
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(playerError = "Source decoder failed") }
+        choosePreset("Monochrome")
+        compose.onNodeWithText("Playback error:", substring = true).assertExists()
+        compose.onNodeWithTag("workspace-apply").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals("Source decoder failed", vm.state.value.playerError) }
     }
 
     @Test fun `holding a preset records playback until release without saving early`() {

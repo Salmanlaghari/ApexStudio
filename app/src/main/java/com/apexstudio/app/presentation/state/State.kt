@@ -156,6 +156,8 @@ data class EditorState(
     // after onMediaPicked consumes it.
     val pendingAddAsAudio: Boolean = false,
     val playerError: String? = null,
+    /** Device-only preview limitation that does not invalidate saved/exportable project effects. */
+    val previewOnlyError: String? = null,
     val selectedResolution: String = "1080P",
     val isFullscreenPreview: Boolean = false,
     val adjustments: VideoAdjustments = VideoAdjustments(),

@@ -139,7 +139,7 @@ class FilterWorkspacePanelTest {
         val vm = editor(); val before = vm.state.value.project
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
-        compose.runOnIdle { vm._state.value = vm.state.value.copy(playerError = "Unsupported GPU") }
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(previewOnlyError = "Transition preview unavailable") }
         compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
         compose.onNodeWithTag("filter-apply").assertIsDisplayed().assertIsEnabled().performClick()
         compose.runOnIdle {
@@ -148,6 +148,16 @@ class FilterWorkspacePanelTest {
             assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, saved.workspaceEffects.single().id)
             assertNull(projectCompositionUnsupportedReason(listOf(saved), ExportEngine.ExportConfig()))
         }
+    }
+
+    @Test fun `source playback errors remain blocking even after selecting a filter`() {
+        val vm = editor()
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(playerError = "Source decoder failed") }
+        choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.onNodeWithText("Playback error:", substring = true).assertExists()
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals("Source decoder failed", vm.state.value.playerError) }
     }
 
     @Test fun `filter gallery shows a generated sample image for each available look`() {

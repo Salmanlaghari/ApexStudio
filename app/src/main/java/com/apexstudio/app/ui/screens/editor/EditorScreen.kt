@@ -942,10 +942,12 @@ private fun EditorScreenContent(
     } else null
     LaunchedEffect(projectId, previewPlaybackSuspended, transitionPreviewEligible) {
         if (previewPlaybackSuspended || !transitionPreviewEligible) {
+            vm.setPreviewOnlyError(null)
             transitionPreviewPlayer = null
             transitionPreviewReady = false
             transitionPreviewFailed = false
         } else if (transitionPreviewPlayer == null && !transitionPreviewFailed) {
+            vm.setPreviewOnlyError(null)
             try {
                 val player = com.apexstudio.app.data.export.createProjectTransitionPreviewPlayer(context)
                 player.addListener(object : Player.Listener {
@@ -957,7 +959,10 @@ private fun EditorScreenContent(
                     }
 
                     override fun onRenderedFirstFrame() {
-                        if (transitionPreviewPlayer === player) transitionPreviewReady = true
+                        if (transitionPreviewPlayer === player) {
+                            transitionPreviewReady = true
+                            vm.setPreviewOnlyError(null)
+                        }
                     }
                     override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                         if (transitionPreviewPlayer === player) vm.setVideoSize(videoSize.width, videoSize.height)
@@ -969,7 +974,7 @@ private fun EditorScreenContent(
                         transitionPreviewReady = false
                         transitionPreviewFailed = true
                         transitionPreviewPlayer = null
-                        vm.setPlayerError("Transition preview is unavailable on this device; export still renders the transition.")
+                        vm.setPreviewOnlyError("Transition preview is unavailable on this device; export still renders the transition.")
                     }
                 })
                 transitionPreviewPlayer = player
@@ -980,6 +985,7 @@ private fun EditorScreenContent(
                 transitionPreviewPlayer = null
                 transitionPreviewReady = false
                 transitionPreviewFailed = true
+                vm.setPreviewOnlyError("Transition preview is unavailable on this device; export still renders the transition.")
             }
         }
     }
@@ -1018,7 +1024,7 @@ private fun EditorScreenContent(
             transitionPreviewReady = false
             transitionPreviewFailed = true
             transitionPreviewPlayer = null
-            vm.setPlayerError("Transition preview is unavailable on this device; export still renders the transition.")
+            vm.setPreviewOnlyError("Transition preview is unavailable on this device; export still renders the transition.")
         }
     }
 

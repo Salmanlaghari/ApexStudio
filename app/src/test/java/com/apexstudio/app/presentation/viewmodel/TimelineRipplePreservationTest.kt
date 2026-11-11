@@ -116,8 +116,8 @@ class TimelineRipplePreservationTest {
         assertTrue(tail.state.value.canUndo)
     }
 
-    // DataStore work completes on a real dispatcher; this integration test uses
-    // a non-test Main so runBlocking does not strand the ViewModel autosave.
+    // DataStore writes use real dispatchers; this test uses an unconfined Main and
+    // awaits the durable-save marker before reading the persisted project.
     @Test
     fun `V1 outward trim autosaves both expanded source bounds and duration`() = runBlocking {
         Dispatchers.setMain(Dispatchers.Unconfined)
@@ -136,20 +136,20 @@ class TimelineRipplePreservationTest {
 
             // One committed trim combines both outward edges; the UI tests above
             // exercise each grip independently before this repository assertion.
+            val priorAutoSaveMs = loadedEditor.state.value.lastAutoSaveMs
             loadedEditor.trimClip("main", 500L, 3_500L)
             shadowOf(Looper.getMainLooper()).idle()
-            val savedProject = withContext(Dispatchers.Default.limitedParallelism(1)) {
-                withTimeout(30_000L) {
-                    repository.loadAll().first { projects ->
-                        projects.any { project ->
-                            val clip = project.clips.singleOrNull()
-                            project.id == projectId && project.durationMs == 3_000L &&
-                                clip != null && clip.trimStartMs == 500L && clip.trimEndMs == 3_500L
-                        }
-                    }.single { it.id == projectId }
-                }
+            withTimeout(30_000L) {
+                loadedEditor.state.first { it.lastAutoSaveMs > priorAutoSaveMs }
             }
-            assertEquals(3_000L, savedProject.clips.single().effectiveDurationMs())
+            val savedProject = withContext(Dispatchers.IO) {
+                repository.loadAll().first().single { it.id == projectId }
+            }
+            val savedClip = savedProject.clips.single()
+            assertEquals(3_000L, savedProject.durationMs)
+            assertEquals(500L, savedClip.trimStartMs)
+            assertEquals(3_500L, savedClip.trimEndMs)
+            assertEquals(3_000L, savedClip.effectiveDurationMs())
         } finally {
             editor?.let { viewModel ->
                 ViewModelStore().apply {

@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.data.filter.GpuFilterConfig
 import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.StylisticEffectType
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -139,6 +140,13 @@ class EditorVideoPresetsTest {
         assertEquals(listOf(2_000L, 4_000L, 6_000L), shots.map { it.trimStartMs })
         assertEquals(listOf(4_000L, 6_000L, 8_000L), shots.map { it.trimEndMs })
         assertEquals(listOf("selected", "selected_template_warm-story_1", "selected_template_warm-story_2"), shots.map { it.id })
+        val composition = ProjectTransitionTimeline.build(changed.clips, changed.transitions)
+        assertEquals(
+            listOf("selected", "selected_template_warm-story_1", "selected_template_warm-story_2", "other"),
+            composition.entries.map { it.clip.id },
+        )
+        assertEquals(listOf(0L, 800L, 1_600L, 2_400L), composition.entries.map { it.timelineStartMs })
+        assertEquals(12_400L, composition.durationMs)
         shots.forEach {
             assertEquals(effect.id, it.projectVideoEffectId)
             assertEquals(source.speedMultiplier, it.speedMultiplier, 0f)

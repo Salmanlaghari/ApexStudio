@@ -14,6 +14,12 @@ internal data class WorkspaceEffectPreviewBinding(
     val renderEffects: List<GlEffect>,
 )
 
+/** Paused players need a new decoded frame after live parameters change; playing players read updates per frame. */
+internal fun workspaceEffectPausedRefreshSnapshot(
+    effects: List<WorkspaceEffect>,
+    isPlaying: Boolean,
+): List<WorkspaceEffect>? = if (isPlaying) null else effects.toList()
+
 /**
  * Build preview GL effects with the same renderer factory used by export. Keeping the
  * draft model alongside the GL chain makes preset/range/strength changes invalidation keys.

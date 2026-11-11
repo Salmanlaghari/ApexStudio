@@ -87,6 +87,39 @@ fun EditorViewModel.selectTextOverlay(id: String?) = _state.update {
 
 private data class TextOverlayOwner(val clip: MediaClip, val overlay: TextOverlay)
 
+/** Pick a clear default anchor so adding/duplicating a title does not stack it on existing text. */
+private fun suggestedTextOverlayAnchor(
+    existing: List<TextOverlay>,
+    requestedX: Float,
+    requestedY: Float,
+): Pair<Float, Float> {
+    val x = requestedX.coerceIn(0.08f, 0.92f)
+    val y = requestedY.coerceIn(0.08f, 0.92f)
+    val candidates = listOf(
+        x to y,
+        x to (y + 0.32f), x to (y - 0.32f),
+        (x + 0.32f) to y, (x - 0.32f) to y,
+        (x + 0.24f) to (y + 0.24f), (x - 0.24f) to (y + 0.24f),
+        (x + 0.24f) to (y - 0.24f), (x - 0.24f) to (y - 0.24f),
+        0.2f to 0.2f, 0.5f to 0.2f, 0.8f to 0.2f,
+        0.2f to 0.5f, 0.8f to 0.5f, 0.2f to 0.8f, 0.5f to 0.8f, 0.8f to 0.8f,
+    ).map { (candidateX, candidateY) ->
+        candidateX.coerceIn(0.08f, 0.92f) to candidateY.coerceIn(0.08f, 0.92f)
+    }.distinct()
+
+    fun nearestDistanceSquared(candidate: Pair<Float, Float>): Float =
+        existing.minOfOrNull { overlay ->
+            val dx = candidate.first - overlay.x
+            val dy = candidate.second - overlay.y
+            dx * dx + dy * dy
+        } ?: Float.POSITIVE_INFINITY
+
+    val minimumSpacingSquared = 0.30f * 0.30f
+    return candidates.firstOrNull { nearestDistanceSquared(it) >= minimumSpacingSquared }
+        ?: candidates.maxByOrNull(::nearestDistanceSquared)
+        ?: (x to y)
+}
+
 /** Resolve owner by explicit clip first; only non-null group IDs link across clips. */
 private fun resolveTextOverlayOwner(clips: List<MediaClip>, clipId: String?, overlayId: String): TextOverlayOwner? {
     if (overlayId.isBlank()) return null
@@ -100,10 +133,11 @@ private fun resolveTextOverlayOwner(clips: List<MediaClip>, clipId: String?, ove
 }
 
 fun EditorViewModel.addTextOverlay(clipId: String, text: String = "Text", x: Float = 0.5f, y: Float = 0.35f) {
-    if (_state.value.project?.clips?.none { it.id == clipId } != false) return
+    val owner = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
+    val (placedX, placedY) = suggestedTextOverlayAnchor(owner.textOverlays, x, y)
     pushUndo()
     val overlay = com.apexstudio.app.domain.model.TextOverlay.of(
-        text = text, x = x, y = y
+        text = text, x = placedX, y = placedY
     )
     updateClip(clipId) { it.copy(textOverlays = it.textOverlays + overlay) }
     _state.update { it.copy(selectedTextOverlayId = overlay.id) }
@@ -224,6 +258,11 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
     val project = _state.value.project ?: return
     val target = resolveTextOverlayOwner(project.clips, clipId, overlayId) ?: return
     val source = target.overlay
+    val (placedX, placedY) = suggestedTextOverlayAnchor(
+        target.clip.textOverlays,
+        source.x + 0.28f,
+        source.y + 0.28f,
+    )
     val newId = "txt_${java.util.UUID.randomUUID()}"
     val newGroupId = source.projectTextLayerId?.let { java.util.UUID.randomUUID().toString() }
     pushUndo()
@@ -235,8 +274,7 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
                 else owner.id == target.clip.id && overlay.id == overlayId
             }.map { overlay ->
                 overlay.copy(id = newId, projectTextLayerId = newGroupId,
-                    x = (overlay.x + 0.05f).coerceIn(0.1f, 0.9f),
-                    y = (overlay.y + 0.05f).coerceIn(0.1f, 0.9f))
+                    x = placedX, y = placedY)
             }
             owner.copy(textOverlays = owner.textOverlays + copies)
         }), selectedTextOverlayId = newId)

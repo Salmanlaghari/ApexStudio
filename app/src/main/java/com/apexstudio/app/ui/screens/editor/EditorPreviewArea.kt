@@ -197,14 +197,18 @@ fun VideoPreviewArea(
             frameEffectProvider = { index, _ -> liveWorkspaceEffects.get().getOrNull(index) }
         )
     }
+    val pausedWorkspaceEffectSnapshot = workspaceEffectPausedRefreshSnapshot(workspaceEffects, isPlaying)
     val editorGradeEffects = LocalEditorPreviewEffects.current
     LaunchedEffect(
         exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings,
-        workspaceEffectBinding.renderStageIds, editorGradeEffects, photoClip?.id,
+        workspaceEffectBinding.renderStageIds, pausedWorkspaceEffectSnapshot, editorGradeEffects, photoClip?.id,
         gpuFilterStageKey, gpuFilterPreset
     ) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
+            // Live uniforms update each frame while playing. When paused, debounce slider drags
+            // and reinstall once so Media3 decodes a fresh frame instead of retaining the old surface.
+            if (pausedWorkspaceEffectSnapshot != null) kotlinx.coroutines.delay(75L)
             if (photoClip == null) {
                 val dynamicCrop = faceCropConfig?.let { FaceCropGlEffect.forPreview(it.previewConfig()) }
                 val viralHdrEffects = if (usesViralHdrPipeline) {

@@ -3,8 +3,10 @@ package com.apexstudio.app.presentation.viewmodel
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.ClipType
@@ -77,7 +79,7 @@ class TextOverlayWorkflowTest {
                     textOverlays = listOf(overlay),
                     coverText = null,
                     coverTextStyle = null,
-                    selectedTextOverlayId = null,
+                    selectedTextOverlayId = overlay.id,
                     currentTimeMs = 0L,
                     isPlaying = false,
                     modifier = Modifier.size(360.dp, 640.dp)
@@ -85,5 +87,44 @@ class TextOverlayWorkflowTest {
             }
         }
         compose.onNodeWithText("Edited caption").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription("Delete Text").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Duplicate Text").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Resize Text Size").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Edit Text Content").assertCountEquals(0)
+    }
+
+    @Test
+    fun addedAndDuplicatedTextTitlesUseDistinctAnchors() {
+        val clip = MediaClip(
+            id = "main",
+            name = "Main video",
+            uri = "file:///main.mp4",
+            durationMs = 10_000L,
+            trimEndMs = 10_000L,
+            type = ClipType.VIDEO
+        )
+        val vm = EditorViewModel().apply {
+            _state.update { it.copy(
+                project = Project("text-placement", "Text placement", 10_000L, clips = listOf(clip)),
+                selectedClipId = clip.id,
+                durationMs = 10_000L
+            ) }
+        }
+
+        vm.addTextOverlay(clip.id, text = "First")
+        val first = vm.state.value.project!!.clips.single().textOverlays.single()
+        vm.addTextOverlay(clip.id, text = "Second")
+        val second = vm.state.value.project!!.clips.single().textOverlays.last()
+        vm.duplicateTextOverlay(clip.id, first.id)
+        val duplicate = vm.state.value.project!!.clips.single().textOverlays.last()
+
+        fun distanceSquared(a: TextOverlay, b: TextOverlay): Float {
+            val dx = a.x - b.x
+            val dy = a.y - b.y
+            return dx * dx + dy * dy
+        }
+        assertTrue("second title should not start directly on top of the first", distanceSquared(first, second) >= 0.09f)
+        assertTrue("duplicated title should be visibly separated from the first", distanceSquared(first, duplicate) >= 0.09f)
+        assertTrue("duplicated title should be visibly separated from the second", distanceSquared(second, duplicate) >= 0.09f)
     }
 }

@@ -76,7 +76,7 @@ class ScreenshotEditorCompositionTest {
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("The ruler stays directly above the video track", ruler.bottom <= track.top && track.top - ruler.bottom < 12f)
-        assertEquals("Fixed identity rail reserves 88dp before the time canvas", 88f, track.left, 1f)
+        assertEquals("Fixed identity rail reserves 64dp before the time canvas", 64f, track.left, 1f)
         assertEquals("V1 filmstrip uses the compact visual height", 52f, track.height, 1f)
     }
 

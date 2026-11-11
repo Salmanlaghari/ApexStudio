@@ -32,13 +32,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apexstudio.app.data.effect.WorkspaceFilterThumbnailGenerator
-import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
@@ -101,7 +101,7 @@ internal fun FilterWorkspacePanel(
     var effects by remember(originalClip) { mutableStateOf(originalClip.workspaceEffects) }
     var selectedIndex by remember(originalClip) { mutableStateOf(firstExisting) }
     var selectedId by remember(originalClip) {
-        mutableStateOf(firstExisting?.let { originalClip.workspaceEffects[it].id } ?: catalog.first().id)
+        mutableStateOf(firstExisting?.let { originalClip.workspaceEffects[it].id })
     }
     val initial = firstExisting?.let { originalClip.workspaceEffects[it] }
     var intensity by remember(originalClip) { mutableFloatStateOf(initial?.intensity?.coerceIn(0f, 1f) ?: 0.78f) }
@@ -112,16 +112,8 @@ internal fun FilterWorkspacePanel(
     var startMs by remember(originalClip) { mutableLongStateOf(initial?.startMs ?: originalClip.trimStartMs) }
     var endMs by remember(originalClip) { mutableLongStateOf(initial?.endMs ?: originalClip.trimEndMs) }
 
-    val currentProject = state.project
-    val persistedClip = currentProject?.clips?.firstOrNull { it.id == originalClip.id }
-    val targetCurrent = currentProject?.id == projectId && state.selectedClipId == originalClip.id && persistedClip == originalClip
-    val isMainVideo = originalClip.type == ClipType.VIDEO && originalClip.trackIndex == 0 && originalClip.uri.isNotBlank()
-    val enabled = targetCurrent && isMainVideo
-    val disabledReason = when {
-        !isMainVideo -> "Filters can only be applied to a main-track video. Overlay/PiP filters are disabled because the overlay renderer does not consume these effects yet."
-        !targetCurrent -> "This clip changed or is no longer selected. Close and reopen Filters to avoid applying to a stale target."
-        else -> null
-    }
+    val targetReason = workspaceApplyTargetReason(projectId, state.project, state.selectedClipId, originalClip)
+    val enabled = targetReason == null
 
     LaunchedEffect(effects, enabled) {
         onPreviewClip(if (enabled) originalClip.copy(workspaceEffects = effects) else originalClip)
@@ -134,7 +126,7 @@ internal fun FilterWorkspacePanel(
         selectedIndex = idx ?: effects.lastIndex
     }
 
-    fun currentDraft() = WorkspaceEffect(selectedId, startMs, endMs, intensity, exposure, contrast, saturation)
+    fun currentDraft() = WorkspaceEffect(selectedId ?: catalog.first().id, startMs, endMs, intensity, exposure, contrast, saturation)
 
     fun previewPreset(id: String) {
         vm.setPlaying(false)
@@ -202,8 +194,8 @@ internal fun FilterWorkspacePanel(
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Looks", fontSize = 13.sp)
-                    if (disabledReason != null) {
-                        Text(disabledReason, color = EditorPalette.Warning, fontSize = 10.sp,
+                    if (targetReason != null) {
+                        Text(targetReason, color = EditorPalette.Warning, fontSize = 10.sp,
                             lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -229,7 +221,10 @@ internal fun FilterWorkspacePanel(
                                             RoundedCornerShape(10.dp))
                                         .testTag("filter-preset-${preset.id}")
                                         .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
-                                        .semantics { contentDescription = "${preset.label}: ${preset.description}" }
+                                        .semantics {
+                                            contentDescription = "${preset.label}: ${preset.description}"
+                                            this.selected = selected
+                                        }
                                         .padding(horizontal = 4.dp, vertical = 3.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
@@ -253,6 +248,8 @@ internal fun FilterWorkspacePanel(
                     }
                     Text("${catalog.size} looks · ${categoryCatalog.size} shown",
                         fontSize = 10.sp, color = EditorPalette.TextSecondary)
+                    Text("Tap a look to preview it. Apply saves it to this video.",
+                        fontSize = 9.sp, color = EditorPalette.TextTertiary)
 
                     TextButton(onClick = { mobileTuningExpanded = !mobileTuningExpanded },
                         modifier = Modifier.fillMaxWidth().height(28.dp).testTag("filter-details-toggle")) {
@@ -343,7 +340,7 @@ internal fun FilterWorkspacePanel(
                                 Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground)
                             }
                         }
-                        state.playerError?.let { Text("Preview failed: $it. Apply is disabled; choose another look or Cancel.",
+                        state.playerError?.let { Text("Preview unavailable: $it. You can still Apply; check playback after closing.",
                             color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
 
@@ -384,11 +381,12 @@ internal fun FilterWorkspacePanel(
                     TextButton(onClick = { onPreviewClip(originalClip); onDismiss() },
                         modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                     Button(onClick = {
-                        if (enabled && state.playerError == null && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
-                    }, enabled = enabled && dirty && state.playerError == null,
+                        if (enabled && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
+                    }, enabled = enabled && dirty,
                         modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
                         colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)) {
-                        Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Apply")
+                        Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp))
+                        Text(if (!dirty && selectedIndex != null) "Already applied" else "Apply")
                     }
                 }
             }
@@ -450,8 +448,8 @@ internal fun FilterWorkspacePanel(
                                 Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo filter draft", tint = foreground)
                             }
                         }
-                        if (disabledReason != null) {
-                            Text(disabledReason, color = EditorPalette.Warning, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (targetReason != null) {
+                            Text(targetReason, color = EditorPalette.Warning, fontSize = 10.sp, lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                         val filterEffects = effects.withIndex().filter { it.value.id in WorkspaceEffectPresets.filterIds }
                         if (filterEffects.isNotEmpty()) {
@@ -521,7 +519,10 @@ internal fun FilterWorkspacePanel(
                                         .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonPurple else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
                                         .testTag("filter-preset-${preset.id}")
                                         .clickable(enabled = enabled && validRange) { previewPreset(preset.id) }
-                                        .semantics { contentDescription = "${preset.label}: ${preset.description}" }
+                                        .semantics {
+                                            contentDescription = "${preset.label}: ${preset.description}"
+                                            this.selected = selected
+                                        }
                                         .padding(horizontal = 5.dp, vertical = if (compactPhone) 4.dp else 7.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
@@ -545,6 +546,7 @@ internal fun FilterWorkspacePanel(
                             }
                         }
                         Text("${catalog.size} original offline shader looks · ${categoryCatalog.size} shown", fontSize = 10.sp, color = EditorPalette.TextSecondary)
+                        Text("Tap a look to preview it. Apply saves it to this video.", fontSize = 9.sp, color = EditorPalette.TextTertiary)
                     }
                 }
 
@@ -585,7 +587,7 @@ internal fun FilterWorkspacePanel(
                                 modifier = Modifier.testTag("filter-remove")
                             ) { Icon(Icons.Default.DeleteOutline, contentDescription = "Remove selected filter", tint = foreground) }
                         }
-                        state.playerError?.let { Text("Preview failed: $it. Apply is disabled; choose another look or Cancel.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        state.playerError?.let { Text("Preview unavailable: $it. You can still Apply; check playback after closing.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
                 }
 
@@ -642,12 +644,15 @@ internal fun FilterWorkspacePanel(
                 TextButton(onClick = { onPreviewClip(originalClip); onDismiss() }, modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                 Button(
                     onClick = {
-                        if (enabled && state.playerError == null && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
+                        if (enabled && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
                     },
-                    enabled = enabled && dirty && state.playerError == null,
+                    enabled = enabled && dirty,
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("filter-apply"),
                     colors = ButtonDefaults.buttonColors(containerColor = EditorPalette.NeonPurple)
-                ) { Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp)); Text("Apply") }
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null); Spacer(Modifier.width(4.dp))
+                    Text(if (!dirty && selectedIndex != null) "Already applied" else "Apply")
+                }
             }
         }
     }

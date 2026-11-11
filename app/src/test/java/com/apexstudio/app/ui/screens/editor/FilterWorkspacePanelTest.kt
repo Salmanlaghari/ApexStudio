@@ -3,9 +3,14 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.undo
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -92,7 +97,10 @@ class FilterWorkspacePanelTest {
         var preview: MediaClip? = null
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, { preview = it }, {}, {}, {}) }
 
+        showCard("filter-presets-card")
+        compose.onNodeWithTag("filter-preset-${WorkspaceEffectPresets.FILTER_SOFT_WARM}").assertIsNotSelected()
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.onNodeWithTag("filter-preset-${WorkspaceEffectPresets.FILTER_SOFT_WARM}").assertIsSelected()
         compose.runOnIdle {
             val draft = requireNotNull(preview)
             val derivedState = workspacePreviewState(vm.state.value, draft)
@@ -106,7 +114,14 @@ class FilterWorkspacePanelTest {
 
         compose.onNodeWithTag("filter-apply").performClick()
         compose.runOnIdle {
-            assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, vm.state.value.project!!.clips.single().workspaceEffects.single().id)
+            val savedProject = vm.state.value.project!!
+            val savedClip = savedProject.clips.single()
+            assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, savedClip.workspaceEffects.single().id)
+            val json = Json { encodeDefaults = true }.encodeToString(Project.serializer(), savedProject)
+            val restored = Json { encodeDefaults = true }.decodeFromString<Project>(json).clips.single()
+            assertEquals(savedClip.workspaceEffects, restored.workspaceEffects)
+            assertEquals(restored.workspaceEffects, workspaceEffectPreviewBinding(restored.workspaceEffects).sourceEffects)
+            assertNull(projectCompositionUnsupportedReason(listOf(restored), ExportEngine.ExportConfig()))
             assertEquals(1, vm.undoStack.size)
         }
     }
@@ -120,13 +135,19 @@ class FilterWorkspacePanelTest {
         compose.onNodeWithText("This clip changed", substring = true).assertExists()
         compose.runOnIdle { assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty()) }
     }
-    @Test fun `preview errors disable Apply without deleting the draft or project`() {
+    @Test fun `preview errors are warnings and do not block saving a valid filter for export`() {
         val vm = editor(); val before = vm.state.value.project
         compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
         compose.runOnIdle { vm._state.value = vm.state.value.copy(playerError = "Unsupported GPU") }
-        compose.onNodeWithTag("filter-apply").assertIsDisplayed().assertIsNotEnabled()
-        compose.runOnIdle { assertEquals(before, vm.state.value.project) }
+        compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
+        compose.onNodeWithTag("filter-apply").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            val saved = vm.state.value.project!!.clips.single()
+            assertNotEquals(before!!.clips.single(), saved)
+            assertEquals(WorkspaceEffectPresets.FILTER_SOFT_WARM, saved.workspaceEffects.single().id)
+            assertNull(projectCompositionUnsupportedReason(listOf(saved), ExportEngine.ExportConfig()))
+        }
     }
 
     @Test fun `filter gallery shows a generated sample image for each available look`() {

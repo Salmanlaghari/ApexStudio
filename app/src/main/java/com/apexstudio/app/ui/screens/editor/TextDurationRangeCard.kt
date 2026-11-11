@@ -38,7 +38,9 @@ internal fun TextDurationRangeCard(
         onRangeChange(safeStart, safeEnd)
     }
     Column(Modifier.fillMaxWidth().testTag("text-duration-range"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("Timeline range", color = EditorPalette.NeonCyan, fontSize = 12.sp)
+        Text("When this text appears", color = EditorPalette.NeonCyan, fontSize = 12.sp)
+        Text("Times are for the whole project. Drag a handle or use the playhead buttons.",
+            color = EditorPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
         Text("${TimeFormat.formatMs(start)} – ${TimeFormat.formatMs(end)} · ${TimeFormat.formatMs(end - start)}",
             color = EditorPalette.TextPrimary, fontSize = 11.sp, modifier = Modifier.testTag("text-selected-duration"))
         RangeSlider(
@@ -54,14 +56,17 @@ internal fun TextDurationRangeCard(
                 .semantics { if (timelineDurationMs <= 0L) disabled() }
         )
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(playheadMs.coerceAtMost(end - 1L), end) }) {
-                Text("Start here", fontSize = 10.sp)
+            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(playheadMs.coerceAtMost(end - 1L), end) },
+                modifier = Modifier.testTag("text-range-start-at-playhead")) {
+                Text("Start at playhead", fontSize = 10.sp)
             }
-            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(start, playheadMs.coerceAtLeast(start + 1L)) }) {
-                Text("End here", fontSize = 10.sp)
+            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(start, playheadMs.coerceAtLeast(start + 1L)) },
+                modifier = Modifier.testTag("text-range-end-at-playhead")) {
+                Text("End at playhead", fontSize = 10.sp)
             }
-            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(0L, total) }) {
-                Text("Whole timeline", fontSize = 10.sp)
+            TextButton(enabled = timelineDurationMs > 0L, onClick = { commit(0L, total) },
+                modifier = Modifier.testTag("text-range-whole-project")) {
+                Text("Whole project", fontSize = 10.sp)
             }
         }
         if (clipEnds.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

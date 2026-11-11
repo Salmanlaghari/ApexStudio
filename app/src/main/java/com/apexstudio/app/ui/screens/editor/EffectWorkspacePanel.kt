@@ -29,6 +29,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -102,6 +103,7 @@ internal fun EffectWorkspacePanel(
         effectSamples = WorkspaceFilterThumbnailGenerator.generate(context, filterSampleSource, sampleIds)
     }
     val editorState by vm.state.collectAsStateWithLifecycle()
+    val targetReason = workspaceApplyTargetReason(projectId, editorState.project, editorState.selectedClipId, originalClip)
     val livePlayerPositionMs by vm.playerPositionFlow.collectAsStateWithLifecycle(
         initialValue = editorState.currentTimeMs,
     )
@@ -473,7 +475,8 @@ internal fun EffectWorkspacePanel(
                             WorkspaceCategory.VISUAL -> "Tap a preset for the selected range, or hold a preset during playback and release to mark its range. Procedural GLSL, not AI."
                             WorkspaceCategory.TRANSITIONS -> "Transitions are chosen at clip junctions. The transition picker discloses current playback/export limits."
                         }, fontSize = 10.sp, lineHeight = 13.sp, color = EditorPalette.TextSecondary)
-                        editorState.playerError?.let { Text("Preview unavailable: $it. Apply is disabled; cancel or choose another preset.", color = EditorPalette.Warning, fontSize = 10.sp) }
+                        targetReason?.let { Text(it, color = EditorPalette.Warning, fontSize = 10.sp) }
+                            ?: editorState.playerError?.let { Text("Preview unavailable: $it. You can still Apply; check playback after closing.", color = EditorPalette.Warning, fontSize = 10.sp) }
                         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                 }
@@ -482,7 +485,7 @@ internal fun EffectWorkspacePanel(
             // Cancel and Apply remain reachable regardless of the active horizontal card.
             Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { renderJob?.cancel(); resetPreview(); onDismiss() }, modifier = Modifier.testTag("workspace-cancel")) { Text("Cancel", color = foreground) }
-                Button(enabled = !busy && heldEffectStart == null && editorState.playerError == null && (visualId != null || rendered != null), onClick = {
+                Button(enabled = targetReason == null && !busy && heldEffectStart == null && (visualId != null || rendered != null), onClick = {
                     vm.setPlaying(false)
                     val output = rendered
                     val operation = timeOperation
@@ -528,7 +531,11 @@ private fun WorkspacePresetCard(label: String, description: String, selected: Bo
         .background(if (selected) EditorPalette.BgElevated else EditorPalette.BgSurface)
         .border(if (selected) 2.dp else 1.dp, if (selected) EditorPalette.NeonCyan else EditorPalette.BorderGlass, RoundedCornerShape(10.dp))
         .then(interaction)
-        .semantics(mergeDescendants = true) { contentDescription = description }.padding(horizontal = 4.dp, vertical = 4.dp),
+        .testTag("workspace-preset-$id")
+        .semantics(mergeDescendants = true) {
+            contentDescription = description
+            this.selected = selected
+        }.padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
         if (sampleImage != null) {
             Image(sampleImage, contentDescription = "$label sample preview", contentScale = ContentScale.Crop,

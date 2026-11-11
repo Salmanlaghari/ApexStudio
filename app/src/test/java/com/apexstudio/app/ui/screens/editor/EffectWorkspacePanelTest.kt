@@ -7,12 +7,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
+import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.WorkspaceEffectPresets
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.setPlayerError
 import com.apexstudio.app.presentation.viewmodel.setPlayerPosition
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -53,7 +58,10 @@ class EffectWorkspacePanelTest {
                 EffectWorkspacePanel("project", clip, vm, false, previews::add, {}, {}, { closed++ })
             }
         }
+        showPresets()
+        compose.onNodeWithTag("workspace-preset-mono").assertIsNotSelected()
         choosePreset("Monochrome")
+        compose.onNodeWithTag("workspace-preset-mono").assertIsSelected()
         compose.runOnIdle {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertFalse(vm.state.value.canUndo)
@@ -135,7 +143,7 @@ class EffectWorkspacePanelTest {
         }
     }
 
-    @Test fun `failed preview is explicitly unavailable and cannot be applied`() {
+    @Test fun `preview error is a warning and Apply saves the selected effect for export`() {
         val vm = editor()
         compose.setContent {
             Box(Modifier.width(400.dp)) {
@@ -144,8 +152,32 @@ class EffectWorkspacePanelTest {
         }
         choosePreset("Monochrome")
         compose.runOnIdle { vm.setPlayerError("Shader unavailable") }
-        compose.onNodeWithText("Apply").assertIsNotEnabled()
+        compose.onNodeWithText("Apply").assertIsEnabled().performClick()
         compose.onNodeWithText("Preview unavailable:", substring = true).assertExists()
+        compose.runOnIdle {
+            val savedProject = vm.state.value.project!!
+            val saved = savedProject.clips.single()
+            assertEquals("mono", saved.workspaceEffects.single().id)
+            val json = Json { encodeDefaults = true }.encodeToString(com.apexstudio.app.domain.model.Project.serializer(), savedProject)
+            val restored = Json { encodeDefaults = true }.decodeFromString<com.apexstudio.app.domain.model.Project>(json).clips.single()
+            assertEquals(saved.workspaceEffects, restored.workspaceEffects)
+            assertEquals(restored.workspaceEffects, workspaceEffectPreviewBinding(restored.workspaceEffects).sourceEffects)
+            assertNull(projectCompositionUnsupportedReason(listOf(restored), ExportEngine.ExportConfig()))
+            assertEquals(1, vm.undoStack.size)
+        }
+    }
+
+    @Test fun `effect Apply disables when the captured target is no longer selected`() {
+        val vm = editor()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
+            }
+        }
+        choosePreset("Monochrome")
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(selectedClipId = "another") }
+        compose.onNodeWithTag("workspace-apply").assertIsNotEnabled()
+        compose.onNodeWithText("This clip changed", substring = true).assertExists()
         compose.runOnIdle {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertTrue(vm.undoStack.isEmpty())

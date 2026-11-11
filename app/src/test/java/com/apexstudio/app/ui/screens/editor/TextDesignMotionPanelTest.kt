@@ -2,10 +2,13 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import com.apexstudio.app.data.text.TextDesignMotionPreset
 import com.apexstudio.app.domain.model.TextOverlay
@@ -38,7 +41,10 @@ class TextDesignMotionPanelTest {
         compose.onNode(hasSetTextAction())
             .performScrollTo()
             .performTextInput("amber typewriter")
-        compose.onNodeWithText("Amber Frame").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("text-design-motion-results")
+            .performScrollTo()
+            .performScrollToNode(hasText("Amber Frame · Typewriter"))
+        compose.onNodeWithText("Amber Frame · Typewriter").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertNotNull(chosen)
             assertEquals("TYPEWRITER", chosen!!.animationType)

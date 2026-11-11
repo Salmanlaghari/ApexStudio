@@ -48,7 +48,12 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.text.TextAnimEngine
@@ -229,10 +234,10 @@ fun TextPanel(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             listOf(
-                TextPanelTab.EDIT to "Edit & Font",
-                TextPanelTab.ANIMATION to "Animation",
-                TextPanelTab.PRESETS to "Presets",
-                TextPanelTab.CAPTIONS to "Captions"
+                TextPanelTab.EDIT to "Edit text",
+                TextPanelTab.ANIMATION to "Motion",
+                TextPanelTab.PRESETS to "Styles",
+                TextPanelTab.CAPTIONS to "Auto captions"
             ).forEach { (tab, label) ->
                 val isSel = activeTab == tab
                 Box(
@@ -241,6 +246,8 @@ fun TextPanel(
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isSel) ApexPalette.NeonCyan else Color.Transparent)
                         .clickable { activeTab = tab }
+                        .testTag("text-tab-${tab.name.lowercase()}")
+                        .semantics { this.selected = isSel }
                         .padding(vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -263,8 +270,18 @@ fun TextPanel(
                 .verticalScroll(scrollState)
         ) {
 
-        // Caption chips: one pill per caption + add button
-        LazyRow(
+        if (activeTab != TextPanelTab.CAPTIONS) Text(
+            "Add text → type your words → choose a sample style → drag it on the preview. Set timing on the timeline.",
+            color = ApexPalette.TextSecondary,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            modifier = Modifier.fillMaxWidth().testTag("text-quick-guide")
+        )
+        if (activeTab != TextPanelTab.CAPTIONS) Spacer(Modifier.height(6.dp))
+
+        if (activeTab != TextPanelTab.CAPTIONS) Text("1 · Add or select text", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        // Text layer chips: one per editable overlay, plus the explicit add action.
+        if (activeTab != TextPanelTab.CAPTIONS) LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -310,6 +327,11 @@ fun TextPanel(
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { onSelect(o.id) }
+                        .testTag("text-overlay-${o.id}")
+                        .semantics {
+                            this.selected = sel
+                            contentDescription = "Text layer: ${o.text.ifBlank { "Text" }}"
+                        }
                         .padding(horizontal = 10.dp, vertical = 5.dp)
                 ) {
                     Text(
@@ -323,13 +345,11 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        if (activeTab != TextPanelTab.CAPTIONS) Spacer(Modifier.height(8.dp))
 
-        // One-tap templates: Text Reveal adds editable "Beautiful" text
-        // + the walking-cat sticker + a keyframed mask at the playhead.
-        // Keep unrelated shortcuts out of Presets so its search results remain
-        // visible and tappable in the compact panel while the keyboard is open.
-        if (activeTab != TextPanelTab.PRESETS) Box(
+        // Keep this advanced multi-layer template beside the style gallery,
+        // not in front of the basic Add text flow.
+        if (activeTab == TextPanelTab.PRESETS) Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
@@ -350,13 +370,13 @@ fun TextPanel(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Text Reveal",
+                        "Text Reveal template",
                         color = if (canApplyTemplate) Color.White else ApexPalette.TextTertiary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        if (canApplyTemplate) "Walking sticker reveals your text • tap to add at playhead"
+                        if (canApplyTemplate) "Adds sample text, a sticker and a reveal mask at the playhead"
                         else "Add a video clip first",
                         color = ApexPalette.TextSecondary,
                         fontSize = 10.sp
@@ -365,7 +385,7 @@ fun TextPanel(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        if (activeTab != TextPanelTab.CAPTIONS) Spacer(Modifier.height(10.dp))
 
         // Recognition creates overlays; it must not require one to exist first.
         if (activeTab == TextPanelTab.CAPTIONS) {
@@ -390,10 +410,35 @@ fun TextPanel(
             return@Column
         }
         if (selected == null) {
-            Text("Tap + Add to place a caption on the video. Drag or tap on video to edit.",
-                color = ApexPalette.TextTertiary, fontSize = 12.sp,
-                modifier = Modifier.padding(vertical = 12.dp))
+            Text("2 · Add your words", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it.",
+                color = ApexPalette.TextSecondary, fontSize = 11.sp, lineHeight = 15.sp,
+                modifier = Modifier.padding(vertical = 8.dp))
+            Box(
+                modifier = Modifier.fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.NeonCyan)
+                    .clickable(role = Role.Button, onClick = onAdd)
+                    .testTag("text-empty-add")
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF0A0E1A))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add text to video", color = Color(0xFF0A0E1A), fontWeight = FontWeight.SemiBold)
+                }
+            }
             return@Column
+        }
+
+        Text("2 · Edit and style your text", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        if (activeTab == TextPanelTab.EDIT) {
+            TextPresetSampleGallery(onApplyPreset = onApplyPreset)
+            Text("Swipe the cards below for Font, Style, Layout and Text Layer controls.",
+                color = ApexPalette.TextTertiary, fontSize = 9.sp,
+                modifier = Modifier.padding(top = 4.dp).testTag("text-card-swipe-hint"))
         }
 
         // Mask row: shape/feather/invert for the selected text, edited
@@ -1226,13 +1271,13 @@ fun TextPanel(
 
             TextPanelTab.PRESETS -> {
                 Text(
-                    "Text Design + Motion  ·  ${TextDesignMotionPack.presets.size} combinations",
+                    "Style samples  ·  ${TextDesignMotionPack.presets.size} looks + motion",
                     color = ApexPalette.NeonCyan,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Each applies an editable look and a renderer-supported animation to your text.",
+                    "Tap a preview to keep your words and apply its style + animation.",
                     color = ApexPalette.TextSecondary,
                     fontSize = 10.sp
                 )
@@ -1253,32 +1298,16 @@ fun TextPanel(
                     modifier = Modifier.fillMaxWidth()
                 )
                 val matchingDesignMotions = TextDesignMotionPack.search(designMotionQuery)
+                Text("Swipe samples sideways to browse; tap a preview to apply it.",
+                    color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    modifier = Modifier.fillMaxWidth().height(65.dp)
+                    modifier = Modifier.fillMaxWidth().height(76.dp).testTag("text-design-motion-results")
                 ) {
                     items(matchingDesignMotions, key = { it.id }) { preset ->
                         val current = selected.presetId == preset.id
-                        Column(
-                            modifier = Modifier
-                                .width(136.dp)
-                                .fillMaxHeight()
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
-                                .border(1.5.dp, if (current) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
-                                .clickable { onApplyDesignMotion(preset) }
-                                .padding(horizontal = 8.dp, vertical = 5.dp),
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                preset.designName,
-                                color = Color(preset.colorArgb.toInt()),
-                                fontSize = 11.sp,
-                                fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
-                                fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
-                                maxLines = 1
-                            )
-                            Text(preset.motionName, color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1)
+                        TextDesignMotionSampleCard(preset, current, "text-design-motion-${preset.id}") {
+                            onApplyDesignMotion(preset)
                         }
                     }
                 }
@@ -1286,7 +1315,7 @@ fun TextPanel(
                     Text("No matching text combinations", color = ApexPalette.TextTertiary, fontSize = 10.sp)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("More color and font looks", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("More sample styles", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
                 // Preset Categories
                 LazyRow(
@@ -1321,31 +1350,12 @@ fun TextPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     items(categoryPresets, key = { it.id }) { preset ->
-                        val isCurrent = selected.presetId == preset.id
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (preset.bgArgb != null) Color(preset.bgArgb.toInt())
-                                    else ApexPalette.BgElevated
-                                )
-                                .border(
-                                    1.5.dp,
-                                    if (isCurrent) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable { onApplyPreset(preset) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                preset.name,
-                                color = Color(preset.colorArgb.toInt()),
-                                fontSize = 11.sp,
-                                fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
-                                fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
-                            )
-                        }
+                        TextPresetSampleCard(
+                            preset = preset,
+                            isSelected = selected.presetId == preset.id,
+                            tag = "text-preset-${preset.id}",
+                            onClick = { onApplyPreset(preset) }
+                        )
                     }
                 }
             }
@@ -1371,6 +1381,103 @@ fun TextPanel(
             }
             }
         }
+    }
+}
+
+@Composable
+private fun TextPresetSampleGallery(onApplyPreset: (TextPreset) -> Unit) {
+    val starterCategories = listOf("Cinematic", "Social / Vlog", "Cyberpunk", "Broadcast")
+    val presets = remember {
+        starterCategories.mapNotNull { category -> TextPresetEngine.getPresetsForCategory(category).firstOrNull() }
+    }
+    Column(Modifier.fillMaxWidth().testTag("text-starter-gallery")) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Try a style sample", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text("Tap to apply", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+            items(presets, key = { it.id }) { preset ->
+                TextPresetSampleCard(preset, false, "text-starter-style-${preset.id}") { onApplyPreset(preset) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextPresetSampleCard(
+    preset: TextPreset,
+    isSelected: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    val fontFamily = rememberTextFontFamily(preset.fontFamily, preset.isBold, preset.isItalic)
+    val cardBackground = preset.bgArgb?.let { Color(it.toInt()) } ?: Color(0xFF1C2433)
+    Column(
+        modifier = Modifier
+            .width(116.dp)
+            .height(62.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(cardBackground)
+            .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .testTag(tag)
+            .semantics {
+                this.selected = isSelected
+                contentDescription = "${preset.name} preview; tap to apply this style"
+            }
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "Your title",
+            color = Color(preset.colorArgb.toInt()),
+            fontSize = (13f * preset.sizeScale.coerceIn(0.8f, 1.2f)).sp,
+            fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
+            fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+            fontFamily = fontFamily,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(preset.name, color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun TextDesignMotionSampleCard(
+    preset: TextDesignMotionPreset,
+    isSelected: Boolean,
+    tag: String,
+    onClick: () -> Unit,
+) {
+    val fontFamily = rememberTextFontFamily(preset.fontFamily, preset.isBold, preset.isItalic)
+    Column(
+        modifier = Modifier
+            .width(136.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(9.dp))
+            .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
+            .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .testTag(tag)
+            .semantics {
+                this.selected = isSelected
+                contentDescription = "${preset.designName} style with ${preset.motionName} motion; tap to apply"
+            }
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            "Your title",
+            color = Color(preset.colorArgb.toInt()),
+            fontSize = (14f * preset.sizeScale.coerceIn(0.8f, 1.2f)).sp,
+            fontWeight = if (preset.isBold) FontWeight.Bold else FontWeight.Normal,
+            fontStyle = if (preset.isItalic) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal,
+            fontFamily = fontFamily,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text("${preset.designName} · ${preset.motionName}", color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

@@ -29,8 +29,10 @@ class TextDurationRangeCardTest {
                     listOf("First" to 5000L, "Second" to 12000L)) { a, b -> range = a to b }
             }
         }
-        compose.onNodeWithText("Whole timeline").performScrollTo().performClick()
+        compose.onNodeWithText("Whole project").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(0L to 12000L, range) }
+        compose.onNodeWithText("When this text appears").assertIsDisplayed()
+        compose.onNodeWithText("Times are for the whole project", substring = true).assertIsDisplayed()
     }
 
     @Test fun clipEndChoiceCanExtendTextAcrossClipCut() {
@@ -63,7 +65,7 @@ class TextDurationRangeCardTest {
         compose.setContent {
             TextDurationRangeCard(TextOverlay(id = "title"), 0L, 0L, emptyList()) { _, _ -> error("No timeline") }
         }
-        compose.onNodeWithText("Whole timeline").assertIsNotEnabled()
+        compose.onNodeWithText("Whole project").assertIsNotEnabled()
         compose.onNodeWithTag("text-project-range-slider").assertIsNotEnabled()
     }
 }

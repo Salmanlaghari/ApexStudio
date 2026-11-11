@@ -1,6 +1,8 @@
 package com.apexstudio.app.ui.screens.editor
 
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
 
 internal data class WorkspaceRange(val startMs: Long, val endMs: Long) {
     companion object {
@@ -41,4 +43,23 @@ internal fun workspacePreviewState(
         clips, project.audioTracks, project.transitions
     )
     return saved.copy(project = project.copy(clips = clips, durationMs = duration), durationMs = duration)
+}
+
+/** Mirrors the commit boundary so the UI explains an invalid target before Apply is tapped. */
+internal fun workspaceApplyTargetReason(
+    projectId: String,
+    project: Project?,
+    selectedClipId: String?,
+    originalClip: MediaClip,
+): String? {
+    val persistedClip = project?.clips?.firstOrNull { it.id == originalClip.id }
+    val targetCurrent = project?.id == projectId && selectedClipId == originalClip.id &&
+        persistedClip == originalClip
+    val isMainVideo = originalClip.type == ClipType.VIDEO && originalClip.trackIndex == 0 &&
+        originalClip.uri.isNotBlank()
+    return when {
+        !isMainVideo -> "Only a main-track video with a valid source can receive these effects."
+        !targetCurrent -> "This clip changed or is no longer selected. Close and reopen the workspace."
+        else -> null
+    }
 }

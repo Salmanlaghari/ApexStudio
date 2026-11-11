@@ -127,11 +127,11 @@ internal fun QuickVideoPresetsOverlay(vm: EditorViewModel, section: QuickVideoPr
                         style = MaterialTheme.typography.bodySmall)
                 }
                 Text(
-                    "Works with videos up to 640×360 (portrait up to 360×640), 30 seconds and 30 fps. Output is up to 1080p (portrait equivalent). Audio must be silent or AAC.",
+                    "Works with videos up to 640×360 (portrait up to 360×640), 5 minutes (up to 9,000 frames) and 30 fps. Output is up to 1080p (portrait equivalent). Audio must be silent or AAC.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Text(
-                    "The whole source is enhanced, so a timeline trim does not bypass the 30-second limit. Preview and export use the enhanced video; Undo restores the original.",
+                    "The whole source is enhanced; a timeline trim does not shorten it. Longer clips take more time; progress and Cancel are available. Preview and export use the enhanced video; Undo restores the original.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 durationBlockReason?.let { Text(it, color = MaterialTheme.colorScheme.error) }

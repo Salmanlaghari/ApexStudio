@@ -10,35 +10,37 @@ import org.junit.Test
 
 class VideoUpscaleControllerPolicyTest {
     @Test fun acceptsOnlyBoundedLandscapeOrPortraitX3Sources() {
-        val landscape = VideoUpscaleEngine.validateSource(640, 360, 30_000)
+        val landscape = VideoUpscaleEngine.validateSource(640, 360, 179_466)
         assertEquals(1920, landscape.outputWidth)
         assertEquals(1080, landscape.outputHeight)
 
-        val portrait = VideoUpscaleEngine.validateSource(360, 640, 30_000)
+        val portrait = VideoUpscaleEngine.validateSource(360, 640, 179_466)
         assertEquals(1080, portrait.outputWidth)
         assertEquals(1920, portrait.outputHeight)
+        VideoUpscaleEngine.validateSource(640, 360, VideoUpscaleEngine.MAX_DURATION_MS)
 
         assertInvalid { VideoUpscaleEngine.validateSource(642, 360, 1_000) }
         assertInvalid { VideoUpscaleEngine.validateSource(640, 362, 1_000) }
-        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 30_001) }
+        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, VideoUpscaleEngine.MAX_DURATION_MS + 1L) }
         assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 1_000, frameRate = 31) }
-        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 30_000, frameRate = 31) }
+        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, VideoUpscaleEngine.MAX_DURATION_MS, frameRate = 31) }
         assertInvalid { VideoUpscaleEngine.validateSource(641, 361, 1_000) }
     }
 
     @Test fun sourceDurationPreflightExplainsOwnersClipAndBoundaryBeforeAnyProcessing() {
         assertEquals(null, VideoUpscaleEngine.sourceDurationBlockReason(30_000L))
-        assertTrue(VideoUpscaleEngine.sourceDurationBlockReason(30_001L)!!.contains("00:30.001"))
-        val reason = VideoUpscaleEngine.sourceDurationBlockReason(179_000L)!!
-        assertTrue(reason.contains("This video is 02:59 long"))
-        assertTrue(reason.contains("00:30 or shorter"))
+        assertEquals(null, VideoUpscaleEngine.sourceDurationBlockReason(179_466L))
+        assertEquals(null, VideoUpscaleEngine.sourceDurationBlockReason(VideoUpscaleEngine.MAX_DURATION_MS))
+        val reason = VideoUpscaleEngine.sourceDurationBlockReason(VideoUpscaleEngine.MAX_DURATION_MS + 1L)!!
+        assertTrue(reason.contains("This video is 05:00.001 long"))
+        assertTrue(reason.contains("05:00 or shorter"))
         assertTrue(reason.contains("timeline trim will not shorten the source"))
-        assertInvalid { VideoUpscaleEngine.validateSource(640, 360, 179_000L) }
     }
 
     @Test fun engineFailuresAreMappedToShortActionableMessages() {
         assertTrue(videoUpscaleFailureMessage(IllegalArgumentException("AAC audio only")).contains("silent video or one with AAC"))
         assertTrue(videoUpscaleFailureMessage(IllegalArgumentException("up to 30 frames per second")).contains("30 fps or less"))
+        assertTrue(videoUpscaleFailureMessage(IllegalArgumentException("Video exceeds the 9,000-frame processing limit")).contains("up to 5 minutes"))
         assertTrue(videoUpscaleFailureMessage(IllegalStateException("native codec failure")).contains("Try another video"))
     }
 

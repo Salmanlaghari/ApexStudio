@@ -148,9 +148,10 @@ internal fun videoUpscaleFailureMessage(failure: Throwable): String {
     val reason = failure.message.orEmpty().lowercase()
     return when {
         "audio" in reason || "aac" in reason -> "Choose a silent video or one with AAC audio."
-        "duration" in reason || "30 seconds" in reason -> "Choose a video that is 30 seconds or shorter."
+        "duration" in reason || "5 minutes" in reason -> "Choose a video that is 5 minutes or shorter."
         "frame rate" in reason || "frames per second" in reason || "fps" in reason ->
             "This video is too fast. Choose a video at 30 fps or less."
+        "frame" in reason -> "Choose a video up to 5 minutes long at 30 fps or less."
         "640" in reason || "dimension" in reason || "resolution" in reason ->
             "This video's size isn't supported. Choose up to 640×360 (portrait 360×640)."
         "space" in reason || "storage" in reason -> "Free up storage space, then try again."

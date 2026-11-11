@@ -85,9 +85,9 @@ internal fun VideoUpscalePanel(
                 }
             }
             Text("Create a sharper 3× version of this video. Preview and export will use it after processing; the original stays available with Undo.")
-            Text("Works with videos up to 640×360 (portrait up to 360×640), 30 seconds and 30 fps. Output is up to 1080p (portrait equivalent). Audio must be silent or AAC.",
+            Text("Works with videos up to 640×360 (portrait up to 360×640), 5 minutes (up to 9,000 frames) and 30 fps. Output is up to 1080p (portrait equivalent). Audio must be silent or AAC.",
                 style = MaterialTheme.typography.bodySmall)
-            Text("The whole source is enhanced, so shortening its timeline trim does not bypass the 30-second limit. Processing can take a little while.",
+            Text("The whole source is enhanced, so a timeline trim does not shorten the source. Longer clips take more time; progress and Cancel are available.",
                 style = MaterialTheme.typography.bodySmall)
             if (progress.processing) {
                 Text(progress.message.ifBlank { "Enhancing video…" }, modifier = Modifier.testTag("video_upscale_status"))

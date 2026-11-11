@@ -213,4 +213,23 @@ class EffectWorkspacePanelTest {
         }
     }
 
+    @Test fun `visual VFX and split cards expose generated image preview tags`() {
+        val vm = editor()
+        compose.setContent {
+            Box(Modifier.width(400.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
+            }
+        }
+        showPresets()
+        compose.onNodeWithText("Monochrome").performScrollTo()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("workspace-effect-sample-mono", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("workspace-effect-sample-mono", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("VFX 5").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("workspace-effect-sample-vfx_chromatic_split", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("workspace-effect-sample-vfx_chromatic_split", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Split screen").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("workspace-effect-sample-split2", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("workspace-effect-sample-split2", useUnmergedTree = true).assertExists()
+    }
+
 }

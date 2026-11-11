@@ -86,6 +86,11 @@ class LandscapeEditorInstrumentedTest {
                 assertTrue("Properties panel did not reopen", reopened)
                 await(60_000L) { vm.state.value.isPlayerReady || vm.state.value.playerError != null }
                 assertTrue("Real decoder not ready: ${vm.state.value.playerError}", vm.state.value.isPlayerReady)
+                await(60_000L) { vm.previewFrameGeneration.value > 0L }
+                assertTrue(
+                    "Landscape fixture reached READY without displaying a decoded frame",
+                    vm.previewFrameGeneration.value > 0L
+                )
                 assertFalse(device.hasObject(By.text("Lenses")))
                 assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "landscape-editor-installed.png")))
             }

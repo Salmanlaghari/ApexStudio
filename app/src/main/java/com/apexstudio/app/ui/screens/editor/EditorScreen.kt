@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -158,7 +159,8 @@ private fun EditorScreenContent(
     val sourceAspectForLayout = previewContentAspect(
         videoWidth = state.videoWidth.takeIf { it > 0 } ?: exoPlayer?.videoSize?.width ?: 0,
         videoHeight = state.videoHeight.takeIf { it > 0 } ?: exoPlayer?.videoSize?.height ?: 0,
-        pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f
+        pixelAspect = exoPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
+        rotationDegrees = exoPlayer?.videoSize?.unappliedRotationDegrees ?: 0
     )
     val editorLayoutAspectRatio = editorPreviewStageAspectRatio(
         sourceAspectRatio = sourceAspectForLayout,
@@ -166,6 +168,13 @@ private fun EditorScreenContent(
         fallbackAspectRatio = previewCompositionAspect(editorExportState.settings.aspectRatio),
     )
     val horizontalProjectLayout = usesHorizontalProjectLayout(editorLayoutAspectRatio)
+    val windowConfiguration = LocalConfiguration.current
+    // Source geometry wins for the phone shell: a landscape clip on a portrait
+    // phone still gets the full-width 16:9 preview + dedicated timeline. The
+    // side-by-side landscape workspace is reserved for an actually wide window
+    // when the source itself did not already select that source-first shell.
+    val useLandscapeWorkspace = windowConfiguration.screenWidthDp > windowConfiguration.screenHeightDp &&
+        !horizontalProjectLayout
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
@@ -1334,7 +1343,7 @@ private fun EditorScreenContent(
         AdaptiveEditorWorkspace(
             // PR169/170's preview-first stacked shell is the editor default;
             // adaptive landscape remains available to explicit workspace hosts.
-            landscape = false,
+            landscape = useLandscapeWorkspace,
             horizontalProjectMode = horizontalProjectLayout,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,

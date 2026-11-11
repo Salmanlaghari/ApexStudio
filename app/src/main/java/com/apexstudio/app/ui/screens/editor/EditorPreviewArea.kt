@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -144,6 +147,7 @@ fun VideoPreviewArea(
     onPhotoCropRectChange: ((com.apexstudio.app.domain.model.PhotoCropRect) -> Unit)? = null,
     videoWidth: Int = 0,
     videoHeight: Int = 0,
+    rotationDegrees: Int = 0,
     drawingLayers: List<VideoDrawingLayer> = emptyList(),
     drawingClipId: String? = null,
     drawingEnabled: Boolean = false,
@@ -159,6 +163,7 @@ fun VideoPreviewArea(
     workspaceEffectIntensityProvider: ((Long) -> Float)? = null,
     onEffectPreviewFailure: (String) -> Unit = {},
     compositionAspectRatio: Float = LOCKED_EDITOR_PREVIEW_ASPECT,
+    firstFrameRendered: Boolean = true,
     showFrame: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -276,6 +281,7 @@ fun VideoPreviewArea(
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             pixelAspect = previewPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f,
+            rotationDegrees = rotationDegrees,
             effectOutputAspect = faceCropConfig?.track?.outputAspectRatio
                 ?: videoCropOutputAspect(videoWidth, videoHeight,
                     previewPlayer?.videoSize?.pixelWidthHeightRatio ?: 1f, videoCrop)
@@ -365,6 +371,32 @@ fun VideoPreviewArea(
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Video preview unavailable", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                }
+            }
+
+            // Media3 can reach STATE_READY while the surface is still black.
+            // Keep the surface visually intentional until the listener confirms
+            // an actual decoded frame for this clip; this is deliberately below
+            // the error layer so retry remains the primary action on failure.
+            if (photoClip == null && previewPlayer != null && !firstFrameRendered && playerError == null) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.78f))
+                        .semantics { contentDescription = "Rendering video preview" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = ApexPalette.NeonCyan,
+                            strokeWidth = 2.dp
+                        )
+                        Text("Rendering preview…", color = ApexPalette.TextSecondary, fontSize = 11.sp)
+                    }
                 }
             }
 
@@ -572,9 +604,13 @@ fun VideoPreviewArea(
 
 
 
-internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float): Float? =
-    (width.toFloat() * pixelAspect / height.toFloat())
+internal fun displayedVideoAspect(width: Int, height: Int, pixelAspect: Float, rotationDegrees: Int = 0): Float? {
+    val quarterTurn = ((rotationDegrees % 360) + 360) % 360 in setOf(90, 270)
+    val displayWidth = if (quarterTurn) height else width
+    val displayHeight = if (quarterTurn) width else height
+    return (displayWidth.toFloat() * pixelAspect / displayHeight.toFloat())
         .takeIf { width > 0 && height > 0 && pixelAspect > 0f && it.isFinite() }
+}
 
 /**
  * Aspect ratio of pixels actually presented by the preview. A dynamic face crop
@@ -585,18 +621,20 @@ internal fun previewContentAspect(
     videoWidth: Int,
     videoHeight: Int,
     pixelAspect: Float,
-    effectOutputAspect: Float? = null
+    effectOutputAspect: Float? = null,
+    rotationDegrees: Int = 0
 ): Float? = effectOutputAspect?.takeIf { it.isFinite() && it > 0f }
-    ?: displayedVideoAspect(videoWidth, videoHeight, pixelAspect)
+    ?: displayedVideoAspect(videoWidth, videoHeight, pixelAspect, rotationDegrees)
 
 /** Aspect of the frame emitted by the manual crop shader, not its uncropped input. */
 internal fun videoCropOutputAspect(
     videoWidth: Int,
     videoHeight: Int,
     pixelAspect: Float,
-    crop: VideoCropSettings?
+    crop: VideoCropSettings?,
+    rotationDegrees: Int = 0
 ): Float? {
-    val sourceAspect = displayedVideoAspect(videoWidth, videoHeight, pixelAspect) ?: return null
+    val sourceAspect = displayedVideoAspect(videoWidth, videoHeight, pixelAspect, rotationDegrees) ?: return null
     if (crop == null || crop.isFullFrame) return null
     val safeCrop = crop.sanitized()
     return (sourceAspect * safeCrop.width / safeCrop.height)

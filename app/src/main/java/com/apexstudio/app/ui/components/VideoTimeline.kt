@@ -148,6 +148,7 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -897,8 +898,8 @@ fun VideoTimeline(
     // restored title/action header, with no identity gutter.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
-            .background(Color.Black)
-            .border(1.dp, Color(0xFF141414))
+            .background(EditorPalette.BgBase)
+            .border(1.dp, EditorPalette.BorderGlass)
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
@@ -1145,6 +1146,7 @@ fun VideoTimeline(
                     modifier = Modifier
                         .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
+                        .background(EditorPalette.BgSurface)
                         .horizontalScroll(scrollState)
                         .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
                 ) {

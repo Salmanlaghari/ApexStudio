@@ -154,6 +154,22 @@ class PhotoPreviewGeometryTest {
     }
 
     @Test
+    fun rotationMetadataChangesDisplayAspectBeforeChoosingEditorLayout() {
+        // A 1920x1080 stream rotated 90 degrees is displayed portrait; layout
+        // must not classify it from the encoded dimensions alone.
+        assertEquals(
+            9f / 16f,
+            displayedVideoAspect(1920, 1080, 1f, rotationDegrees = 90)!!,
+            0.0001f
+        )
+        assertEquals(
+            16f / 9f,
+            displayedVideoAspect(1920, 1080, 1f, rotationDegrees = 0)!!,
+            0.0001f
+        )
+    }
+
+    @Test
     fun manualCropOutputAspectUsesCroppedPixelsNotOriginalFrameDimensions() {
         val crop = com.apexstudio.app.domain.model.VideoCropSettings(
             left = 0.25f, top = 0f, right = 0.75f, bottom = 1f

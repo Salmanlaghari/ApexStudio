@@ -1356,6 +1356,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()
     val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
     val faceReviewProgress by vm.faceTrackReview.collectAsStateWithLifecycle()
+    val previewFrameGeneration by vm.previewFrameGeneration.collectAsStateWithLifecycle()
     val compositionAspectRatio = previewCompositionAspect(exportState.settings.aspectRatio)
     val transitionPlan = remember(state.project?.clips, state.project?.transitions) {
         com.apexstudio.app.data.export.ProjectTransitionTimeline.build(
@@ -1377,6 +1378,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         ?: exoPlayer?.videoSize?.pixelWidthHeightRatio
         ?.takeIf { it.isFinite() && it > 0f }
         ?: 1f
+    val sourceRotationDegrees = previewPlayer?.videoSize?.unappliedRotationDegrees
+        ?: exoPlayer?.videoSize?.unappliedRotationDegrees ?: 0
     val sourceVideoAspectRatio = if (isTransitionPreview) {
         state.project?.videoAspectRatio?.takeIf { it.isFinite() && it > 0f }
     } else mainPreviewClip?.takeIf { it.type == ClipType.VIDEO }?.let { clip ->
@@ -1384,9 +1387,11 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             videoWidth = sourceVideoWidth,
             videoHeight = sourceVideoHeight,
             pixelAspect = sourcePixelAspect,
+            rotationDegrees = sourceRotationDegrees,
             effectOutputAspect = clip.faceCropTrack?.outputAspectRatio
                 ?: videoCropOutputAspect(
-                    sourceVideoWidth, sourceVideoHeight, sourcePixelAspect, clip.videoCrop
+                    sourceVideoWidth, sourceVideoHeight, sourcePixelAspect, clip.videoCrop,
+                    sourceRotationDegrees
                 )
         )
     }
@@ -1397,6 +1402,15 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         fallbackAspectRatio = compositionAspectRatio
     )
     val portraitScale = portraitPreviewScale(sourceVideoAspectRatio ?: projectAspectRatio)
+    // STATE_READY only means the decoder is prepared; it does not guarantee a
+    // visible frame. Establish a fresh generation baseline for each clip so a
+    // previous clip's rendered frame can never make a newly bound PlayerView
+    // look falsely ready.
+    val frameGenerationAtBind = remember(mainPreviewClip?.id, previewPlayer) {
+        previewFrameGeneration
+    }
+    val firstFrameRendered = isTransitionPreview || mainPreviewClip?.type == ClipType.IMAGE ||
+        (previewPlayer != null && previewFrameGeneration > frameGenerationAtBind)
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
@@ -1581,6 +1595,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             previewPlayer = previewPlayer,
             videoWidth = sourceVideoWidth,
             videoHeight = sourceVideoHeight,
+            rotationDegrees = sourceRotationDegrees,
             drawingLayers = state.project?.videoDrawings.orEmpty(),
             drawingClipId = mainPreviewClip?.id,
             drawingEnabled = drawingEnabled,
@@ -1596,6 +1611,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             workspaceEffectIntensityProvider = workspaceEffectIntensityProvider,
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             compositionAspectRatio = previewStageAspectRatio,
+            firstFrameRendered = firstFrameRendered,
             chromaKeySettings = if (isTransitionPreview) com.apexstudio.app.domain.model.ChromaKeySettings()
                 else state.chromaKeySettings,
             overlayClips = overlayClips,

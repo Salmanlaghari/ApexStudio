@@ -5,6 +5,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -110,6 +111,30 @@ class EditorViewModelTest {
         assertTrue(vm.state.value.gpuFilterPanelOpen)
         vm.closeFilterPanel()
         assertFalse(vm.state.value.gpuFilterPanelOpen)
+    }
+
+    @Test
+    fun `saved Shorts template id resolves to its filter and effect`() {
+        val recipe = ShortsTemplateCatalog.templates.first()
+        val vm = viewModel()
+        vm.loadTransmissionTemplates()
+        vm._state.value = vm.state.value.copy(
+            project = Project(
+                id = "shorts-project",
+                name = "Shorts project",
+                durationMs = recipe.targetDurationMs,
+                lastTransmissionTemplateId = recipe.visualPresetId
+            )
+        )
+
+        val savedTemplateId = checkNotNull(vm.state.value.project?.lastTransmissionTemplateId)
+        val savedLook = checkNotNull(vm.transmissionTemplates.value.firstOrNull { it.id == savedTemplateId })
+        vm.applyTransmissionTemplateInternal(savedLook, persistProjectId = null)
+
+        assertEquals(recipe.filterId, vm.state.value.activeFilterId)
+        assertEquals(recipe.filterIntensity, vm.state.value.filterIntensity, 0.0001f)
+        assertEquals(recipe.fxPresetId, vm.state.value.activeFxId)
+        assertEquals(recipe.fxIntensity, vm.state.value.fxIntensity, 0.0001f)
     }
 
     @Test

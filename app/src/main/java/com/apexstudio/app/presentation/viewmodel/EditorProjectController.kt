@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
+import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Dispatchers
@@ -250,12 +251,13 @@ internal fun EditorViewModel.loadLuts() {
 internal fun EditorViewModel.loadTransmissionTemplates() {
     val mgr = timelineTemplateManager ?: run {
         Log.w("EditorViewModel", "TimelineTemplateManager unavailable — transmission catalog empty")
+        _transmissionTemplates.value = ShortsTemplateCatalog.asTransmissionTemplates()
         return
     }
     try {
         val raw = mgr.loadTransmissionTemplatesRaw()
         val stats = mgr.parseTransmissionTemplatesWithStats(raw)
-        _transmissionTemplates.value = stats.templates
+        _transmissionTemplates.value = stats.templates + ShortsTemplateCatalog.asTransmissionTemplates()
         if (stats.skippedCount > 0) {
             Log.w(
                 "EditorViewModel",
@@ -265,7 +267,7 @@ internal fun EditorViewModel.loadTransmissionTemplates() {
         }
     } catch (e: Exception) {
         Log.w("EditorViewModel", "loadTransmissionTemplates failed", e)
-        _transmissionTemplates.value = emptyList()
+        _transmissionTemplates.value = ShortsTemplateCatalog.asTransmissionTemplates()
     }
 }
 

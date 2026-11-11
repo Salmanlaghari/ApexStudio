@@ -16,8 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -38,10 +40,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashMarker
+import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.picker.PreviewStartupLatency
+import com.apexstudio.app.data.picker.persistPickedMediaToAppStorage
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
+import com.apexstudio.app.data.template.ShortsMusicDownloadResult
+import com.apexstudio.app.data.template.ShortsMusicProgress
+import com.apexstudio.app.data.template.ShortsMusicRepository
+import com.apexstudio.app.data.template.ShortsTemplateCatalog
+import com.apexstudio.app.data.template.ShortsTemplateProjectFactory
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -60,7 +69,9 @@ fun HomeScreen(
     onProjectOpen: (String) -> Unit,
     onOpenAiTools: (String) -> Unit = onProjectOpen,
     onOpenSettings: () -> Unit = {},
-    onExport: () -> Unit = {}
+    onExport: () -> Unit = {},
+    shortsTemplateRequestId: String? = null,
+    onShortsTemplateRequestConsumed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val repo = remember { MediaRepository }
@@ -75,6 +86,13 @@ fun HomeScreen(
     var searchText by remember { mutableStateOf("") }
     var showAllProjects by remember { mutableStateOf(false) }
     var openAiToolsAfterCreate by remember { mutableStateOf(false) }
+    var activeShortsTemplateId by remember { mutableStateOf<String?>(null) }
+    var pendingShortsTemplateId by remember { mutableStateOf<String?>(null) }
+    var pendingShortsVideo by remember { mutableStateOf<MediaMetadata?>(null) }
+    var isApplyingShortsTemplate by remember { mutableStateOf(false) }
+    var shortsDownloadProgress by remember { mutableStateOf<ShortsMusicProgress?>(null) }
+    var shortsApplyError by remember { mutableStateOf<String?>(null) }
+    var shortsApplyCanRetry by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
@@ -87,13 +105,124 @@ fun HomeScreen(
     }
 
     val mediaPicker = remember { MediaPickerHelper(context) }
-    mediaPicker.registerLaunchers(onCancelled = { openAiToolsAfterCreate = false })
+    mediaPicker.registerLaunchers(onCancelled = {
+        openAiToolsAfterCreate = false
+        if (activeShortsTemplateId != null) {
+            activeShortsTemplateId = null
+            onShortsTemplateRequestConsumed()
+        }
+    })
+
+    fun applyShortsTemplateToVideo(templateId: String, metadata: MediaMetadata) {
+        val template = ShortsTemplateCatalog.byId(templateId)
+        if (template == null) {
+            shortsApplyError = "This Shorts template is no longer available."
+            shortsApplyCanRetry = false
+            return
+        }
+        if (isApplyingShortsTemplate) return
+        pendingShortsTemplateId = templateId
+        pendingShortsVideo = metadata
+        shortsApplyError = null
+        shortsDownloadProgress = null
+        isApplyingShortsTemplate = true
+        scope.launch {
+            try {
+                when (val result = ShortsMusicRepository.download(context, template.musicAssetId) { progress ->
+                    scope.launch { shortsDownloadProgress = progress }
+                }) {
+                    is ShortsMusicDownloadResult.Success -> {
+                        val durableVideoUri = persistPickedMediaToAppStorage(context, metadata.uri, metadata.name)
+                        if (metadata.uri.startsWith("content:", ignoreCase = true) && durableVideoUri == metadata.uri) {
+                            shortsApplyError = "ApexStudio couldn't make a permanent copy of this video. Choose a locally available video under 500 MB and try again."
+                            shortsApplyCanRetry = false
+                            return@launch
+                        }
+                        val videoClip = MediaClip(
+                            id = UUID.randomUUID().toString(),
+                            name = metadata.name,
+                            uri = durableVideoUri,
+                            durationMs = metadata.durationMs,
+                            trimStartMs = 0L,
+                            trimEndMs = metadata.durationMs,
+                            thumbnail = null,
+                            trackIndex = 0,
+                            type = ClipType.VIDEO
+                        )
+                        val sourceName = metadata.name.substringBeforeLast('.')
+                        val baseProject = repo.createProject(
+                            name = "${template.name} · $sourceName",
+                            clips = listOf(videoClip),
+                            videoAspectRatio = metadata.sourceVideoAspectRatio
+                        )
+                        val readyProject = ShortsTemplateProjectFactory.apply(
+                            baseProject,
+                            template,
+                            result.asset,
+                            result.file
+                        )
+                        withContext(Dispatchers.IO) { projectRepo.saveProject(readyProject) }
+                        metadata.selectionResultElapsedRealtimeMs?.let { selectedAt ->
+                            PreviewStartupLatency.begin(readyProject.id, videoClip.id, selectedAt)
+                        }
+                        CrashMarker.mark(context, "HomeScreen: opening Shorts template ${readyProject.id}")
+                        pendingShortsTemplateId = null
+                        pendingShortsVideo = null
+                        onProjectOpen(readyProject.id)
+                    }
+                    is ShortsMusicDownloadResult.Failed -> {
+                        shortsApplyError = result.reason
+                        shortsApplyCanRetry = result.canRetry
+                    }
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                shortsApplyError = error.localizedMessage ?: "Music could not be verified."
+                shortsApplyCanRetry = true
+            } finally {
+                isApplyingShortsTemplate = false
+                shortsDownloadProgress = null
+            }
+        }
+    }
+
+    LaunchedEffect(shortsTemplateRequestId) {
+        val requestedId = shortsTemplateRequestId ?: return@LaunchedEffect
+        if (ShortsTemplateCatalog.byId(requestedId) == null) {
+            shortsApplyError = "This Shorts template is no longer available."
+            shortsApplyCanRetry = false
+        } else {
+            activeShortsTemplateId = requestedId
+            mediaPicker.pickSingleVisualMedia.launch(
+                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            )
+        }
+        onShortsTemplateRequestConsumed()
+    }
 
     LaunchedEffect(Unit) {
         mediaPicker.pickedMedia.collect { metadataList ->
             if (metadataList.isEmpty()) {
                 openAiToolsAfterCreate = false
+                if (activeShortsTemplateId != null) {
+                    activeShortsTemplateId = null
+                    onShortsTemplateRequestConsumed()
+                }
             } else {
+                val requestedTemplateId = activeShortsTemplateId
+                if (requestedTemplateId != null) {
+                    activeShortsTemplateId = null
+                    onShortsTemplateRequestConsumed()
+                    val selectedVideo = metadataList.singleOrNull()?.takeIf { it.type == ClipType.VIDEO }
+                    if (selectedVideo == null) {
+                        shortsApplyError = "Choose exactly one video to use this Shorts template."
+                        shortsApplyCanRetry = false
+                    } else {
+                        applyShortsTemplateToVideo(requestedTemplateId, selectedVideo)
+                    }
+                    return@collect
+                }
                 val pickedClips = metadataList.map { meta ->
                     meta to MediaClip(
                         id = UUID.randomUUID().toString(),
@@ -182,6 +311,60 @@ fun HomeScreen(
         onDeleteProject = { projectToDelete = it },
         onShowAll = { showAllProjects = !showAllProjects }
     )
+
+    if (isApplyingShortsTemplate) {
+        val progress = shortsDownloadProgress
+        val fraction = progress?.takeIf { it.totalBytes > 0L }
+            ?.let { (it.doneBytes.toFloat() / it.totalBytes.toFloat()).coerceIn(0f, 1f) }
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Preparing your Short") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Downloading and verifying the licensed music before adding it to your timeline.")
+                    if (fraction == null) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        LinearProgressIndicator(progress = fraction, modifier = Modifier.fillMaxWidth())
+                        Text(
+                            "${String.format(java.util.Locale.US, "%.1f", progress!!.doneBytes / (1024f * 1024f))} / " +
+                                "${String.format(java.util.Locale.US, "%.1f", progress.totalBytes / (1024f * 1024f))} MB"
+                        )
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    shortsApplyError?.let { errorMessage ->
+        val retryTemplateId = pendingShortsTemplateId
+        val retryVideo = pendingShortsVideo
+        AlertDialog(
+            onDismissRequest = {
+                shortsApplyError = null
+                pendingShortsTemplateId = null
+                pendingShortsVideo = null
+            },
+            title = { Text("Could not prepare template") },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                if (shortsApplyCanRetry && retryTemplateId != null && retryVideo != null) {
+                    TextButton(onClick = {
+                        shortsApplyError = null
+                        applyShortsTemplateToVideo(retryTemplateId, retryVideo)
+                    }) { Text("Retry download") }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    shortsApplyError = null
+                    pendingShortsTemplateId = null
+                    pendingShortsVideo = null
+                }) { Text("Cancel") }
+            }
+        )
+    }
 
     projectToRename?.let { project ->
         RenameProjectDialog(

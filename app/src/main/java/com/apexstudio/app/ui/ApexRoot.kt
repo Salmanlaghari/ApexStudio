@@ -30,6 +30,7 @@ import com.apexstudio.app.ui.screens.export.ExportScreen
 import com.apexstudio.app.ui.screens.home.HomeScreen
 import com.apexstudio.app.ui.screens.packs.PacksScreen
 import com.apexstudio.app.ui.screens.settings.SettingsScreen
+import com.apexstudio.app.ui.screens.templates.ShortsTemplatesScreen
 
 /** Select a workspace; editor-owned workspaces release preview codecs before exporting. */
 internal fun apexContentTab(currentTab: String, showExportSettings: Boolean): String =
@@ -42,7 +43,7 @@ fun ApexRoot() {
     var editorEntryWorkspace by remember { mutableStateOf("edit") }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var showExportSettings by remember { mutableStateOf(false) }
-    var packsOpenedFromHome by remember { mutableStateOf(false) }
+    var pendingShortsTemplateId by remember { mutableStateOf<String?>(null) }
 
     Column(
         modifier = Modifier
@@ -55,15 +56,19 @@ fun ApexRoot() {
                     is Overlay.Settings -> SettingsScreen(
                         onBack = { overlay = null },
                         onOpenDiagnostics = { overlay = Overlay.Diagnostics },
-                        onOpenPacks = { packsOpenedFromHome = false; overlay = Overlay.Packs }
+                        onOpenPacks = { overlay = Overlay.Packs }
                     )
                     is Overlay.Diagnostics -> CrashDiagnosticsScreen(
                         onBack = { overlay = null }
                     )
                     is Overlay.Packs -> PacksScreen(
-                        onBack = {
-                            overlay = if (packsOpenedFromHome) null else Overlay.Settings
-                            packsOpenedFromHome = false
+                        onBack = { overlay = Overlay.Settings }
+                    )
+                    is Overlay.ShortTemplates -> ShortsTemplatesScreen(
+                        onBack = { overlay = null },
+                        onUseTemplate = { templateId ->
+                            pendingShortsTemplateId = templateId
+                            overlay = null
                         }
                     )
                     else -> when (apexContentTab(currentTab, showExportSettings)) {
@@ -78,7 +83,9 @@ fun ApexRoot() {
                                 editorEntryWorkspace = "ai"
                                 currentTab = "edit"
                             },
-                            onOpenSettings = { overlay = Overlay.Settings }
+                            onOpenSettings = { overlay = Overlay.Settings },
+                            shortsTemplateRequestId = pendingShortsTemplateId,
+                            onShortsTemplateRequestConsumed = { pendingShortsTemplateId = null }
                         )
                         "edit", "color", "audio" -> EditorScreen(
                             projectId = projectId ?: "p1",
@@ -135,7 +142,7 @@ fun ApexRoot() {
                 referenceStyle = currentTab == "home" || showExportSettings,
                 onSelect = { tab ->
                     when (tab) {
-                        "templates" -> { packsOpenedFromHome = true; overlay = Overlay.Packs }
+                        "templates" -> overlay = Overlay.ShortTemplates
                         "settings" -> overlay = Overlay.Settings
                         "export" -> {
                             showExportSettings = true
@@ -160,4 +167,5 @@ private sealed class Overlay {
     data object Settings : Overlay()
     data object Diagnostics : Overlay()
     data object Packs : Overlay()
+    data object ShortTemplates : Overlay()
 }

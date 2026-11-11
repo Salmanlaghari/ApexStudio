@@ -241,9 +241,12 @@ class EditorViewModel(
         }
         Log.d("ApexTrace", "EditorViewModel.init start")
         context?.let { CrashMarker.mark(it, "EditorViewModel.init start") }
-        if (context != null || projectId != null) loadProject()
+        // These catalogs are synchronous. Populate them before launching the
+        // asynchronous project restore so lastTransmissionTemplateId always
+        // resolves, including for the editor-only Shorts looks.
         loadLuts()
         loadTransmissionTemplates()
+        if (context != null || projectId != null) loadProject()
         // NOTE: no loadAudioState() — the audio list is synced from the
         // loaded project inside loadProject() (the old function read
         // the FIRST project from the stub repo, i.e. the wrong project

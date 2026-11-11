@@ -125,6 +125,7 @@ class MediaPickerHelper(private val context: Context) {
     private var importJob: Job? = null
 
     lateinit var pickMultipleMedia: ActivityResultLauncher<PickVisualMediaRequest>
+    lateinit var pickSingleVisualMedia: ActivityResultLauncher<PickVisualMediaRequest>
     lateinit var pickSingleMedia: ActivityResultLauncher<String>
     // Phase E: dedicated audio launcher. Used when the user taps
     // "+ Add → Audio" on the A1 lane. The contract is AudioOnly so
@@ -145,6 +146,17 @@ class MediaPickerHelper(private val context: Context) {
             } else {
                 launchImport(ownerScope, uris, SystemClock.elapsedRealtime()) {
                     it.type == ClipType.VIDEO || it.type == ClipType.IMAGE
+                }
+            }
+        }
+        pickSingleVisualMedia = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { uri ->
+            if (uri == null) {
+                onCancelled()
+            } else {
+                launchImport(ownerScope, listOf(uri), SystemClock.elapsedRealtime()) {
+                    it.type == ClipType.VIDEO
                 }
             }
         }

@@ -45,6 +45,15 @@ class EditorReviewPlaybackRegressionTest {
         } as Player
     }
 
+    @Test fun previewReadinessRequiresAFrameFromTheCurrentlyBoundSource() {
+        assertFalse(isPreviewFrameReadyForSource("clip-b", "clip-a", 4L, 3L, isImage = false, hasPlayer = true))
+        assertTrue(isPreviewFrameReadyForSource("clip-b", "clip-b", 4L, 3L, isImage = false, hasPlayer = true))
+        assertFalse(isPreviewFrameReadyForSource("clip-b", "clip-b", 3L, 3L, isImage = false, hasPlayer = true))
+        assertFalse(isPreviewFrameReadyForSource(null, null, 0L, 0L, isImage = false, hasPlayer = true))
+        assertTrue(isPreviewFrameReadyForSource(null, null, 0L, 0L, isImage = false, hasPlayer = true, isTransitionFrameRendered = true))
+        assertTrue(isPreviewFrameReadyForSource("still", null, 0L, 0L, isImage = true, hasPlayer = false))
+    }
+
     @Test fun itemBindingResetsOldCurveRateEvenWhenNextConstantMultiplierMatches() {
         val recorder = RecordingPlayer()
         val next = second.copy(speedMultiplier = 1f)

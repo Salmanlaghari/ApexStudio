@@ -11,6 +11,8 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.apexstudio.app.MainActivity
 import com.apexstudio.app.domain.model.*
+import com.apexstudio.app.data.media.TimelineThumbnailCache
+import kotlinx.coroutines.runBlocking
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.ApexTheme
 import java.io.File
@@ -28,6 +30,24 @@ class LandscapeEditorInstrumentedTest {
         val source = File(context.cacheDir, "landscape-test-only.mp4")
         instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
             source.outputStream().use { input.copyTo(it) }
+        }
+        val thumbnail = runBlocking {
+            TimelineThumbnailCache.frameFor(context, MediaClip(
+                id = "landscape-thumb",
+                name = "Landscape fixture",
+                uri = Uri.fromFile(source).toString(),
+                durationMs = 12_000L,
+                trimEndMs = 12_000L,
+            ), keyMs = 6_000L, w = 160, h = 90)
+        }
+        assertNotNull("landscape fixture must decode a real timeline thumbnail", thumbnail)
+        thumbnail!!.let { frame ->
+            val first = frame.getPixel(0, 0)
+            val varied = (0 until frame.width step 16).any { x ->
+                (0 until frame.height step 16).any { y -> frame.getPixel(x, y) != first }
+            }
+            assertTrue("thumbnail must contain decoded visual pixels, not a flat placeholder", varied)
+            frame.recycle()
         }
         val clip = MediaClip("landscape-main", "Landscape test footage", Uri.fromFile(source).toString(), 12_000L,
             trimEndMs = 12_000L, textOverlays = listOf(TextOverlay(id = "title", text = "ApexStudio", startMs = 0L, endMs = 8000L)))
@@ -86,6 +106,11 @@ class LandscapeEditorInstrumentedTest {
                 assertTrue("Properties panel did not reopen", reopened)
                 await(60_000L) { vm.state.value.isPlayerReady || vm.state.value.playerError != null }
                 assertTrue("Real decoder not ready: ${vm.state.value.playerError}", vm.state.value.isPlayerReady)
+                await(60_000L) { vm.previewFrameGeneration.value > 0L }
+                assertTrue(
+                    "Landscape fixture reached READY without displaying a decoded frame",
+                    vm.previewFrameGeneration.value > 0L
+                )
                 assertFalse(device.hasObject(By.text("Lenses")))
                 assertTrue(device.takeScreenshot(File(context.getExternalFilesDir(null), "landscape-editor-installed.png")))
             }

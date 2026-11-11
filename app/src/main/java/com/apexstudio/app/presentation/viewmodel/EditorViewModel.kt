@@ -152,7 +152,10 @@ class EditorViewModel(
     /** Count main-preview frames confirmed rendered by ExoPlayer's listener. */
     private val _previewFrameGeneration = MutableStateFlow(0L)
     internal val previewFrameGeneration: StateFlow<Long> = _previewFrameGeneration.asStateFlow()
-    internal fun recordPreviewFrameRendered() {
+    private val _previewFrameSourceId = MutableStateFlow<String?>(null)
+    internal val previewFrameSourceId: StateFlow<String?> = _previewFrameSourceId.asStateFlow()
+    internal fun recordPreviewFrameRendered(sourceId: String? = null) {
+        _previewFrameSourceId.value = sourceId
         _previewFrameGeneration.update { it + 1L }
     }
 

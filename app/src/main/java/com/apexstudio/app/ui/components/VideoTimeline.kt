@@ -148,6 +148,7 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -268,7 +269,83 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
         voiceAndSfx = tracks.filter { it.kind == AudioTrack.Kind.SFX },
     )
 
-/** Small in-row identity chip: it overlays the time-zero edge instead of reserving a gutter. */
+/** Fixed lane identity gutter; the time canvas starts after this rail. */
+private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 88.dp
+private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 48.dp
+
+internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
+    minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.3f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
+
+@Composable
+private fun FixedTimelineIdentityRail(
+    hasMainVideo: Boolean,
+    showWaveformStrip: Boolean,
+    overlayLayers: List<Int>,
+    hasText: Boolean,
+    hasStickers: Boolean,
+    hasFx: Boolean,
+    textLaneHeight: Int,
+    stickerLaneHeight: Int,
+    originalAudioRows: Int,
+    musicRows: Int,
+    voiceRows: Int,
+    railWidth: Dp,
+    railScrollState: ScrollState,
+    modifier: Modifier = Modifier,
+) {
+    val railSurface = Color(0xF2172230)
+    Column(
+        modifier = modifier
+            .width(railWidth)
+            .fillMaxHeight()
+            .background(railSurface)
+            .border(1.dp, Color(0xFF33445D))
+            .testTag("timeline-identity-rail")
+            .zIndex(25f),
+    ) {
+        Box(Modifier.fillMaxWidth().height(TIMELINE_RULER_HEIGHT_DP.dp).background(Color(0xFF111A2C)), contentAlignment = Alignment.CenterStart) {
+            Text("TIME", color = Color(0xFF8FA4C1), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+        }
+        if (hasMainVideo) {
+            Box(Modifier.fillMaxWidth().height((10 + MAIN_VIDEO_LANE_HEIGHT_DP).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
+                TimelineLaneIdentity("V1 · Main", ApexPalette.NeonCyan)
+            }
+        }
+        if (showWaveformStrip) {
+            Box(Modifier.fillMaxWidth().height((10 + 36).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
+                TimelineLaneIdentity("V1 · Audio", Color(0xFF765BDB))
+            }
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(railScrollState)
+                .padding(top = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            overlayLayers.forEach { layer ->
+                Box(Modifier.fillMaxWidth().height(OVERLAY_LAYER_HEIGHT_DP.dp), contentAlignment = Alignment.CenterStart) {
+                    TimelineLaneIdentity("V${layer + 1} · Overlay", ApexPalette.NeonCyan)
+                }
+            }
+            if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = textLaneHeight)
+            if (hasStickers) RailLabel("STICKER", Color(0xFFA88CFF), textLaneHeight = stickerLaneHeight)
+            if (hasFx) RailLabel("FX", Color(0xFF42B9FF), textLaneHeight = 40)
+            repeat(originalAudioRows) { RailLabel("A0 · Source", Color(0xFF765BDB), AUDIO_LANE_ROW_HEIGHT_DP) }
+            repeat(musicRows) { RailLabel("A1 · Music", Color(0xFF47D7B2), AUDIO_LANE_ROW_HEIGHT_DP) }
+            repeat(voiceRows) { RailLabel("A2 · Voice/SFX", Color(0xFFFFB454), AUDIO_LANE_ROW_HEIGHT_DP) }
+        }
+    }
+}
+
+@Composable
+private fun RailLabel(label: String, accent: Color, textLaneHeight: Int) {
+    Box(Modifier.fillMaxWidth().height(textLaneHeight.dp), contentAlignment = Alignment.CenterStart) {
+        TimelineLaneIdentity(label, accent)
+    }
+}
+
 @Composable
 private fun TimelineLaneIdentity(label: String, accent: Color) {
     Text(
@@ -277,6 +354,7 @@ private fun TimelineLaneIdentity(label: String, accent: Color) {
         fontSize = 8.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .clip(RoundedCornerShape(4.dp))
             .background(Color(0xE6101A2B))
@@ -890,19 +968,18 @@ fun VideoTimeline(
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // No left sidebar: the timeline canvas uses the FULL screen
-    // width. The old sidebar pills (V1 / OVL1 / FX / A1 / A2 +
-    // buttons) are gone; hide/lock/mute now live in the contextual
-    // bar of the selected clip/track. Pure-black viewport below the
-    // restored title/action header, with no identity gutter.
+    // The fixed identity rail remains visible while the time canvas uses
+    // the remaining width. It contracts on narrow screens to keep clip
+    // thumbnails and trim grips within the interactive viewport.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
-            .background(Color.Black)
-            .border(1.dp, Color(0xFF141414))
+            .background(EditorPalette.BgBase)
+            .border(1.dp, EditorPalette.BorderGlass)
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
-        val viewportWidthDp = maxWidth
+        val identityRailWidth = timelineIdentityRailWidthForViewport(maxWidth)
+        val viewportWidthDp = (maxWidth - identityRailWidth).coerceAtLeast(1.dp)
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -972,6 +1049,7 @@ fun VideoTimeline(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .padding(start = identityRailWidth)
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
                         .scrollable(
@@ -1145,6 +1223,8 @@ fun VideoTimeline(
                     modifier = Modifier
                         .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
+                        .padding(start = identityRailWidth)
+                        .background(EditorPalette.BgSurface)
                         .horizontalScroll(scrollState)
                         .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
                 ) {
@@ -1360,6 +1440,22 @@ fun VideoTimeline(
                 }
             }
 
+            FixedTimelineIdentityRail(
+                hasMainVideo = hasMainVideo,
+                showWaveformStrip = showWaveformStrip,
+                overlayLayers = videoLayers.filter { it in 1..9 },
+                hasText = textOverlays.isNotEmpty(),
+                hasStickers = stickers.isNotEmpty(),
+                hasFx = hasFx,
+                textLaneHeight = textLaneHeight,
+                stickerLaneHeight = stickerLaneHeight,
+                originalAudioRows = originalVideoAudioTracks.size,
+                musicRows = musicTracks.size,
+                voiceRows = voiceTracks.size,
+                railWidth = identityRailWidth,
+                railScrollState = vScrollState,
+                modifier = Modifier.align(Alignment.TopStart),
+            )
             // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
             // At canvas-root level (not inside the scrolled content) so it
             // spans the full visible height — pinned header included — and
@@ -1376,7 +1472,8 @@ fun VideoTimeline(
                     // Provider, not a snapshot read: reading
                     // scrollState.value here would recompose the whole
                     // timeline on every scroll frame.
-                    scrollOffsetPx = { scrollState.value.toFloat() }
+                    scrollOffsetPx = { scrollState.value.toFloat() },
+                    modifier = Modifier.offset(x = identityRailWidth)
                 )
             }
             // NOTE: the canvas Box stays open — the Zoom HUD + multi-select

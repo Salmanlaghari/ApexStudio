@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.geometry.Offset
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
@@ -39,6 +40,13 @@ import org.robolectric.annotation.Config
 class TimelineWorkspaceLayoutTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun identityRailAdaptsToNarrowViewportsWithoutChangingStandardPhoneWidth() {
+        assertEquals(48f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
+        assertEquals(60f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
+        assertEquals(88f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
+    }
 
     private fun clip(
         id: String,
@@ -146,6 +154,22 @@ class TimelineWorkspaceLayoutTest {
         assertEquals(28.dp, compactTimelineHeight(empty)) // 28dp ruler; no duplicate title row
         assertEquals(90.dp, compactTimelineHeight(singleMain))
         assertEquals(170.dp, compactTimelineHeight(mainAndOverlay))
+    }
+
+    @Test
+    fun fixedIdentityRailStaysVisibleWhenTimeContentScrollsHorizontally() {
+        composeRule.setContent { workspace(widthDp = 360, heightDp = 300, clips = listOf(clip("main", durationMs = 120_000L))) }
+        composeRule.waitForIdle()
+        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val firstClipBounds = composeRule.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the first clip starts after the fixed rail instead of being obscured", firstClipBounds.left >= railBounds.right - 1f)
+        val before = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
+        composeRule.runOnIdle { composeRule.onNodeWithTag("timeline-test-root").fetchSemanticsNode() }
+        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput { swipe(start = Offset(300f, 14f), end = Offset(40f, 14f), durationMillis = 200) }
+        composeRule.waitForIdle()
+        val after = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
+        assertEquals("identity rail remains pinned while time content moves", before, after, 1f)
+        composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).assertExists()
     }
 
     @Test

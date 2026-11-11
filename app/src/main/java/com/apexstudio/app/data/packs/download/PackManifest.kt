@@ -23,6 +23,7 @@ import java.net.URL
 object PackManifestRepo {
 
     private const val TAG = "PackManifest"
+    const val FILTER_PROFILES_PAYLOAD = "filter_profiles"
 
     /**
      * Raw-GitHub-hosted manifest (always current with `main`; no separate
@@ -60,6 +61,8 @@ object PackManifestRepo {
         val entry: String = "",
         /** Optional number of selectable items represented by the pack. */
         val itemCount: Int = 0,
+        /** Pack parser contract; legacy filter packs default to parametric profiles. */
+        val payloadType: String = FILTER_PROFILES_PAYLOAD,
         /** "available" or "coming_soon". Coming-soon packs render disabled, never as dead buttons. */
         val status: String = "available"
     ) {
@@ -75,6 +78,15 @@ object PackManifestRepo {
 
     private fun cacheFile(context: Context): File =
         File(context.filesDir, "packs/$CACHE_NAME")
+
+    /** Read only the already-fetched local catalog; this never performs network I/O. */
+    fun readCachedManifest(context: Context): PackManifestFile? = try {
+        cacheFile(context).takeIf { it.isFile }?.readText(Charsets.UTF_8)
+            ?.let { json.decodeFromString<PackManifestFile>(it) }
+    } catch (e: Exception) {
+        Log.w(TAG, "Manifest cache read failed", e)
+        null
+    }
 
     /**
      * Fetch the manifest, falling back to the local cache and finally to an

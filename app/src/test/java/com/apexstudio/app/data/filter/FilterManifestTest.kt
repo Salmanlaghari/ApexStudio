@@ -94,4 +94,31 @@ class FilterManifestTest {
             assertNotNull(FilterManifest.presetById(firstId))
         }
     }
+
+    @Test
+    fun `downloaded LUT presets merge into the gallery category and can be removed`() {
+        FilterManifest.resetForTesting()
+        val bundled = FilterPreset(id = "builtin-warm", name = "Warm", category = "Warm", asset = "luts/warm.cube")
+        val downloaded = FilterPreset(
+            id = "dl_lut-test-pack_amber", name = "Amber", category = "warm",
+            asset = "downloaded-lut://lut-test-pack/amber.cube",
+            assetSha256 = "a".repeat(64), assetSizeBytes = 123L
+        )
+        val base = FilterManifest(
+            categories = listOf(FilterCategory(id = "warm", name = "Warm", filters = listOf(bundled))),
+            filters = listOf(bundled)
+        )
+        try {
+            FilterManifest.replaceDownloadedPresets(listOf(downloaded))
+            val merged = FilterManifest.withDownloadedPresets(base)
+            assertEquals(listOf("builtin-warm", downloaded.id), merged.categories.single().filters.map { it.id })
+            assertEquals(downloaded, merged.presetById(downloaded.id))
+            assertEquals(downloaded, FilterManifest.presetById(downloaded.id))
+
+            FilterManifest.replaceDownloadedPresets(emptyList())
+            assertNull(FilterManifest.presetById(downloaded.id))
+        } finally {
+            FilterManifest.resetForTesting()
+        }
+    }
 }

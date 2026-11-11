@@ -44,11 +44,20 @@ object FilterThumbnailGenerator {
     private var cachedDynamicThumbnails: Map<String?, ImageBitmap>? = null
     @Volatile
     private var cachedDynamicKey: String? = null
+    @Volatile
+    private var cachedGenericKey: String? = null
+
+    private fun catalogFingerprint(manifest: FilterManifest, customPresets: List<FilterPreset> = emptyList()): String =
+        (manifest.filters + manifest.categories.flatMap { it.filters } + customPresets).distinctBy { it.id }.joinToString("|") {
+            "${it.id}:${it.name}:${it.category}:${it.asset}:${it.assetSha256.orEmpty()}:${it.assetSizeBytes ?: 0L}"
+        }
 
     /** Drop the dynamic thumbnail cache (e.g. when LUT assets change). */
     fun invalidateDynamicCache() {
         cachedDynamicThumbnails = null
         cachedDynamicKey = null
+        cachedGenericThumbnails = null
+        cachedGenericKey = null
     }
 
     /**
@@ -149,7 +158,8 @@ object FilterThumbnailGenerator {
         customPresets: List<FilterPreset> = emptyList(),
         cacheKey: String? = null
     ): Map<String?, ImageBitmap> = withContext(Dispatchers.Default) {
-        if (cacheKey != null && cacheKey == cachedDynamicKey) {
+        val cacheIdentity = cacheKey?.let { "$it|${catalogFingerprint(manifest, customPresets)}" }
+        if (cacheIdentity != null && cacheIdentity == cachedDynamicKey) {
             cachedDynamicThumbnails?.let { return@withContext it }
         }
 
@@ -167,9 +177,11 @@ object FilterThumbnailGenerator {
         coroutineScope {
             val jobs = allPresets.map { preset ->
                 async {
-                    // Option B: check custom thumbnail first
+                    val isDownloadedLut = preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)
+                    // Bundled assets may use an authored thumbnail directly. Downloaded assets
+                    // are verified first so a stale custom image cannot mask a broken file.
                     val custom = FilterThumbnailAssetHandler.getCustomThumbnail(context, preset.id)
-                    if (custom != null) {
+                    if (custom != null && !isDownloadedLut) {
                         return@async preset.id to custom
                     }
                     // Real LUT path first — true CapCut-style preview
@@ -179,6 +191,11 @@ object FilterThumbnailGenerator {
                         Log.w(TAG, "LUT load failed for ${preset.id}, using matrix fallback", e)
                         null
                     }
+                    if (texture == null && isDownloadedLut) {
+                        Log.w(TAG, "Downloaded LUT ${preset.id} failed verification; omitting its sample thumbnail")
+                        return@async null
+                    }
+                    if (custom != null) return@async preset.id to custom
                     val bmp = if (texture != null) {
                         try {
                             LutBitmapCache.applyToBitmap(baseThumb, texture, 1f)
@@ -187,6 +204,10 @@ object FilterThumbnailGenerator {
                             null
                         }
                     } else null
+                    if (bmp == null && isDownloadedLut) {
+                        Log.w(TAG, "Downloaded LUT ${preset.id} could not be rendered; omitting its sample thumbnail")
+                        return@async null
+                    }
                     val finalBmp = bmp ?: run {
                         // Fallback: fast hardware ColorMatrix approximation
                         val outBmp = Bitmap.createBitmap(THUMB_SIZE, THUMB_SIZE, Bitmap.Config.ARGB_8888)
@@ -200,12 +221,12 @@ object FilterThumbnailGenerator {
                     preset.id to finalBmp.asImageBitmap()
                 }
             }
-            jobs.awaitAll().forEach { (id, img) -> result[id] = img }
+            jobs.awaitAll().filterNotNull().forEach { (id, img) -> result[id] = img }
         }
 
-        if (cacheKey != null) {
+        if (cacheIdentity != null) {
             cachedDynamicThumbnails = result
-            cachedDynamicKey = cacheKey
+            cachedDynamicKey = cacheIdentity
         }
         Log.d(TAG, "Generated ${result.size} real-LUT filter thumbnails (key=$cacheKey)")
         result
@@ -218,10 +239,12 @@ object FilterThumbnailGenerator {
         context: Context,
         manifest: FilterManifest
     ): Map<String?, ImageBitmap> = withContext(Dispatchers.Default) {
-        cachedGenericThumbnails?.let { return@withContext it }
+        val cacheIdentity = catalogFingerprint(manifest)
+        if (cacheIdentity == cachedGenericKey) cachedGenericThumbnails?.let { return@withContext it }
         val sample = createGenericPreviewBitmap(context)
         val res = generateDynamicThumbnails(context, sample, manifest)
         cachedGenericThumbnails = res
+        cachedGenericKey = cacheIdentity
         res
     }
 

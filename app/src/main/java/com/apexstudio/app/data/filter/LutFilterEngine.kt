@@ -8,8 +8,7 @@ import java.io.InputStreamReader
 
 /**
  * Parses a .cube 3D LUT file into a flat float[] of size size*size*size*3
- * (R, G, B triples, ordered with B changing slowest, then G, then R —
- * which matches the convention every GL shader for lookup tables uses).
+ * (R, G, B triples, ordered with B changing slowest, then G, then R).
  */
 object CubeLutParser {
     private const val TAG = "CubeLutParser"
@@ -20,9 +19,7 @@ object CubeLutParser {
         reader.useLines { lines ->
             for (line in lines) {
                 val trimmed = line.trim()
-                if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("TITLE") || trimmed.startsWith("DOMAIN")) {
-                    continue
-                }
+                if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("TITLE") || trimmed.startsWith("DOMAIN")) continue
                 if (trimmed.startsWith("LUT_3D_SIZE")) {
                     size = trimmed.substringAfter("LUT_3D_SIZE").trim().toIntOrNull() ?: 0
                     continue
@@ -48,24 +45,21 @@ object CubeLutParser {
     }
 }
 
-/**
- * Loads the bundled filter manifest + .cube LUT assets and exposes
- * the parsed 3D LUTs to the GL filter pipeline.
- */
+/** Loads bundled and on-demand LUT files for preview, thumbnails, and export. */
 class LutFilterEngine(private val context: Context) {
 
-    val manifest: FilterManifest by lazy { loadManifest() }
+    private val bundledManifest: FilterManifest by lazy { loadManifest() }
+    val manifest: FilterManifest
+        get() = FilterManifest.withDownloadedPresets(bundledManifest)
 
-    /**
-     * Read the .cube file for [preset] and return its 3D LUT as a
-     * flat float[]. Returns null if the asset is missing or malformed.
-     */
+    /** Read and parse a LUT. Downloaded data is verified on every load and never matrix-fallbacked. */
     fun loadLut(preset: FilterPreset): FloatArray? {
+        if (preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)) {
+            return DownloadedLutFilterRepository.loadVerifiedLut(context, preset)
+        }
         return try {
             context.assets.open(preset.asset).use { input ->
-                BufferedReader(InputStreamReader(input)).use { reader ->
-                    CubeLutParser.parse(reader)
-                }
+                BufferedReader(InputStreamReader(input)).use { reader -> CubeLutParser.parse(reader) }
             }
         } catch (e: Exception) {
             val matrix = FilterColorMatrix.getRawMatrix(preset.id)

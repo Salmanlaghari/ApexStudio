@@ -533,6 +533,15 @@ object GpuColorProfiles {
             "($replaced replaced from pack updates, total downloaded: ${current.size})")
     }
 
+    /** Replace the complete set discovered from installed packs, removing profiles from deleted packs. */
+    @Synchronized
+    fun replaceDownloadedPackProfiles(profiles: List<GpuColorProfile>) {
+        val builtinIds = ALL_WITH_PACKS.map { it.id }.toSet()
+        val seen = mutableSetOf<String>()
+        downloadedPackProfiles = profiles.filter { it.id !in builtinIds && seen.add(it.id) }
+        Log.i(TAG, "Replaced downloaded pack profiles with ${downloadedPackProfiles.size} installed entries")
+    }
+
     fun findById(id: String?): GpuColorProfile? =
         ALL_WITH_DOWNLOADED.firstOrNull { it.id == id } ?: OneTapLooks.ALL.firstOrNull { it.id == id }
 }

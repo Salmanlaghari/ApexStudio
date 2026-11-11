@@ -15,8 +15,6 @@ import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -112,6 +110,9 @@ class LutFilterGlEffect(
 
         private fun uploadLut(context: Context, preset: FilterPreset) {
             val lut = loadLut(context, preset) ?: run {
+                if (preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)) {
+                    throw IllegalStateException("Downloaded LUT ${preset.name} is missing or failed integrity validation. Reinstall its filter pack.")
+                }
                 Log.w(TAG, "No LUT data for ${preset.id}; using identity")
                 uploadIdentityLut()
                 return
@@ -259,19 +260,8 @@ class LutFilterGlEffect(
             }
         """.trimIndent()
 
-        private fun loadLut(context: Context, preset: FilterPreset): FloatArray? {
-            return try {
-                context.assets.open(preset.asset).use { input ->
-                    BufferedReader(InputStreamReader(input)).use { reader ->
-                        CubeLutParser.parse(reader)
-                    }
-                }
-            } catch (e: Exception) {
-                // Procedural 3D LUT generation fallback using real color matrix
-                val matrix = FilterColorMatrix.getRawMatrix(preset.id)
-                LutBitmapCache.generateLutFromMatrix(matrix, 16)
-            }
-        }
+        private fun loadLut(context: Context, preset: FilterPreset): FloatArray? =
+            LutFilterEngine(context).loadLut(preset)
     }
 }
 
@@ -298,7 +288,11 @@ data class LutTexture(
  * map hit, not a re-parse.
  */
 object LutBitmapCache {
-    private val cache = ConcurrentHashMap<String, LutTexture>()
+    private data class CachedLut(val fingerprint: String, val texture: LutTexture)
+    private val cache = ConcurrentHashMap<String, CachedLut>()
+
+    private fun fingerprint(preset: FilterPreset): String =
+        "${preset.asset}|${preset.assetSha256.orEmpty()}|${preset.assetSizeBytes ?: 0L}"
 
     /**
      * Return the cached [LutTexture] for [preset], loading + packing
@@ -306,15 +300,23 @@ object LutBitmapCache {
      * the .cube asset is missing or malformed.
      */
     suspend fun getOrLoad(context: Context, preset: FilterPreset): LutTexture? {
-        cache[preset.id]?.let { return it }
+        val fingerprint = fingerprint(preset)
+        val downloaded = preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)
+        if (!downloaded) cache[preset.id]?.takeIf { it.fingerprint == fingerprint }?.let { return it.texture }
         return withContext(Dispatchers.Default) {
             // Re-check after dispatch: a concurrent caller may have
             // populated the cache while we were waiting for the
             // dispatcher.
-            cache[preset.id]?.let { return@withContext it }
+            cache[preset.id]?.takeIf { it.fingerprint == fingerprint }?.let { cached ->
+                if (!downloaded || DownloadedLutFilterRepository.loadVerifiedLut(context, preset) != null) {
+                    return@withContext cached.texture
+                }
+                cache.remove(preset.id, cached)
+                return@withContext null
+            }
             val lut = readLutFromAssets(context, preset) ?: return@withContext null
             val packed = packLut(lut) ?: return@withContext null
-            cache[preset.id] = packed
+            cache[preset.id] = CachedLut(fingerprint, packed)
             packed
         }
     }
@@ -338,7 +340,7 @@ object LutBitmapCache {
      * not generated). Used by the live preview overlay to derive a
      * real-LUT-based grade without blocking the UI thread.
      */
-    fun peek(presetId: String): LutTexture? = cache[presetId]
+    fun peek(presetId: String): LutTexture? = cache[presetId]?.texture
 
     /**
      * Trilinear sample of a single RGB color through the LUT.
@@ -406,16 +408,7 @@ object LutBitmapCache {
     }
 
     private fun readLutFromAssets(context: Context, preset: FilterPreset): FloatArray? {
-        return try {
-            context.assets.open(preset.asset).use { input ->
-                BufferedReader(InputStreamReader(input)).use { reader ->
-                    CubeLutParser.parse(reader)
-                }
-            }
-        } catch (e: Exception) {
-            val matrix = FilterColorMatrix.getRawMatrix(preset.id)
-            generateLutFromMatrix(matrix, 16)
-        }
+        return LutFilterEngine(context).loadLut(preset)
     }
 
     /**

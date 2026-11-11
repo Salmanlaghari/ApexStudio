@@ -17,6 +17,8 @@ import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.ColorWheelVector
 import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.GpuFilterConfig
+import com.apexstudio.app.data.filter.FilterManifest
+import com.apexstudio.app.data.filter.FilterPreset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -407,6 +409,25 @@ class ProjectCompositionExportTest {
         val invalid = clip().copy(gpuFilterConfig = GpuFilterConfig(filterIntensity = Float.NaN))
         assertTrue(projectCompositionUnsupportedReason(listOf(invalid), ExportEngine.ExportConfig())!!
             .contains("invalid per-clip filter/LUT"))
+    }
+
+    @Test
+    fun `registered downloadable LUT remains eligible for per clip project export`() {
+        val preset = FilterPreset(
+            id = "dl_lut-filters-vol-01_amber-drift",
+            name = "Amber Drift",
+            category = "warm",
+            asset = "downloaded-lut://lut-filters-vol-01/amber-drift.cube",
+            assetSha256 = "a".repeat(64),
+            assetSizeBytes = 12L
+        )
+        FilterManifest.replaceDownloadedPresets(listOf(preset))
+        try {
+            val filtered = clip().copy(gpuFilterConfig = GpuFilterConfig(filterPresetId = preset.id))
+            assertNull(projectCompositionUnsupportedReason(listOf(filtered), ExportEngine.ExportConfig()))
+        } finally {
+            FilterManifest.replaceDownloadedPresets(emptyList())
+        }
     }
 
     @Test

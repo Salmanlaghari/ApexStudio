@@ -17,6 +17,27 @@ import kotlin.math.abs
 class GpuColorProfileThumbnailGeneratorTest {
 
     @Test
+    fun `downloaded profile registry replacement removes profiles from deleted packs`() {
+        val profile = GpuColorProfile(
+            id = "dl_test-pack_warm",
+            name = "Downloaded Warm",
+            category = "Test",
+            description = "Test profile",
+            iconEmoji = "T",
+            gradientColors = listOf(0xFF112233, 0xFF445566),
+            config = GpuFilterConfig()
+        )
+        try {
+            GpuColorProfiles.replaceDownloadedPackProfiles(listOf(profile))
+            org.junit.Assert.assertNotNull(GpuColorProfiles.findById(profile.id))
+            GpuColorProfiles.replaceDownloadedPackProfiles(emptyList())
+            org.junit.Assert.assertNull(GpuColorProfiles.findById(profile.id))
+        } finally {
+            GpuColorProfiles.replaceDownloadedPackProfiles(emptyList())
+        }
+    }
+
+    @Test
     fun `every built in GPU profile gets a transformed photo sample`() = runBlocking {
         val source = Bitmap.createBitmap(160, 100, Bitmap.Config.ARGB_8888)
         for (y in 0 until source.height) {

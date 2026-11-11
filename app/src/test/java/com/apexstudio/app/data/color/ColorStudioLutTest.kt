@@ -48,11 +48,16 @@ class ColorStudioLutTest {
         assertTrue((lifted and 255) in 0..255)
     }
 
-    @Test fun hdrStyleLiftsSdrTonesAndSharpnessEnhancesSpatialEdges() {
+    @Test fun hdrStyleLiftsMidtonesRollsOffHighlightsAndSharpnessEnhancesSpatialEdges() {
         val sample = 0xFF606060.toInt()
         val baseline = ColorStudioLut(ColorStudioGrade()).processColor(sample)
         val hdrStyle = ColorStudioLut(ColorStudioGrade(hdr = 1f)).processColor(sample)
         assertTrue(((hdrStyle ushr 16) and 255) > ((baseline ushr 16) and 255))
+
+        val highlight = 0xFFF0F0F0.toInt()
+        val baselineHighlight = ColorStudioLut(ColorStudioGrade()).processColor(highlight)
+        val rolledOffHighlight = ColorStudioLut(ColorStudioGrade(hdr = 1f)).processColor(highlight)
+        assertTrue(((rolledOffHighlight ushr 16) and 255) < ((baselineHighlight ushr 16) and 255))
 
         val source = Bitmap.createBitmap(3, 3, Bitmap.Config.ARGB_8888)
         for (y in 0..2) for (x in 0..2) source.setPixel(x, y, 0xFF4D4D4D.toInt())

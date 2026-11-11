@@ -10,7 +10,7 @@ import kotlin.math.*
 @Serializable
 data class ColorWheelVector(val x: Float = 0f, val y: Float = 0f)
 
-/** Standalone, non-destructive SDR grade. HDR is a tone-style lift, not HDR mastering/output. */
+/** Standalone SDR grade. HDR control is a soft-shoulder tone map, not HDR mastering/output. */
 @Serializable
 data class ColorStudioGrade(
     val brightness: Float = 0f,
@@ -102,10 +102,10 @@ class ColorStudioLut(grade: ColorStudioGrade, val size: Int = 33) {
             for (c in 0..2) {
                 val color = (if (curvedLuma > 0.00001f) adjusted[c] * targetLuma / curvedLuma else targetLuma)
                     .coerceIn(0f, 1f)
-                // This is the same SDR tone-style mapping used by AdjustmentsGlEffect's HDR control.
+                // This shared SDR tone map lifts midtones and rolls off highlights.
                 val toneMapped = color / (color + 1f)
-                val boosted = color + (toneMapped * 1.8f - color) * (hdr * 0.7f)
-                cube[base + c] = (color + (boosted - color) * hdr).coerceIn(0f, 1f)
+                val toneAdjusted = color + (toneMapped * 1.8f - color) * (hdr * 0.7f)
+                cube[base + c] = (color + (toneAdjusted - color) * hdr).coerceIn(0f, 1f)
             }
         }
     }

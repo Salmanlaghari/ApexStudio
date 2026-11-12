@@ -53,8 +53,10 @@ fun FxPanel(
     intensity: Float,
     onFxSelected: (String?) -> Unit,
     onIntensityChange: (Float) -> Unit,
+    onIntensityChangeFinished: () -> Unit = {},
     speed: Float = 1f,
     onSpeedChange: (Float) -> Unit = {},
+    onSpeedChangeFinished: () -> Unit = {},
     downloadedEffects: List<DownloadedFxEffect> = emptyList(),
     effectsPackState: PackManager.PackState? = null,
     onDownloadEffectsPack: (() -> Unit)? = null,
@@ -244,6 +246,8 @@ fun FxPanel(
         Slider(
             value = intensity,
             onValueChange = onIntensityChange,
+            onValueChangeFinished = onIntensityChangeFinished,
+            modifier = Modifier.testTag("fx-intensity-slider"),
             enabled = activeFxId != null,
             colors = SliderDefaults.colors(
                 thumbColor = ApexPalette.NeonCyan,
@@ -278,6 +282,8 @@ fun FxPanel(
             Slider(
                 value = speed,
                 onValueChange = onSpeedChange,
+                onValueChangeFinished = onSpeedChangeFinished,
+                modifier = Modifier.testTag("fx-speed-slider"),
                 valueRange = 0.1f..4f,
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,

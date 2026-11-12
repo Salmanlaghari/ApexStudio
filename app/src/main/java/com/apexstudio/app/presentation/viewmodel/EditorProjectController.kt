@@ -171,6 +171,9 @@ internal fun EditorViewModel.loadProject() {
             val validSelectedClipIds = it.selectedClipIds.intersect(updatedP.clips.map { clip -> clip.id }.toSet())
             it.copy(
                 project = updatedP,
+                activeFxId = null,
+                fxIntensity = 1f,
+                fxSpeed = 1f,
                 durationMs = updatedP.durationMs,
                 hiddenVideoLayers = updatedP.hiddenVideoLayers,
                 lockedVideoLayers = updatedP.lockedVideoLayers,
@@ -227,14 +230,32 @@ internal fun EditorViewModel.loadProject() {
         // catalog to be in the StateFlow before we can resolve
         // the template by id. Falls back silently if the saved
         // id no longer matches a live template (e.g. the
-        // template was removed from the catalog).
+        // template was removed from the catalog). The manual FX-only
+        // override is restored afterward so filters/transitions remain.
         val savedTemplateId = updatedP.lastTransmissionTemplateId
         if (savedTemplateId != null) {
             val template = _transmissionTemplates.value.firstOrNull { it.id == savedTemplateId }
             if (template != null) {
-                applyTransmissionTemplateInternal(template, persistProjectId = null)
+                applyTransmissionTemplateInternal(template, persistTemplateMetadata = false)
             } else {
                 Log.w("EditorViewModel", "Saved transmission template '$savedTemplateId' not found in catalog — skipping auto-apply")
+            }
+        }
+
+        // A manual FX choice overrides only the template's FX, retaining its
+        // filter and transition. Non-null with a null effect id is an explicit clear.
+        updatedP.manualFxOverride?.let { savedFx ->
+            val normalizedFx = savedFx.copy(
+                intensity = savedFx.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
+                speed = savedFx.speed.takeIf { it.isFinite() }?.coerceIn(0.1f, 4f) ?: 1f
+            )
+            _state.update { state ->
+                state.copy(
+                    project = state.project?.copy(manualFxOverride = normalizedFx),
+                    activeFxId = normalizedFx.effectId,
+                    fxIntensity = normalizedFx.intensity,
+                    fxSpeed = normalizedFx.speed
+                )
             }
         }
     }

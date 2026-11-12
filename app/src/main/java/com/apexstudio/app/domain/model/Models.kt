@@ -979,6 +979,14 @@ data class Signature(
     val alwaysOn: Boolean = true
 )
 
+/** Manual project-wide FX values; a non-null snapshot with a null effect id means explicit Original. */
+@Serializable
+data class ProjectFxSettings(
+    val effectId: String? = null,
+    val intensity: Float = 1f,
+    val speed: Float = 1f
+)
+
 @Serializable
 data class Project(
     val id: String,
@@ -992,8 +1000,9 @@ data class Project(
      * Last transmission template the user applied to this project.
      * Pure metadata — when the editor opens the project it preloads
      * this template's LUT + FX + intensity so the user starts with
-     * the look they had last time. Null means "no preset applied"
-     * (the LUT / FX panels are still empty until the user picks one).
+     * the look they had last time. A separate manual FX override may
+     * supersede only its FX values. Null means no template was applied;
+     * a manual FX choice may still be saved separately.
      *
      * Default-null + a default-value field means the JSON project
      * file stays backwards-compatible: older saved projects without
@@ -1052,7 +1061,9 @@ data class Project(
     /** Video lanes locked against editing; default-empty keeps older project JSON compatible. */
     val lockedVideoLayers: Set<Int> = emptySet(),
     /** Optional branding layer; missing in older projects and therefore omitted by default. */
-    val signature: Signature? = null
+    val signature: Signature? = null,
+    /** Explicit FX-only override; null follows the template/default, while effectId=null clears it. */
+    val manualFxOverride: ProjectFxSettings? = null
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {

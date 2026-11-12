@@ -10,6 +10,7 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.GpuFilterConfig
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.ProjectFxSettings
 import com.apexstudio.app.domain.model.Signature
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingPoint
@@ -56,12 +57,15 @@ class ProjectRepositoryMigrationTest {
         val legacy = legacyProject("legacy-v0").copy(timingModelVersion = 0)
         val codec = Json { encodeDefaults = true }
         val encoded = codec.encodeToJsonElement(ListSerializer(Project.serializer()), listOf(legacy)) as JsonArray
-        val legacyObject = JsonObject(encoded.single().jsonObject - "timeline" - "timelineAuthorityVersion")
+        val legacyObject = JsonObject(
+            encoded.single().jsonObject - "timeline" - "timelineAuthorityVersion" - "manualFxOverride"
+        )
         val repository = ProjectRepository(ApplicationProvider.getApplicationContext<Context>())
 
         val migrated = repository.decode(JsonArray(listOf(legacyObject)).toString()).single()
 
         assertEquals(Project.CURRENT_TIMELINE_AUTHORITY_VERSION, migrated.timelineAuthorityVersion)
+        assertNull(migrated.manualFxOverride)
         assertEquals(0, migrated.timingModelVersion)
         assertEquals("clip", migrated.timeline.tracks.filterIsInstance<VideoTrack>().single().clips.single().id)
         assertEquals(legacy.videoDrawings, migrated.videoDrawings)
@@ -70,6 +74,7 @@ class ProjectRepositoryMigrationTest {
 
         val reopened = repository.decode(codec.encodeToString(ListSerializer(Project.serializer()), listOf(migrated))).single()
         assertEquals(migrated, reopened)
+        assertNull(reopened.manualFxOverride)
     }
 
     @Test
@@ -86,6 +91,28 @@ class ProjectRepositoryMigrationTest {
             assertNotNull(reopened)
             assertEquals(Project.CURRENT_TIMELINE_AUTHORITY_VERSION, reopened!!.timelineAuthorityVersion)
             assertTrue(reopened.timeline.tracks.filterIsInstance<VideoTrack>().single().clips.any { it.id == "clip" })
+        } finally {
+            repository.deleteProject(id)
+        }
+    }
+
+    @Test
+    fun `manual FX override and explicit clear survive project save and reopen`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = ProjectRepository(context)
+        val id = "manual-fx-reopen-${UUID.randomUUID()}"
+        try {
+            val selectedFx = ProjectFxSettings(effectId = "hue_cycle", intensity = 0.42f, speed = 1.75f)
+            repository.saveProject(legacyProject(id).copy(manualFxOverride = selectedFx))
+
+            val reopened = ProjectRepository(context).findById(id)!!
+            assertEquals(selectedFx, reopened.manualFxOverride)
+
+            val explicitClear = ProjectFxSettings(effectId = null, intensity = 0f, speed = 1.75f)
+            repository.saveProject(reopened.copy(manualFxOverride = explicitClear))
+            val reopenedClear = ProjectRepository(context).findById(id)!!
+            assertEquals(explicitClear, reopenedClear.manualFxOverride)
+            assertNull(reopenedClear.manualFxOverride?.effectId)
         } finally {
             repository.deleteProject(id)
         }

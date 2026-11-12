@@ -3,12 +3,15 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.presentation.state.EditorTool
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.ProjectFxSettings
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import androidx.lifecycle.SavedStateHandle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -129,12 +132,42 @@ class EditorViewModelTest {
 
         val savedTemplateId = checkNotNull(vm.state.value.project?.lastTransmissionTemplateId)
         val savedLook = checkNotNull(vm.transmissionTemplates.value.firstOrNull { it.id == savedTemplateId })
-        vm.applyTransmissionTemplateInternal(savedLook, persistProjectId = null)
+        vm.applyTransmissionTemplateInternal(savedLook, persistTemplateMetadata = false)
 
         assertEquals(recipe.filterId, vm.state.value.activeFilterId)
         assertEquals(recipe.filterIntensity, vm.state.value.filterIntensity, 0.0001f)
         assertEquals(recipe.fxPresetId, vm.state.value.activeFxId)
         assertEquals(recipe.fxIntensity, vm.state.value.fxIntensity, 0.0001f)
+    }
+
+    @Test
+    fun `manual FX selection and sliders update the explicit project override`() {
+        val vm = viewModel().also {
+            it._state.value = it.state.value.copy(
+                project = Project("fx-project", "FX project", 10_000L)
+            )
+        }
+
+        vm.setActiveFx(FxPreset.HUE_CYCLE.id)
+        vm.setFxIntensity(0.42f)
+        vm.setFxSpeed(1.75f)
+
+        assertEquals(FxPreset.HUE_CYCLE.id, vm.state.value.activeFxId)
+        assertEquals(
+            ProjectFxSettings(FxPreset.HUE_CYCLE.id, 0.42f, 1.75f),
+            vm.state.value.project?.manualFxOverride
+        )
+
+        vm.selectFx(null, intensity = 0f)
+        assertEquals(null, vm.state.value.project?.manualFxOverride?.effectId)
+        assertEquals(0f, vm.state.value.project?.manualFxOverride?.intensity ?: -1f, 0f)
+
+        vm.loadTransmissionTemplates()
+        val template = vm.transmissionTemplates.value.first()
+        vm.applyTransmissionTemplate(template.id)
+        assertEquals(template.fxPresetId, vm.state.value.activeFxId)
+        assertNull(vm.state.value.project?.manualFxOverride)
+        assertEquals(template.id, vm.state.value.project?.lastTransmissionTemplateId)
     }
 
     @Test

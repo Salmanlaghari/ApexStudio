@@ -355,8 +355,10 @@ fun FxPanelOverlay(
                 intensity = state.fxIntensity,
                 onFxSelected = { vm.setActiveFx(it) },
                 onIntensityChange = { vm.setFxIntensity(it) },
+                onIntensityChangeFinished = { vm.flushProject() },
                 speed = state.fxSpeed,
                 onSpeedChange = { vm.setFxSpeed(it) },
+                onSpeedChangeFinished = { vm.flushProject() },
                 downloadedEffects = downloadedFxProfiles,
                 effectsPackState = effectsPackState,
                 onDownloadEffectsPack = {

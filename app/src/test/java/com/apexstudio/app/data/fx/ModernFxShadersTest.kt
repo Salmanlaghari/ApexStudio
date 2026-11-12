@@ -2,6 +2,7 @@ package com.apexstudio.app.data.fx
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +33,72 @@ class ModernFxShadersTest {
                 assertTrue("${preset.id} must use its speed uniform", source.contains("uTime * uSpeed"))
             }
         }
+    }
+
+    @Test
+    fun `split tone smoothstep edges stay ordered at parameter extremes`() {
+        val extremes = listOf(
+            1.0f to 0.9f, // the combination Kilo flagged on PR #232
+            1.0f to 0.0f,
+            0.99f to 0.99f,
+            0.5f to 0.0f,
+            0.0f to 0.0f,
+            0.0f to -1.0f,
+            -1.0f to -1.0f,
+            2.0f to 2.0f,
+            Float.NaN to Float.NaN,
+            Float.POSITIVE_INFINITY to Float.NEGATIVE_INFINITY
+        )
+        for ((a, b) in extremes) {
+            val (edge0, width) = ModernFxShaders.splitToneEdges(a, b)
+            assertTrue("edge0 must be in range for a=$a b=$b", edge0 in 0f..0.98f)
+            assertTrue(
+                "width must be at least the minimum for a=$a b=$b",
+                width >= ModernFxShaders.SPLIT_TONE_MIN_WIDTH
+            )
+            assertTrue("edge0 must be < edge1 for a=$a b=$b", edge0 < edge0 + width)
+            assertTrue(
+                "edge1 must stay at the cap for a=$a b=$b",
+                edge0 + width <= ModernFxShaders.SPLIT_TONE_MAX_EDGE1 + 0.0001f
+            )
+        }
+        // Already-valid combinations pass through unchanged.
+        val (validEdge0, validWidth) = ModernFxShaders.splitToneEdges(0.24f, 0.38f)
+        assertEquals(0.24f, validEdge0, 0.0f)
+        assertEquals(0.38f, validWidth, 0.0f)
+    }
+
+    @Test
+    fun `split tone shader sanitises unordered parameters and orders its edges`() {
+        val effect = DownloadedFxEffect(
+            id = "dl_test_split_tone",
+            label = "Split Tone Extreme",
+            category = "Creator Pack",
+            family = "SPLIT_TONE",
+            a = 1.0f,
+            b = 0.9f,
+            c = 0.5f,
+            tintR = 1.0f,
+            tintG = 0.5f,
+            tintB = 0.25f,
+            isAnimated = false,
+            defaultSpeed = 1.0f
+        )
+        val shader = ModernFxShaders.shaderFor(effect)
+        assertNotNull("SPLIT_TONE effect should create a shader", shader)
+        // a=1.0 / b=0.9 is sanitised to the ordered pair 0.98 / 0.01 before
+        // substitution, so the const parameters can never be unordered.
+        assertTrue("a must be clamped below the upper edge", shader!!.contains("const float P_A = 0.98"))
+        assertTrue("b must be clamped to the minimum width", shader.contains("const float P_B = 0.01"))
+        // And the GLSL itself orders the edges before calling smoothstep.
+        assertTrue(
+            "shader must derive ordered edges",
+            shader.contains("float splitEdge1 = clamp(splitEdge0 + max(P_B, 0.01), splitEdge0 + 0.01, 0.99)")
+        )
+        assertTrue(
+            "smoothstep must use the ordered edges",
+            shader.contains("smoothstep(splitEdge0, splitEdge1")
+        )
     }
 
     @Test

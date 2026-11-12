@@ -84,7 +84,19 @@ class DownloadedEffectRepositoryTest {
 
             val tampered = bytes.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
             File(root, pack.entry).writeBytes(tampered)
-            assertNull("Lookup must recheck the installed entry digest", DownloadedEffectRepository.find(effectId))
+            // find() is a pure in-memory lookup: it must not read the file,
+            // recheck the digest, or invalidate registry state as a side effect.
+            assertNotNull(
+                "Pure find() must not recheck the installed entry digest",
+                DownloadedEffectRepository.find(effectId)
+            )
+            assertEquals(families.size, DownloadedEffectRepository.effects.value.size)
+            // The explicit verified lookup is the only path that rechecks the
+            // installed entry digest — and it fails closed on tampering.
+            assertNull(
+                "Verified lookup must recheck the installed entry digest",
+                DownloadedEffectRepository.findVerified(effectId)
+            )
             assertTrue(DownloadedEffectRepository.effects.value.isEmpty())
         } finally {
             root.deleteRecursively()

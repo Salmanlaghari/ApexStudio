@@ -630,9 +630,10 @@ private fun EditorScreenContent(
         key1 = state.activeFxId,
         key2 = downloadedFxProfiles
     ) {
-        value = withContext(Dispatchers.IO) {
-            com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
-        }
+        // Explicit verified lookup: findVerified re-checks the installed
+        // entry's digest on the IO dispatcher and invalidates stale packs;
+        // composition itself never touches disk.
+        value = com.apexstudio.app.data.fx.DownloadedEffectRepository.findVerified(state.activeFxId)
     }
     val previewGpuFilterConfig = mainPreviewClip
         ?.takeIf { it.type == ClipType.VIDEO }

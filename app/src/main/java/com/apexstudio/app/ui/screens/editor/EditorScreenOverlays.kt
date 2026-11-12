@@ -1462,9 +1462,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         key1 = state.activeFxId,
         key2 = downloadedFxProfiles
     ) {
-        value = withContext(Dispatchers.IO) {
-            com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
-        }
+        // Explicit verified lookup: findVerified re-checks the installed
+        // entry's digest on the IO dispatcher and invalidates stale packs;
+        // composition itself never touches disk.
+        value = com.apexstudio.app.data.fx.DownloadedEffectRepository.findVerified(state.activeFxId)
     }
     val exportState by vm.export.collectAsStateWithLifecycle()
     val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()

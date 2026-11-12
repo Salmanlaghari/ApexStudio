@@ -86,6 +86,46 @@ internal object ModernFxShaders {
 
     fun supportsFamily(name: String): Boolean = Family.values().any { it.name == name }
 
+    /** Highest value the SPLIT_TONE upper smoothstep edge may take. */
+    internal const val SPLIT_TONE_MAX_EDGE1 = 0.99f
+
+    /** Lowest width between the SPLIT_TONE smoothstep edges; keeps edge0 < edge1. */
+    internal const val SPLIT_TONE_MIN_WIDTH = 0.01f
+
+    /** Highest value the SPLIT_TONE lower smoothstep edge may take (= 0.99 - 0.01). */
+    private const val SPLIT_TONE_MAX_EDGE0 = 0.98f
+
+    /**
+     * Sanitise SPLIT_TONE parameters into an ordered smoothstep edge pair
+     * (edge0, width) with edge0 < edge0 + width <= [SPLIT_TONE_MAX_EDGE1] for
+     * EVERY input combination, including extremes such as a=1.0, b=0.9 or
+     * b<=0. GLSL `smoothstep` results are undefined when edge0 >= edge1, so
+     * no caller-provided (preset or downloaded) values reach the shader
+     * unsanitised. Combinations that were already valid are returned
+     * unchanged: edge0 = a and width = b whenever a + b <= 0.99 and
+     * b >= [SPLIT_TONE_MIN_WIDTH].
+     */
+    internal fun splitToneEdges(a: Float, b: Float): Pair<Float, Float> {
+        val safeA = if (a.isFinite()) a else 0f
+        val safeB = if (b.isFinite()) b else 0f
+        val edge0 = safeA.coerceIn(0f, SPLIT_TONE_MAX_EDGE0)
+        // Float arithmetic: SPLIT_TONE_MAX_EDGE1 - edge0 can land a hair
+        // below SPLIT_TONE_MIN_WIDTH at the top edge; never build an
+        // empty coerceIn range.
+        val maxWidth = maxOf(SPLIT_TONE_MIN_WIDTH, SPLIT_TONE_MAX_EDGE1 - edge0)
+        val width = safeB.coerceIn(SPLIT_TONE_MIN_WIDTH, maxWidth)
+        return edge0 to width
+    }
+
+    /** Format a sanitised parameter as a plain GLSL float literal. */
+    private fun formatGlslParam(value: Float): String {
+        val plain = java.math.BigDecimal(value.toString())
+            .setScale(4, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString()
+        return if ('.' in plain) plain else "$plain.0"
+    }
+
     /** The downloaded payload selects only an allowlisted family and bounded numeric parameters. */
     fun shaderFor(effect: DownloadedFxEffect): String? {
         val family = Family.values().firstOrNull { it.name == effect.family } ?: return null
@@ -107,6 +147,21 @@ internal object ModernFxShaders {
     ): String {
         val speedUniform = if (isAnimated) "uniform float uSpeed;" else ""
         val phase = if (isAnimated) "uTime * uSpeed" else "0.0"
+        // SPLIT_TONE: never let unsanitised parameters reach the shader —
+        // rewrite (a, b) as the ordered (edge0, width) pair so the GLSL
+        // smoothstep edges stay ordered for every parameter combination.
+        val (paramA, paramB) = if (family == Family.SPLIT_TONE) {
+            val parsedA = a.toFloatOrNull()
+            val parsedB = b.toFloatOrNull()
+            if (parsedA != null && parsedB != null) {
+                val (edge0, width) = splitToneEdges(parsedA, parsedB)
+                formatGlslParam(edge0) to formatGlslParam(width)
+            } else {
+                a to b
+            }
+        } else {
+            a to b
+        }
         val body = when (family) {
             Family.PRISM -> """
                 vec2 uv = vTextureCoord;
@@ -119,7 +174,9 @@ internal object ModernFxShaders {
             Family.SPLIT_TONE -> """
                 vec2 uv = vTextureCoord;
                 float luma = dot(base.rgb, vec3(0.299, 0.587, 0.114));
-                float field = smoothstep(P_A, min(P_A + P_B, 0.99), luma * 0.72 + uv.y * 0.28);
+                float splitEdge0 = clamp(P_A, 0.0, 0.98);
+                float splitEdge1 = clamp(splitEdge0 + max(P_B, 0.01), splitEdge0 + 0.01, 0.99);
+                float field = smoothstep(splitEdge0, splitEdge1, luma * 0.72 + uv.y * 0.28);
                 vec3 shadowTint = mix(base.rgb, P_TINT, P_C * (1.0 - field));
                 vec3 effected = mix(shadowTint, base.rgb * (vec3(1.0) + P_TINT * 0.28), field * P_C);
             """
@@ -220,8 +277,8 @@ internal object ModernFxShaders {
             }
         """.trimIndent()
             .replace("PHASE", "phase")
-            .replace("@A@", a)
-            .replace("@B@", b)
+            .replace("@A@", paramA)
+            .replace("@B@", paramB)
             .replace("@C@", c)
             .replace("@TINT@", tint)
     }

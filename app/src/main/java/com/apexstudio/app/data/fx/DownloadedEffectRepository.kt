@@ -51,19 +51,38 @@ object DownloadedEffectRepository {
     @Volatile private var verifiedSources: Map<String, VerifiedSource> = emptyMap()
 
     /**
-     * Resolve only while the installed entry still matches its pinned digest.
-     * This reads a file and may invalidate registry state; call from an IO-backed
-     * effect or ViewModel path, never directly during Compose composition.
+     * Pure in-memory lookup: no file I/O, no state mutation, safe to call
+     * from any thread (including synchronous state updates and export
+     * snapshot builders). Returns the effect only if it was loaded by
+     * [refreshInstalled] from a digest-verified source. This lookup does NOT
+     * re-check the installed file's digest — that integrity re-verification
+     * (and the pack invalidation it may trigger) lives exclusively in the
+     * explicit [findVerified] call.
      */
     fun find(id: String?): DownloadedFxEffect? {
         val target = id ?: return null
-        val effect = _effects.value.firstOrNull { it.id == target } ?: return null
-        val source = verifiedSources[target] ?: return null
+        if (!verifiedSources.containsKey(target)) return null
+        return _effects.value.firstOrNull { it.id == target }
+    }
+
+    /**
+     * Explicit integrity-checked lookup: re-reads the installed entry on the
+     * IO dispatcher and verifies it still matches its pinned digest. If the
+     * entry is stale or tampered, the owning pack is invalidated (registry
+     * state changes) and null is returned. This is the ONLY lookup allowed to
+     * touch disk or mutate state — call it from an IO-backed effect,
+     * `produceState`, or a ViewModel/repository path, never directly during
+     * Compose composition.
+     */
+    suspend fun findVerified(id: String?): DownloadedFxEffect? = withContext(Dispatchers.IO) {
+        val target = id ?: return@withContext null
+        val effect = find(target) ?: return@withContext null
+        val source = verifiedSources[target] ?: return@withContext null
         if (!isSourceCurrent(source)) {
             invalidatePack(source.packId)
-            return null
+            return@withContext null
         }
-        return effect
+        effect
     }
 
     fun hasPack(packId: String): Boolean =

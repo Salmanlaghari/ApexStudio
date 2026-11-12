@@ -15,6 +15,7 @@ import com.apexstudio.app.domain.model.FaceCropKeyframe
 import com.apexstudio.app.domain.model.FaceCropTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import com.apexstudio.app.presentation.viewmodel.bakedBackgroundReplacementClip
 import com.apexstudio.app.presentation.viewmodel.chromaWallpaperBackgroundSettings
 import com.apexstudio.app.presentation.viewmodel.withVerifiedWallpaper
@@ -131,7 +132,11 @@ class WallpaperChromaProjectIntegrationTest {
             assertNull(bakedClip.chromaKeySettings)
             assertNull(bakedClip.faceCropTrack)
 
-            repository.saveProject(pendingReopened.copy(clips = listOf(bakedClip)))
+            // Mirror EditorViewModel.updateClip: refresh canonical typed fields
+            // from the baked legacy clip before the project auto-save runs.
+            val appliedProject = pendingReopened.copy(clips = listOf(bakedClip))
+                .syncSharedTimeline(refreshLegacyClipFields = true)
+            repository.saveProject(appliedProject)
             val reopenedAppliedClip = ProjectRepository(baseContext).findById(projectId)!!.clips.single()
             assertEquals(bakedClip.uri, reopenedAppliedClip.uri)
             assertEquals(originalUri, reopenedAppliedClip.backgroundReplace?.sourceUri)

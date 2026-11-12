@@ -755,7 +755,7 @@ private fun MediaClip.toSharedVideoClip(
         saturationKeyframes = imported?.saturationKeyframes ?: existing?.saturationKeyframes.orEmpty(),
         mask = if (refreshLegacyClipFields) mask?.toTypedMask() else existing?.mask ?: mask?.toTypedMask(),
         chromaKey = if (refreshLegacyClipFields) {
-            chromaKeySettings?.toTypedChromaKey() ?: existing?.chromaKey
+            chromaKeySettings?.toTypedChromaKey()
         } else {
             existing?.chromaKey ?: chromaKeySettings?.toTypedChromaKey()
         },

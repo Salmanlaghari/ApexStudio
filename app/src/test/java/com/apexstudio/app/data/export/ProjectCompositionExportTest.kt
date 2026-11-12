@@ -234,8 +234,27 @@ class ProjectCompositionExportTest {
         val malformedCrop = clip().copy(videoCrop = VideoCropSettings(left = Float.NaN))
         assertTrue(projectCompositionUnsupportedReason(listOf(malformedCrop), ExportEngine.ExportConfig())!!.contains("invalid crop edit"))
 
-        val replaced = clip().copy(backgroundReplace = com.apexstudio.app.domain.model.BackgroundReplaceSettings())
-        assertTrue(projectCompositionUnsupportedReason(listOf(replaced), ExportEngine.ExportConfig())!!.contains("background-replacement"))
+        val unprocessed = clip().copy(backgroundReplace = com.apexstudio.app.domain.model.BackgroundReplaceSettings(
+            sourceUri = clip().uri
+        ))
+        assertTrue(projectCompositionUnsupportedReason(listOf(unprocessed), ExportEngine.ExportConfig())!!.contains("has not been applied"))
+
+        val bakedWallpaper = clip().copy(
+            uri = "file:///bg_replace/processed.mp4",
+            backgroundReplace = com.apexstudio.app.domain.model.BackgroundReplaceSettings(
+                mode = com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE,
+                sourceUri = clip().uri,
+                imageUri = "file:///packs/apexstudio-wallpapers-vol-01/wallpapers/cyber-portal.jpg",
+                imageAssetId = "cyber-portal",
+                chromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(enabled = true)
+            )
+        )
+        assertNull(projectCompositionUnsupportedReason(listOf(bakedWallpaper), ExportEngine.ExportConfig()))
+
+        val unbakedChroma = clip().copy(
+            chromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(enabled = true)
+        )
+        assertTrue(projectCompositionUnsupportedReason(listOf(unbakedChroma), ExportEngine.ExportConfig())!!.contains("Apply the key and wallpaper"))
     }
 
     @Test

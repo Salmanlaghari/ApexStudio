@@ -32,6 +32,21 @@ internal fun monotonicProjectExportProgress(previous: Float, reported: Float): F
     return maxOf(safePrevious, safeReported)
 }
 
+/** Background replacement is baked into [MediaClip.uri]; never substitute or silently re-render it. */
+internal fun backgroundReplaceExportIssue(clip: MediaClip): String? {
+    val settings = clip.backgroundReplace ?: return null
+    if (settings.sourceUri.isBlank()) {
+        return "Video clip '${clip.name}' has background-replacement metadata without an original source URI."
+    }
+    if (clip.uri.isBlank() || clip.uri == settings.sourceUri) {
+        return "Video clip '${clip.name}' has a background replacement that has not been applied to its media file."
+    }
+    if (settings.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE && settings.imageUri.isNullOrBlank()) {
+        return "Video clip '${clip.name}' has a background replacement without a usable wallpaper URI."
+    }
+    return null
+}
+
 /**
  * Pure, fail-closed gate for the deliberately small sequential V1 export path.
  * Every item is accounted for; this never filters or silently normalizes clips.
@@ -77,9 +92,12 @@ internal fun projectCompositionUnsupportedReason(
         if (!clip.volume.isFinite() || clip.volume !in 0f..2f) {
             return "Video clip '${clip.name}' has an invalid audio gain."
         }
-        if (clip.backgroundReplace != null) return "Video clip '${clip.name}' has a background-replacement edit."
+        backgroundReplaceExportIssue(clip)?.let { return it }
         if (clip.chromaKeySettings?.hasValidChromaParameters() == false) {
             return "Video clip '${clip.name}' has invalid chroma-key parameters."
+        }
+        if (clip.chromaKeySettings?.enabled == true) {
+            return "Video clip '${clip.name}' has unapplied chroma-key settings. Apply the key and wallpaper before exporting."
         }
         if (clip.textOverlays.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
             return "Video clip '${clip.name}' has a caption with an invalid time range."

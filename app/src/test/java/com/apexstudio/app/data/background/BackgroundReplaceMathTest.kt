@@ -129,6 +129,14 @@ class BackgroundReplaceMathTest {
         assertNotEquals(base.cacheKey(), base.copy(sourceUri = "file:///b.mp4").cacheKey())
         assertNotEquals(
             base.cacheKey(),
+            base.copy(imageAssetId = "cyber-portal", imageAssetSha256 = "a".repeat(64)).cacheKey()
+        )
+        assertNotEquals(
+            base.copy(imageAssetId = "cyber-portal", imageAssetSha256 = "a".repeat(64)).cacheKey(),
+            base.copy(imageAssetId = "cyber-portal", imageAssetSha256 = "b".repeat(64)).cacheKey()
+        )
+        assertNotEquals(
+            base.cacheKey(),
             base.copy(mode = BackgroundReplaceMode.IMAGE, imageUri = "file:///bg.jpg").cacheKey()
         )
     }

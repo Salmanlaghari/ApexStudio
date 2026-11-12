@@ -77,17 +77,23 @@ object ChromaKeyProcessor {
             var outG = g
             var outB = b
 
-            if (keyG > keyR && keyG > keyB) {
+            val keyDominant = max(keyR, max(keyG, keyB))
+            if (keyG == keyDominant) {
                 // Green screen spill suppression
                 val maxOther = max(r, b)
                 if (g > maxOther) {
                     outG = g - (g - maxOther) * spill
                 }
-            } else if (keyB > keyR && keyB > keyG) {
+            } else if (keyB == keyDominant) {
                 // Blue screen spill suppression
                 val maxOther = max(r, g)
                 if (b > maxOther) {
                     outB = b - (b - maxOther) * spill
+                }
+            } else if (keyR == keyDominant) {
+                val maxOther = max(g, b)
+                if (r > maxOther) {
+                    outR = r - (r - maxOther) * spill
                 }
             }
 

@@ -169,6 +169,7 @@ object PackManifestRepo {
         "models" -> "AI Models"
         "camera" -> "Camera & Lenses"
         "stickers" -> "Animated Stickers"
+        "backgrounds" -> "Wallpaper Catalog"
         else -> category.replaceFirstChar { it.uppercase() }
     }
 }

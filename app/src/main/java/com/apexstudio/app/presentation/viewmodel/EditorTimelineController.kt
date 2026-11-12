@@ -128,7 +128,7 @@ fun EditorViewModel.selectClip(id: String?) = _state.update { state ->
         selectedTextOverlayId = if (id != null) null else state.selectedTextOverlayId,
         selectedStickerId = if (id != null) null else state.selectedStickerId,
         activeGpuFilterConfig = clip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig(),
-        chromaKeySettings = clip?.chromaKeySettings
+        chromaKeySettings = clip?.chromaKeySettings ?: clip?.backgroundReplace?.chromaKeySettings
             ?: com.apexstudio.app.domain.model.ChromaKeySettings()
     )
 }

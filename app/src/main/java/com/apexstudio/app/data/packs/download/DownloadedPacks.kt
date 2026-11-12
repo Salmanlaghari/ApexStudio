@@ -29,6 +29,9 @@ object DownloadedPacks {
                 DownloadedEffectRepository.refreshInstalled(context, manifest)
                 DownloadedEffectRepository.hasPack(packId)
             }
+            "backgrounds" ->
+                com.apexstudio.app.data.background.WallpaperCatalogRepository
+                    .validateInstalledPack(context, pack)
             else -> true
         }
     }

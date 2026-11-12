@@ -12,7 +12,8 @@ data class ChromaKeySettings(
     val depth3D: Float = 0.35f,
     val tiltX: Float = 0f,
     val tiltY: Float = 0f,
-    val backgroundType: String = "cyber_portal", // cyber_portal, neon_city, virtual_studio, deep_space, matrix_grid, transparent, custom
+    /** Stable wallpaper ID for catalog assets; legacy values are resolved by WallpaperCatalogRepository. */
+    val backgroundType: String = "cyber-portal",
     val customBackgroundUri: String? = null
 )
 
@@ -23,3 +24,12 @@ fun ChromaKeySettings.hasValidParameters(): Boolean =
         depth3D.isFinite() && depth3D in 0f..1f &&
         tiltX.isFinite() && tiltX in -1f..1f &&
         tiltY.isFinite() && tiltY in -1f..1f
+
+fun ChromaKeySettings.sanitized(): ChromaKeySettings = copy(
+    similarity = similarity.takeIf { it.isFinite() }?.coerceIn(0.01f, 1f) ?: 0.4f,
+    smoothness = smoothness.takeIf { it.isFinite() }?.coerceIn(0.01f, 0.5f) ?: 0.15f,
+    spillSuppression = spillSuppression.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f,
+    depth3D = depth3D.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.35f,
+    tiltX = tiltX.takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f,
+    tiltY = tiltY.takeIf { it.isFinite() }?.coerceIn(-1f, 1f) ?: 0f
+)

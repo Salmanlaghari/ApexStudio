@@ -110,6 +110,20 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
         return
     }
+    selected?.let { com.apexstudio.app.data.export.backgroundReplaceExportIssue(it) }?.let { reason ->
+        _export.update { it.copy(error = reason, outputUri = null, warning = null) }
+        return
+    }
+    if (selected?.chromaKeySettings?.enabled == true) {
+        _export.update {
+            it.copy(
+                error = "Apply chroma key and its wallpaper to the clip before exporting.",
+                outputUri = null,
+                warning = null
+            )
+        }
+        return
+    }
     val eightKRequest = eightKCapabilityRequestForSettings(aspectRatio, fps, quality, bitrateMbps)
     val eightKAvailability = if (resolvedResolution == "8K") Export8kCapability.cached(eightKRequest) else null
     val settingsReason = videoExportSettingsUnsupportedReason(

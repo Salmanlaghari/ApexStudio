@@ -461,6 +461,8 @@ fun BackgroundReplacePanel(
                                     blurStrength = (blur / 100f).coerceIn(0f, 1f),
                                     colorArgb = colorArgb,
                                     imageUri = imageUri,
+                                    imageAssetId = clip.backgroundReplace?.imageAssetId
+                                        ?.takeIf { imageUri == clip.backgroundReplace?.imageUri },
                                     sourceUri = clip.backgroundReplace?.sourceUri ?: clip.uri
                                 )
                             )

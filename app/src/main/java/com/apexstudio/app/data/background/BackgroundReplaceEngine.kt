@@ -20,6 +20,7 @@ import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
 import com.apexstudio.app.ai.mediapipe.BundledMediaPipeModels
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
+import com.apexstudio.app.data.engine.ChromaKeyFrameCompositor
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.google.mediapipe.framework.image.BitmapExtractor
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -164,8 +165,12 @@ object BackgroundReplaceEngine {
         GlobalModerationEnforcement.requireApproved(ProtectedAiAction.BACKGROUND_REPLACEMENT, sourceUri)
         val safe = settings.sanitized()
         val appContext = context.applicationContext
-        val model = modelFile(appContext)
-        if (!model.isFile) throw IllegalStateException("Bundled segmentation model is unavailable.")
+        val chromaSettings = safe.chromaKeySettings?.takeIf { it.enabled }
+        if (chromaSettings != null && safe.mode != com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE) {
+            throw IllegalArgumentException("Chroma key requires an image wallpaper.")
+        }
+        val model = if (chromaSettings == null) modelFile(appContext) else null
+        if (model != null && !model.isFile) throw IllegalStateException("Bundled segmentation model is unavailable.")
         if (safe.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
             safe.imageUri.isNullOrBlank()
         ) {
@@ -184,26 +189,28 @@ object BackgroundReplaceEngine {
         var reader: android.media.ImageReader? = null
         var frameThread: HandlerThread? = null
         var compositor: FrameCompositor? = null
+        var chromaCompositor: ChromaKeyFrameCompositor? = null
         var bgImage: Bitmap? = null
         try {
-            // --- MediaPipe segmenter (CPU delegate, IMAGE mode). ---
-            val modelBytes = model.readBytes()
-            val modelBuffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
-                put(modelBytes)
-                rewind()
+            // --- MediaPipe segmenter is only needed for AI person removal. ---
+            if (chromaSettings == null) {
+                val modelBytes = model!!.readBytes()
+                val modelBuffer = ByteBuffer.allocateDirect(modelBytes.size).apply {
+                    put(modelBytes)
+                    rewind()
+                }
+                val baseOptions = BaseOptions.builder()
+                    .setModelAssetBuffer(modelBuffer)
+                    .setDelegate(Delegate.CPU)
+                    .build()
+                val options = ImageSegmenter.ImageSegmenterOptions.builder()
+                    .setBaseOptions(baseOptions)
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setOutputCategoryMask(false)
+                    .setOutputConfidenceMasks(true)
+                    .build()
+                segmenter = ImageSegmenter.createFromOptions(appContext, options)
             }
-            val baseOptions = BaseOptions.builder()
-                .setModelAssetBuffer(modelBuffer)
-                .setDelegate(Delegate.CPU)
-                .build()
-            val options = ImageSegmenter.ImageSegmenterOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.IMAGE)
-                .setOutputCategoryMask(false)
-                .setOutputConfidenceMasks(true)
-                .build()
-            segmenter = ImageSegmenter.createFromOptions(appContext, options)
-            val seg = segmenter!!
 
             // --- Probe: rotation + duration. ---
             val rotation = readRotation(appContext, sourceUri)
@@ -280,8 +287,11 @@ object BackgroundReplaceEngine {
                 bgImage = loadBackgroundImage(appContext, safe.imageUri!!)
                     ?: throw IllegalArgumentException("Could not load the background image.")
             }
-            compositor = FrameCompositor(outW, outH, safe, bgImage)
-            val comp = compositor!!
+            if (chromaSettings != null) {
+                chromaCompositor = ChromaKeyFrameCompositor(outW, outH, bgImage!!, chromaSettings)
+            } else {
+                compositor = FrameCompositor(outW, outH, safe, bgImage)
+            }
 
             // --- Decoder → ImageReader (CPU YUV frames). ---
             val imageQueue = LinkedBlockingQueue<Image>()
@@ -467,8 +477,12 @@ object BackgroundReplaceEngine {
                                 try {
                                     val oriented = rotateBitmapIfNeeded(frame, rotation, outW, outH)
                                     try {
-                                        val mask = segmentFrame(seg, oriented)
-                                        comp.composite(oriented, mask.first, mask.second, mask.third)
+                                        if (chromaSettings != null) {
+                                            chromaCompositor!!.composite(oriented)
+                                        } else {
+                                            val mask = segmentFrame(segmenter!!, oriented)
+                                            compositor!!.composite(oriented, mask.first, mask.second, mask.third)
+                                        }
                                     } finally {
                                         if (oriented !== frame) {
                                             try { oriented.recycle() } catch (_: Exception) {}
@@ -477,7 +491,8 @@ object BackgroundReplaceEngine {
                                 } finally {
                                     try { frame.recycle() } catch (_: Exception) {}
                                 }
-                                val yuv = PhotoVideoEncoder.argbToNv12(comp.result, outW, outH)
+                                val rendered = chromaCompositor?.result ?: compositor!!.result
+                                val yuv = PhotoVideoEncoder.argbToNv12(rendered, outW, outH)
                                 feedEncoder(yuv, decInfo.presentationTimeUs)
                                 drainEncoder(endOfStream = false)
                                 val now = android.os.SystemClock.elapsedRealtime()
@@ -522,6 +537,7 @@ object BackgroundReplaceEngine {
             throw e
         } finally {
             try { compositor?.release() } catch (_: Exception) {}
+            try { chromaCompositor?.release() } catch (_: Exception) {}
             try { bgImage?.recycle() } catch (_: Exception) {}
             try { decoder?.stop() } catch (_: Exception) {}
             try { decoder?.release() } catch (_: Exception) {}

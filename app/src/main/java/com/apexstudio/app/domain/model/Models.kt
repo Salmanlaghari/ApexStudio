@@ -250,7 +250,7 @@ data class MediaClip(
     val textOverlays: List<TextOverlay> = emptyList(),
     val stickers: List<StickerOverlay> = emptyList(),
     val gpuFilterConfig: GpuFilterConfig = GpuFilterConfig(),
-    /** Per-clip chroma key settings shared by preview and export; null preserves the original. */
+    /** Pending chroma settings; Apply bakes them with a wallpaper into [uri] and clears this field. */
     val chromaKeySettings: ChromaKeySettings? = null,
     // Optional fixed, deterministic project-video effect. The preset id is resolved by
     // ProjectVideoPresets in both preview and export; null preserves legacy rendering.
@@ -864,7 +864,8 @@ enum class BackgroundReplaceMode {
  *   [com.apexstudio.app.data.background.BackgroundReplaceMath]
  *   (0 = light blur, 1 = strongest).
  * - [colorArgb] is 0xAARRGGBB; only read in COLOR mode.
- * - [imageUri] is the picked replacement image; only read in IMAGE mode.
+ * - [imageUri] is the resolved replacement image; only read in IMAGE mode. A
+ *   downloaded wallpaper also keeps its stable identity in [imageAssetId].
  *
  * Use [sanitized] before processing: it clamps every knob so the
  * engine never sees an out-of-range value.
@@ -875,14 +876,24 @@ data class BackgroundReplaceSettings(
     val blurStrength: Float = 0.5f,
     val colorArgb: Long = 0xFF000000L,
     val imageUri: String? = null,
-    val sourceUri: String = ""
+    /** Stable catalog identity when [imageUri] resolves to a downloaded wallpaper. */
+    val imageAssetId: String? = null,
+    /** Present when the processed file was made with chroma key instead of person segmentation. */
+    val chromaKeySettings: ChromaKeySettings? = null,
+    val sourceUri: String = "",
+    /** Pinned bytes used for a catalog wallpaper, so content updates invalidate the render cache. */
+    val imageAssetSha256: String? = null
 ) {
     /** Clamped copy: blur in 0..1, colour alpha forced opaque. */
     fun sanitized(): BackgroundReplaceSettings = copy(
         blurStrength = blurStrength.coerceIn(0f, 1f),
         // A transparent "solid colour" would punch a hole to black in
         // the encoder; force opaque so COLOR always means a real colour.
-        colorArgb = colorArgb or 0xFF000000L
+        colorArgb = colorArgb or 0xFF000000L,
+        imageAssetId = imageAssetId?.takeIf { it.isNotBlank() },
+        chromaKeySettings = chromaKeySettings?.takeIf { it.enabled }?.sanitized(),
+        imageAssetSha256 = imageAssetSha256?.lowercase()
+            ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
     )
 
     /**
@@ -896,7 +907,10 @@ data class BackgroundReplaceSettings(
         mode.name,
         blurStrength.toString(),
         colorArgb.toString(),
-        imageUri ?: ""
+        imageUri ?: "",
+        imageAssetId ?: "",
+        chromaKeySettings?.toString() ?: "",
+        imageAssetSha256 ?: ""
     ).joinToString("|")
 
     companion object {

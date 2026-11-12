@@ -15,6 +15,9 @@ import com.apexstudio.app.domain.model.FaceCropKeyframe
 import com.apexstudio.app.domain.model.FaceCropTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.viewmodel.bakedBackgroundReplacementClip
+import com.apexstudio.app.presentation.viewmodel.chromaWallpaperBackgroundSettings
+import com.apexstudio.app.presentation.viewmodel.withVerifiedWallpaper
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString

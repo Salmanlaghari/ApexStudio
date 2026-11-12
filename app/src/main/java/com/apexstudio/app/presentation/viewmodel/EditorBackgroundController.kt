@@ -5,9 +5,11 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
+import com.apexstudio.app.data.background.InstalledWallpaper
 import com.apexstudio.app.data.background.WallpaperCatalogRepository
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
+import com.apexstudio.app.domain.model.ChromaKeySettings
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.CancellationException
@@ -57,6 +59,40 @@ internal fun backgroundApplyCanCommit(
 /** Replacement imagery must be an IMAGE clip already present in this project's media list. */
 internal fun isExistingProjectImageSource(projectClips: List<MediaClip>, uri: String?): Boolean =
     !uri.isNullOrBlank() && projectClips.any { it.type == ClipType.IMAGE && it.uri == uri }
+
+/** Convert the selected stable catalog ID into the exact pending Apply request. */
+internal fun chromaWallpaperBackgroundSettings(settings: ChromaKeySettings): BackgroundReplaceSettings? {
+    val wallpaperId = WallpaperCatalogRepository.resolveLegacyId(settings.backgroundType)
+    if (!settings.enabled || wallpaperId == null) return null
+    return BackgroundReplaceSettings(
+        mode = BackgroundReplaceMode.IMAGE,
+        imageAssetId = wallpaperId,
+        chromaKeySettings = settings.copy(backgroundType = wallpaperId)
+    )
+}
+
+/** Pin the verified installed asset URI and checksum before computing/reusing a render. */
+internal fun BackgroundReplaceSettings.withVerifiedWallpaper(
+    wallpaper: InstalledWallpaper
+): BackgroundReplaceSettings {
+    require(imageAssetId == wallpaper.asset.id) { "Resolved wallpaper does not match the requested catalog ID." }
+    return copy(
+        imageUri = wallpaper.uri.toString(),
+        imageAssetSha256 = wallpaper.asset.sha256.lowercase()
+    )
+}
+
+/** The production Apply commit: the preview/export URI is the baked file, while original metadata stays restorable. */
+internal fun bakedBackgroundReplacementClip(
+    clip: MediaClip,
+    processedUri: String,
+    settings: BackgroundReplaceSettings
+): MediaClip = clip.copy(
+    uri = processedUri,
+    backgroundReplace = settings,
+    chromaKeySettings = null,
+    faceCropTrack = null
+)
 
 // BackgroundUiState lives on EditorViewModel (instance-scoped).
 
@@ -190,10 +226,7 @@ fun EditorViewModel.applyBackgroundReplace(
                     WallpaperCatalogRepository.resolveInstalledWallpaper(ctxApp, effective.imageAssetId)
                 } ?: throw IllegalStateException("Wallpaper is missing or failed its integrity check. Download it again.")
                 if (!isCurrentBackgroundJob(requestJob)) return@launch
-                effective.copy(
-                    imageUri = wallpaper.uri.toString(),
-                    imageAssetSha256 = wallpaper.asset.sha256.lowercase()
-                )
+                effective.withVerifiedWallpaper(wallpaper)
             } else effective
             val needsSegmentationModel = resolvedEffective.chromaKeySettings?.enabled != true
             val ready = !needsSegmentationModel || BackgroundReplaceEngine.isModelReady(ctxApp)
@@ -272,10 +305,10 @@ fun EditorViewModel.applyBackgroundReplace(
 /** Bake the selected verified wallpaper and chroma settings into the chosen video clip. */
 fun EditorViewModel.applyChromaKeyBackground(
     clipId: String,
-    settings: com.apexstudio.app.domain.model.ChromaKeySettings
+    settings: ChromaKeySettings
 ) {
-    val wallpaperId = WallpaperCatalogRepository.resolveLegacyId(settings.backgroundType)
-    if (!settings.enabled || wallpaperId == null) {
+    val applySettings = chromaWallpaperBackgroundSettings(settings)
+    if (applySettings == null) {
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED,
             progress01 = 0f,
@@ -286,14 +319,7 @@ fun EditorViewModel.applyChromaKeyBackground(
     // A stale image picked in the separate AI-background sheet must not
     // override this stable catalog ID.
     _backgroundUi.value = _backgroundUi.value.copy(imageUri = null)
-    applyBackgroundReplace(
-        clipId,
-        BackgroundReplaceSettings(
-            mode = BackgroundReplaceMode.IMAGE,
-            imageAssetId = wallpaperId,
-            chromaKeySettings = settings.copy(backgroundType = wallpaperId)
-        )
-    )
+    applyBackgroundReplace(clipId, applySettings)
 }
 
 private fun EditorViewModel.isCurrentBackgroundJob(job: Job): Boolean =
@@ -333,13 +359,7 @@ private suspend fun EditorViewModel.finishBackgroundApply(
 
     pushUndo()
     updateClip(expected.clipId) { current ->
-        current.copy(
-            uri = Uri.fromFile(processed).toString(),
-            backgroundReplace = effective,
-            chromaKeySettings = null,
-            // The processed output has baked pixels and orientation; the source-space face-crop track no longer applies.
-            faceCropTrack = null,
-        )
+        bakedBackgroundReplacementClip(current, Uri.fromFile(processed).toString(), effective)
     }
     // Do not delete the previous processed output. Undo/history snapshots
     // store clip URIs and may still refer to it.

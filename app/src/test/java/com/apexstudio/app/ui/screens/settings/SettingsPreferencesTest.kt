@@ -49,6 +49,16 @@ class SettingsPreferencesTest {
     }
 
     @Test
+    fun localCreatorProfileNormalizationHandlesControlCharactersOnEveryPath() {
+        assertEquals(
+            LocalCreatorProfile(displayName = "A B", avatarId = "violet"),
+            SettingsPreferences.normalizeLocalCreatorProfile(
+                LocalCreatorProfile(displayName = " A\tB\n\u200B ", avatarId = "unknown")
+            )
+        )
+    }
+
+    @Test
     fun themesHaveDistinctAccentsAndPolicyCoversCurrentDataPaths() {
         assertNotEquals(ApexThemeOption.NEON.primary, ApexThemeOption.VIOLET.primary)
         assertNotEquals(ApexThemeOption.VIOLET.primary, ApexThemeOption.EMBER.primary)

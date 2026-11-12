@@ -79,7 +79,10 @@ fun HomeScreen(
     val context = LocalContext.current
     val repo = remember { MediaRepository }
     val projectRepo = remember { ProjectRepository(context) }
-    val localProfile by SettingsPreferences.localCreatorProfile(context).collectAsState(initial = LocalCreatorProfile())
+    val localProfileFlow = remember(context.applicationContext) {
+        SettingsPreferences.localCreatorProfile(context)
+    }
+    val localProfile by localProfileFlow.collectAsState(initial = LocalCreatorProfile())
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
     var savedProjectIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var projectToRename by remember { mutableStateOf<Project?>(null) }
@@ -332,9 +335,7 @@ fun HomeScreen(
         onDeleteProject = { projectToDelete = it },
         onShowAll = { showAllProjects = !showAllProjects },
         localProfile = localProfile,
-        onSaveLocalProfile = { profile ->
-            scope.launch { SettingsPreferences.setLocalCreatorProfile(context, profile) }
-        }
+        onSaveLocalProfile = { profile -> SettingsPreferences.setLocalCreatorProfile(context, profile) }
     )
 
     if (isApplyingShortsTemplate) {

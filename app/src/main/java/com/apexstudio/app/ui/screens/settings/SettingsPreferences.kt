@@ -30,20 +30,35 @@ object SettingsPreferences {
         context.applicationContext.apexSettingsStore.data.catch { error ->
             if (error is IOException) emit(emptyPreferences()) else throw error
         }.map { preferences ->
-            LocalCreatorProfile(
-                displayName = preferences[creatorDisplayNameKey]?.trim()?.take(24)?.ifBlank { "Creator" } ?: "Creator",
-                avatarId = preferences[creatorAvatarKey]?.takeIf { it in LOCAL_AVATAR_IDS } ?: "violet"
+            normalizeLocalCreatorProfile(
+                LocalCreatorProfile(
+                    displayName = preferences[creatorDisplayNameKey].orEmpty(),
+                    avatarId = preferences[creatorAvatarKey].orEmpty()
+                )
             )
         }
 
     suspend fun setLocalCreatorProfile(context: Context, profile: LocalCreatorProfile) {
-        val displayName = profile.displayName.replace('\n', ' ').replace('\r', ' ').trim().take(24).ifBlank { "Creator" }
-        val avatarId = profile.avatarId.takeIf { it in LOCAL_AVATAR_IDS } ?: "violet"
+        val normalized = normalizeLocalCreatorProfile(profile)
         context.applicationContext.apexSettingsStore.edit { preferences ->
-            preferences[creatorDisplayNameKey] = displayName
-            preferences[creatorAvatarKey] = avatarId
+            preferences[creatorDisplayNameKey] = normalized.displayName
+            preferences[creatorAvatarKey] = normalized.avatarId
         }
     }
+
+    internal fun normalizeLocalCreatorProfile(profile: LocalCreatorProfile): LocalCreatorProfile =
+        LocalCreatorProfile(
+            displayName = profile.displayName
+                .map { character ->
+                    if (Character.isISOControl(character) || character == '\u200B' || character == '\uFEFF') ' '
+                    else character
+                }
+                .joinToString("")
+                .trim()
+                .take(24)
+                .ifBlank { "Creator" },
+            avatarId = profile.avatarId.takeIf { it in LOCAL_AVATAR_IDS } ?: "violet"
+        )
 
     fun theme(context: Context): Flow<ApexThemeOption> =
         context.applicationContext.apexSettingsStore.data.catch { error ->

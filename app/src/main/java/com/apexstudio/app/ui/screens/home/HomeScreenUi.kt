@@ -70,8 +70,11 @@ import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.screens.settings.LocalCreatorProfile
+import com.apexstudio.app.ui.screens.settings.SettingsPreferences
 import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ApexHomeContent(
@@ -93,7 +96,7 @@ internal fun ApexHomeContent(
     onExploreShortsTemplates: () -> Unit = {},
     onExploreTextStyles: () -> Unit = {},
     localProfile: LocalCreatorProfile = LocalCreatorProfile(),
-    onSaveLocalProfile: (LocalCreatorProfile) -> Unit = {}
+    onSaveLocalProfile: suspend (LocalCreatorProfile) -> Unit = {}
 ) {
     val theme = ApexThemeTokens.current
     val focusManager = LocalFocusManager.current
@@ -102,6 +105,9 @@ internal fun ApexHomeContent(
     var showLocalProfile by remember { mutableStateOf(false) }
     var profileNameDraft by remember { mutableStateOf(localProfile.displayName) }
     var profileAvatarDraft by remember { mutableStateOf(localProfile.avatarId) }
+    var isSavingLocalProfile by remember { mutableStateOf(false) }
+    var localProfileSaveError by remember { mutableStateOf<String?>(null) }
+    val profileSaveScope = rememberCoroutineScope()
     val filteredProjects = remember(projects, searchText) {
         val query = searchText.trim()
         if (query.isEmpty()) projects else projects.filter { project ->
@@ -135,6 +141,7 @@ internal fun ApexHomeContent(
                     focusManager.clearFocus(force = true)
                     profileNameDraft = localProfile.displayName
                     profileAvatarDraft = localProfile.avatarId
+                    localProfileSaveError = null
                     showLocalProfile = true
                 }
             )
@@ -218,10 +225,26 @@ internal fun ApexHomeContent(
             onDisplayNameChange = { profileNameDraft = it.take(24) },
             avatarId = profileAvatarDraft,
             onAvatarSelected = { profileAvatarDraft = it },
-            onDismiss = { showLocalProfile = false },
+            isSaving = isSavingLocalProfile,
+            saveError = localProfileSaveError,
+            onDismiss = { if (!isSavingLocalProfile) showLocalProfile = false },
             onSave = {
-                onSaveLocalProfile(localCreatorProfileForSave(profileNameDraft, profileAvatarDraft))
-                showLocalProfile = false
+                if (!isSavingLocalProfile) {
+                    isSavingLocalProfile = true
+                    localProfileSaveError = null
+                    val profile = localCreatorProfileForSave(profileNameDraft, profileAvatarDraft)
+                    profileSaveScope.launch {
+                        try {
+                            if (trySaveLocalCreatorProfile(profile, onSaveLocalProfile)) {
+                                showLocalProfile = false
+                            } else {
+                                localProfileSaveError = "Couldn't save profile. Please try again."
+                            }
+                        } finally {
+                            isSavingLocalProfile = false
+                        }
+                    }
+                }
             }
         )
     }
@@ -659,26 +682,44 @@ internal fun LocalCreatorProfileDialog(
     onDisplayNameChange: (String) -> Unit,
     avatarId: String,
     onAvatarSelected: (String) -> Unit,
+    isSaving: Boolean,
+    saveError: String?,
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
     val theme = ApexThemeTokens.current
     AlertDialog(
         modifier = Modifier.testTag("local-profile-dialog"),
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSaving) onDismiss() },
         containerColor = theme.bgSurface,
         title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
-            LocalCreatorProfileForm(
-                displayName = displayName,
-                onDisplayNameChange = onDisplayNameChange,
-                avatarId = avatarId,
-                onAvatarSelected = onAvatarSelected
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalCreatorProfileForm(
+                    displayName = displayName,
+                    onDisplayNameChange = onDisplayNameChange,
+                    avatarId = avatarId,
+                    onAvatarSelected = onAvatarSelected
+                )
+                saveError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 12.sp,
+                        modifier = Modifier.testTag("local-profile-save-error")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            LocalCreatorProfileSaveAction(
+                enabled = !isSaving,
+                label = if (isSaving) "Saving…" else "Save profile",
+                onSave = onSave
             )
         },
-        confirmButton = { LocalCreatorProfileSaveAction(onSave = onSave) },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancel") }
         }
     )
 }
@@ -730,12 +771,28 @@ internal fun LocalCreatorProfileForm(
 }
 
 @Composable
-internal fun LocalCreatorProfileSaveAction(onSave: () -> Unit) {
-    TextButton(onClick = onSave) { Text("Save profile") }
+internal fun LocalCreatorProfileSaveAction(
+    enabled: Boolean = true,
+    label: String = "Save profile",
+    onSave: () -> Unit
+) {
+    TextButton(onClick = onSave, enabled = enabled) { Text(label) }
 }
 
 internal fun localCreatorProfileForSave(displayName: String, avatarId: String): LocalCreatorProfile =
-    LocalCreatorProfile(displayName = displayName.trim().ifBlank { "Creator" }, avatarId = avatarId)
+    SettingsPreferences.normalizeLocalCreatorProfile(LocalCreatorProfile(displayName, avatarId))
+
+internal suspend fun trySaveLocalCreatorProfile(
+    profile: LocalCreatorProfile,
+    onSave: suspend (LocalCreatorProfile) -> Unit
+): Boolean = try {
+    onSave(profile)
+    true
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: Exception) {
+    false
+}
 
 private fun profileAvatarColor(avatarId: String): Color = when (avatarId) {
     "cyan" -> Color(0xFF38D9F5)

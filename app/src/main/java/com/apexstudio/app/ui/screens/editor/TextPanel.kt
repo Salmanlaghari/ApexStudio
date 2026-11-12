@@ -63,6 +63,7 @@ import com.apexstudio.app.data.text.TextDesignMotionPack
 import com.apexstudio.app.data.text.TextDesignMotionPreset
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.presentation.viewmodel.CaptionPhase
 import com.apexstudio.app.presentation.viewmodel.CaptionUiState
 import com.apexstudio.app.presentation.viewmodel.CaptionFillerReviewState
@@ -193,8 +194,8 @@ fun TextPanel(
             .imePadding()
             .heightIn(max = 280.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(ApexThemeTokens.current.bgSurface)
+            .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         // Header
@@ -204,7 +205,7 @@ fun TextPanel(
         ) {
             Text(
                 "Text & Titles",
-                color = ApexPalette.TextPrimary,
+                color = ApexThemeTokens.current.textPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 modifier = Modifier.weight(1f)
@@ -212,7 +213,7 @@ fun TextPanel(
             Icon(
                 Icons.Default.Close,
                 contentDescription = "Close text",
-                tint = ApexPalette.NeonCyan,
+                tint = ApexThemeTokens.current.primary,
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
@@ -229,7 +230,7 @@ fun TextPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(ApexPalette.BgElevated)
+                .background(ApexThemeTokens.current.bgElevated)
                 .padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
@@ -244,7 +245,7 @@ fun TextPanel(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (isSel) ApexPalette.NeonCyan else Color.Transparent)
+                        .background(if (isSel) ApexThemeTokens.current.primary else Color.Transparent)
                         .clickable { activeTab = tab }
                         .testTag("text-tab-${tab.name.lowercase()}")
                         .semantics { this.selected = isSel }
@@ -253,7 +254,7 @@ fun TextPanel(
                 ) {
                     Text(
                         label,
-                        color = if (isSel) Color(0xFF0A0E1A) else ApexPalette.TextSecondary,
+                        color = if (isSel) ApexThemeTokens.current.bgDeep else ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
                     )
@@ -272,14 +273,14 @@ fun TextPanel(
 
         if (activeTab != TextPanelTab.CAPTIONS) Text(
             "Add text → type your words → choose a sample style → drag it on the preview. Set timing on the timeline.",
-            color = ApexPalette.TextSecondary,
+            color = ApexThemeTokens.current.textSecondary,
             fontSize = 10.sp,
             lineHeight = 13.sp,
             modifier = Modifier.fillMaxWidth().testTag("text-quick-guide")
         )
         if (activeTab != TextPanelTab.CAPTIONS) Spacer(Modifier.height(6.dp))
 
-        if (activeTab != TextPanelTab.CAPTIONS) Text("1 · Add or select text", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        if (activeTab != TextPanelTab.CAPTIONS) Text("1 · Add or select text", color = ApexThemeTokens.current.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         // Text layer chips: one per editable overlay, plus the explicit add action.
         if (activeTab != TextPanelTab.CAPTIONS) LazyRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -289,8 +290,8 @@ fun TextPanel(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(ApexPalette.NeonCyan.copy(alpha = 0.15f))
-                        .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(8.dp))
+                        .background(ApexThemeTokens.current.primary.copy(alpha = 0.15f))
+                        .border(1.dp, ApexThemeTokens.current.primary, RoundedCornerShape(8.dp))
                         .clickable { onAdd() }
                         .testTag("text-add-overlay")
                         .padding(horizontal = 10.dp, vertical = 5.dp),
@@ -299,13 +300,13 @@ fun TextPanel(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.Add, null,
-                            tint = ApexPalette.NeonCyan,
+                            tint = ApexThemeTokens.current.primary,
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             "Add text",
-                            color = ApexPalette.NeonCyan,
+                            color = ApexThemeTokens.current.primary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -318,12 +319,12 @@ fun TextPanel(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                            else ApexPalette.BgElevated
+                            if (sel) ApexThemeTokens.current.primary.copy(alpha = 0.2f)
+                            else ApexThemeTokens.current.bgElevated
                         )
                         .border(
                             1.dp,
-                            if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { onSelect(o.id) }
@@ -336,7 +337,7 @@ fun TextPanel(
                 ) {
                     Text(
                         o.text.ifBlank { "Text" },
-                        color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        color = if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
@@ -354,12 +355,12 @@ fun TextPanel(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
                 .background(
-                    if (canApplyTemplate) Color(0xFF3B1D4D)
-                    else ApexPalette.BgElevated
+                    if (canApplyTemplate) ApexThemeTokens.current.secondary.copy(alpha = 0.24f)
+                    else ApexThemeTokens.current.bgElevated
                 )
                 .border(
                     1.dp,
-                    if (canApplyTemplate) ApexPalette.NeonPink else ApexPalette.BorderGlass,
+                    if (canApplyTemplate) ApexThemeTokens.current.secondary else ApexThemeTokens.current.border,
                     RoundedCornerShape(10.dp)
                 )
                 .clickable(enabled = canApplyTemplate) { onApplyTextReveal() }
@@ -371,14 +372,14 @@ fun TextPanel(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "Text Reveal template",
-                        color = if (canApplyTemplate) Color.White else ApexPalette.TextTertiary,
+                        color = if (canApplyTemplate) ApexThemeTokens.current.textPrimary else ApexThemeTokens.current.textTertiary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         if (canApplyTemplate) "Adds sample text, a sticker and a reveal mask at the playhead"
                         else "Add a video clip first",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 10.sp
                     )
                 }
@@ -410,34 +411,34 @@ fun TextPanel(
             return@Column
         }
         if (selected == null) {
-            Text("2 · Add your words", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("2 · Add your words", color = ApexThemeTokens.current.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             Text("Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it.",
-                color = ApexPalette.TextSecondary, fontSize = 11.sp, lineHeight = 15.sp,
+                color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp, lineHeight = 15.sp,
                 modifier = Modifier.padding(vertical = 8.dp))
             Box(
                 modifier = Modifier.fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.NeonCyan)
+                    .background(ApexThemeTokens.current.primary)
                     .clickable(role = Role.Button, onClick = onAdd)
                     .testTag("text-empty-add")
                     .padding(horizontal = 16.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF0A0E1A))
+                    Icon(Icons.Default.Add, contentDescription = null, tint = ApexThemeTokens.current.bgDeep)
                     Spacer(Modifier.width(6.dp))
-                    Text("Add text to video", color = Color(0xFF0A0E1A), fontWeight = FontWeight.SemiBold)
+                    Text("Add text to video", color = ApexThemeTokens.current.bgDeep, fontWeight = FontWeight.SemiBold)
                 }
             }
             return@Column
         }
 
-        Text("2 · Edit and style your text", color = ApexPalette.NeonCyan, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text("2 · Edit and style your text", color = ApexThemeTokens.current.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         if (activeTab == TextPanelTab.EDIT) {
             TextPresetSampleGallery(onApplyPreset = onApplyPreset)
             Text("Swipe the cards below for Font, Style, Layout and Text Layer controls.",
-                color = ApexPalette.TextTertiary, fontSize = 9.sp,
+                color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp,
                 modifier = Modifier.padding(top = 4.dp).testTag("text-card-swipe-hint"))
         }
 
@@ -449,8 +450,8 @@ fun TextPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                .background(ApexThemeTokens.current.bgElevated)
+                .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(10.dp))
                 .clickable { onOpenTextMask() }
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -459,7 +460,7 @@ fun TextPanel(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Mask",
-                    color = ApexPalette.TextPrimary,
+                    color = ApexThemeTokens.current.textPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -471,7 +472,7 @@ fun TextPanel(
                             " • ${selected.maskKeyframes.size} keyframes" else ""
                         "$shape$ kf — tap to edit"
                     },
-                    color = ApexPalette.TextSecondary,
+                    color = ApexThemeTokens.current.textSecondary,
                     fontSize = 10.sp
                 )
             }
@@ -507,17 +508,17 @@ fun TextPanel(
                     singleLine = false,
                     minLines = 1,
                     maxLines = 2,
-                    placeholder = { Text("Enter text...", color = ApexPalette.TextTertiary) },
+                    placeholder = { Text("Enter text...", color = ApexThemeTokens.current.textTertiary) },
                     textStyle = androidx.compose.ui.text.TextStyle(
-                        color = ApexPalette.TextPrimary,
+                        color = ApexThemeTokens.current.textPrimary,
                         fontSize = 14.sp
                     ),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ApexPalette.NeonCyan,
-                        unfocusedBorderColor = ApexPalette.BorderGlass,
-                        focusedContainerColor = ApexPalette.BgElevated,
-                        unfocusedContainerColor = ApexPalette.BgElevated,
-                        cursorColor = ApexPalette.NeonCyan
+                        focusedBorderColor = ApexThemeTokens.current.primary,
+                        unfocusedBorderColor = ApexThemeTokens.current.border,
+                        focusedContainerColor = ApexThemeTokens.current.bgElevated,
+                        unfocusedContainerColor = ApexThemeTokens.current.bgElevated,
+                        cursorColor = ApexThemeTokens.current.primary
                     ),
                     modifier = Modifier.fillMaxWidth().testTag("text-content-field")
                 )
@@ -533,7 +534,7 @@ fun TextPanel(
                 ) {
                     Text(
                         "Size",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -544,14 +545,14 @@ fun TextPanel(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(ApexPalette.BgElevated)
-                            .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                            .background(ApexThemeTokens.current.bgElevated)
+                            .border(1.dp, ApexThemeTokens.current.border, CircleShape)
                             .clickable {
                                 onSizeChange((selected.sizeScale - 0.1f).coerceIn(0.4f, 4f))
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("-", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("-", color = ApexThemeTokens.current.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
 
                     // Slider
@@ -563,9 +564,9 @@ fun TextPanel(
                             .weight(1f)
                             .padding(horizontal = 8.dp),
                         colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan,
-                            inactiveTrackColor = ApexPalette.BgElevated
+                            thumbColor = ApexThemeTokens.current.primary,
+                            activeTrackColor = ApexThemeTokens.current.primary,
+                            inactiveTrackColor = ApexThemeTokens.current.bgElevated
                         )
                     )
 
@@ -574,14 +575,14 @@ fun TextPanel(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(ApexPalette.BgElevated)
-                            .border(1.dp, ApexPalette.BorderGlass, CircleShape)
+                            .background(ApexThemeTokens.current.bgElevated)
+                            .border(1.dp, ApexThemeTokens.current.border, CircleShape)
                             .clickable {
                                 onSizeChange((selected.sizeScale + 0.1f).coerceIn(0.4f, 4f))
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("+", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text("+", color = ApexThemeTokens.current.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(Modifier.width(8.dp))
@@ -590,13 +591,13 @@ fun TextPanel(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
-                            .border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(6.dp))
+                            .background(ApexThemeTokens.current.primary.copy(alpha = 0.18f))
+                            .border(1.dp, ApexThemeTokens.current.primary, RoundedCornerShape(6.dp))
                             .padding(horizontal = 6.dp, vertical = 3.dp)
                     ) {
                         Text(
                             "${currentSizeSp}sp",
-                            color = ApexPalette.NeonCyan,
+                            color = ApexThemeTokens.current.primary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -616,7 +617,7 @@ fun TextPanel(
                 }
                 Text(
                     "Font (${fontGroups.sumOf { it.second.size }} styles)",
-                    color = ApexPalette.TextSecondary,
+                    color = ApexThemeTokens.current.textSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -628,7 +629,7 @@ fun TextPanel(
                         Column(modifier = Modifier.width(278.dp)) {
                             Text(
                                 category.uppercase(),
-                                color = ApexPalette.TextSecondary,
+                                color = ApexThemeTokens.current.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
@@ -642,12 +643,12 @@ fun TextPanel(
                                             .width(92.dp)
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
-                                                if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                                                else ApexPalette.BgElevated
+                                                if (isSel) ApexThemeTokens.current.primary.copy(alpha = 0.2f)
+                                                else ApexThemeTokens.current.bgElevated
                                             )
                                             .border(
                                                 1.dp,
-                                                if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                                if (isSel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                                                 RoundedCornerShape(8.dp)
                                             )
                                             .clickable { onFontFamilyChange(fontKey) }
@@ -656,7 +657,7 @@ fun TextPanel(
                                     ) {
                                         Text(
                                             fontLabel,
-                                            color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                            color = if (isSel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary,
                                             fontSize = 13.sp,
                                             fontFamily = chipFont,
                                             fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
@@ -681,7 +682,7 @@ fun TextPanel(
                 ) {
                     Text(
                         "Style",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -691,24 +692,24 @@ fun TextPanel(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected.isBold) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
-                                .border(1.dp, if (selected.isBold) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                .background(if (selected.isBold) ApexThemeTokens.current.primary.copy(alpha = 0.25f) else ApexThemeTokens.current.bgElevated)
+                                .border(1.dp, if (selected.isBold) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                 .clickable { onStyleChange(!selected.isBold, selected.isItalic) }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("B", color = if (selected.isBold) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("B", color = if (selected.isBold) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
 
                         // Italic toggle
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected.isItalic) ApexPalette.NeonCyan.copy(alpha = 0.25f) else ApexPalette.BgElevated)
-                                .border(1.dp, if (selected.isItalic) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                .background(if (selected.isItalic) ApexThemeTokens.current.primary.copy(alpha = 0.25f) else ApexThemeTokens.current.bgElevated)
+                                .border(1.dp, if (selected.isItalic) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                 .clickable { onStyleChange(selected.isBold, !selected.isItalic) }
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
-                            Text("I", color = if (selected.isItalic) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 11.sp)
+                            Text("I", color = if (selected.isItalic) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontSize = 11.sp)
                         }
                     }
                 }
@@ -719,7 +720,7 @@ fun TextPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Color",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -733,8 +734,8 @@ fun TextPanel(
                                     .background(Color(c.toInt()))
                                     .border(
                                         2.dp,
-                                        if (selected.colorArgb == c) ApexPalette.NeonCyan
-                                        else ApexPalette.BorderGlass,
+                                        if (selected.colorArgb == c) ApexThemeTokens.current.primary
+                                        else ApexThemeTokens.current.border,
                                         CircleShape
                                     )
                                     .clickable { onColorChange(c); showCustomColor = false },
@@ -743,7 +744,7 @@ fun TextPanel(
                                 if (selected.colorArgb == c) {
                                     Icon(
                                         Icons.Default.Check, null,
-                                        tint = if (c == 0xFFFFFFFFL || c == 0xFFFFC400L || c == 0xFF00E5FFL) Color.Black else ApexPalette.TextPrimary,
+                                        tint = if (c == 0xFFFFFFFFL || c == 0xFFFFC400L || c == 0xFF00E5FFL) ApexThemeTokens.current.bgDeep else ApexThemeTokens.current.textPrimary,
                                         modifier = Modifier.size(13.dp)
                                     )
                                 }
@@ -766,8 +767,8 @@ fun TextPanel(
                                     )
                                     .border(
                                         2.dp,
-                                        if (showCustomColor || isCustom) ApexPalette.NeonCyan
-                                        else ApexPalette.BorderGlass,
+                                        if (showCustomColor || isCustom) ApexThemeTokens.current.primary
+                                        else ApexThemeTokens.current.border,
                                         CircleShape
                                     )
                                     .clickable { showCustomColor = !showCustomColor },
@@ -775,7 +776,7 @@ fun TextPanel(
                             ) {
                                 Icon(
                                     Icons.Default.Add, null,
-                                    tint = Color.White,
+                                    tint = ApexThemeTokens.current.textPrimary,
                                     modifier = Modifier.size(13.dp)
                                 )
                             }
@@ -808,7 +809,7 @@ fun TextPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Pill",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -820,12 +821,12 @@ fun TextPanel(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(
-                                        if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                                        else ApexPalette.BgElevated
+                                        if (sel) ApexThemeTokens.current.primary.copy(alpha = 0.2f)
+                                        else ApexThemeTokens.current.bgElevated
                                     )
                                     .border(
                                         1.dp,
-                                        if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                        if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                                         RoundedCornerShape(8.dp)
                                     )
                                     .clickable { onBgChange(argb) }
@@ -833,7 +834,7 @@ fun TextPanel(
                             ) {
                                 Text(
                                     label,
-                                    color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                                    color = if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -848,7 +849,7 @@ fun TextPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Glow",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -865,12 +866,12 @@ fun TextPanel(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexThemeTokens.current.primary.copy(alpha = 0.2f) else ApexThemeTokens.current.bgElevated)
+                                    .border(1.dp, if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                     .clickable { onShadowChange(argb) }
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                             ) {
-                                Text(label, color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 10.sp)
+                                Text(label, color = if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary, fontSize = 10.sp)
                             }
                         }
                     }
@@ -886,7 +887,7 @@ fun TextPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Align",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -897,14 +898,14 @@ fun TextPanel(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexThemeTokens.current.primary.copy(alpha = 0.2f) else ApexThemeTokens.current.bgElevated)
+                                    .border(1.dp, if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                     .clickable { onAlignChange(key) }
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
                                 Text(
                                     label,
-                                    color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                                    color = if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -922,7 +923,7 @@ fun TextPanel(
                 ) {
                     Text(
                         "Spacing",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -933,14 +934,14 @@ fun TextPanel(
                         valueRange = -0.1f..0.5f,
                         modifier = Modifier.weight(1f),
                         colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan,
-                            inactiveTrackColor = ApexPalette.BgElevated
+                            thumbColor = ApexThemeTokens.current.primary,
+                            activeTrackColor = ApexThemeTokens.current.primary,
+                            inactiveTrackColor = ApexThemeTokens.current.bgElevated
                         )
                     )
                     Text(
                         String.format("%.2f", selected.letterSpacingEm),
-                        color = ApexPalette.NeonCyan,
+                        color = ApexThemeTokens.current.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(start = 6.dp).width(34.dp)
@@ -953,7 +954,7 @@ fun TextPanel(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Gradient",
-                        color = ApexPalette.TextSecondary,
+                        color = ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.width(44.dp)
@@ -964,12 +965,12 @@ fun TextPanel(
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(if (sel) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .background(if (sel) ApexThemeTokens.current.primary.copy(alpha = 0.2f) else ApexThemeTokens.current.bgElevated)
+                                    .border(1.dp, if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                     .clickable { onGradientChange(null) }
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
-                                Text("None", color = if (sel) ApexPalette.NeonCyan else ApexPalette.TextPrimary, fontSize = 10.sp)
+                                Text("None", color = if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary, fontSize = 10.sp)
                             }
                         }
                         items(TEXT_GRADIENTS, key = { it.first }) { (label, start, end) ->
@@ -982,13 +983,13 @@ fun TextPanel(
                                             listOf(Color(start.toInt()), Color(end.toInt()))
                                         )
                                     )
-                                    .border(1.dp, if (sel) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                                    .border(1.dp, if (sel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                                     .clickable { onGradientChange(start to end) }
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
                                 Text(
                                     label,
-                                    color = ApexPalette.TextPrimary,
+                                    color = ApexThemeTokens.current.textPrimary,
                                     fontSize = 10.sp,
                                     fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal,
                                     style = androidx.compose.ui.text.TextStyle(
@@ -1015,16 +1016,16 @@ fun TextPanel(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(ApexPalette.BgElevated)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
+                            .background(ApexThemeTokens.current.bgElevated)
+                            .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(8.dp))
                             .clickable { onDuplicate(selected.id) }
                             .padding(vertical = 7.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.ContentCopy, null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(13.dp))
+                            Icon(Icons.Default.ContentCopy, null, tint = ApexThemeTokens.current.primary, modifier = Modifier.size(13.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Duplicate", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("Duplicate", color = ApexThemeTokens.current.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -1094,8 +1095,8 @@ fun TextPanel(
                             .fillMaxWidth()
                             .height(92.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF0D0D18))
-                            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                            .background(ApexThemeTokens.current.bgDeep)
+                            .border(1.dp, ApexThemeTokens.current.primary.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -1109,14 +1110,14 @@ fun TextPanel(
                             ) {
                                 Text(
                                     text = "LIVE PREVIEW",
-                                    color = ApexPalette.NeonCyan,
+                                    color = ApexThemeTokens.current.primary,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
                                     text = "${selected.animationType} → ${selected.outroAnimationType}",
-                                    color = ApexPalette.TextPrimary.copy(alpha = 0.7f),
+                                    color = ApexThemeTokens.current.textPrimary.copy(alpha = 0.7f),
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -1143,7 +1144,7 @@ fun TextPanel(
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(
                                         if (selected.bgArgb != null) Color(selected.bgArgb.toInt())
-                                        else Color(0xFF1E1E2C)
+                                        else ApexThemeTokens.current.bgElevated
                                     )
                                     .padding(horizontal = 14.dp, vertical = 6.dp)
                             ) {
@@ -1166,7 +1167,7 @@ fun TextPanel(
                     ) {
                         Text(
                             "Intro speed",
-                            color = ApexPalette.TextSecondary,
+                            color = ApexThemeTokens.current.textSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.width(64.dp)
@@ -1177,14 +1178,14 @@ fun TextPanel(
                             valueRange = 0.2f..2.5f,
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(
-                                thumbColor = ApexPalette.NeonCyan,
-                                activeTrackColor = ApexPalette.NeonCyan,
-                                inactiveTrackColor = ApexPalette.BgElevated
+                                thumbColor = ApexThemeTokens.current.primary,
+                                activeTrackColor = ApexThemeTokens.current.primary,
+                                inactiveTrackColor = ApexThemeTokens.current.bgElevated
                             )
                         )
                         Text(
                             String.format("%.1fs", selected.animationDurationMs / 1000f),
-                            color = ApexPalette.NeonCyan,
+                            color = ApexThemeTokens.current.primary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(start = 6.dp)
@@ -1193,7 +1194,7 @@ fun TextPanel(
 
                     Text(
                         "Intro (entrance)",
-                        color = ApexPalette.NeonCyan,
+                        color = ApexThemeTokens.current.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1221,7 +1222,7 @@ fun TextPanel(
                     ) {
                         Text(
                             "Outro speed",
-                            color = ApexPalette.TextSecondary,
+                            color = ApexThemeTokens.current.textSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.width(64.dp)
@@ -1232,14 +1233,14 @@ fun TextPanel(
                             valueRange = 0.15f..2.5f,
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(
-                                thumbColor = ApexPalette.NeonCyan,
-                                activeTrackColor = ApexPalette.NeonCyan,
-                                inactiveTrackColor = ApexPalette.BgElevated
+                                thumbColor = ApexThemeTokens.current.primary,
+                                activeTrackColor = ApexThemeTokens.current.primary,
+                                inactiveTrackColor = ApexThemeTokens.current.bgElevated
                             )
                         )
                         Text(
                             String.format("%.1fs", selected.outroAnimationDurationMs / 1000f),
-                            color = ApexPalette.NeonCyan,
+                            color = ApexThemeTokens.current.primary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(start = 6.dp)
@@ -1248,7 +1249,7 @@ fun TextPanel(
 
                     Text(
                         "Outro (exit)",
-                        color = ApexPalette.NeonCyan,
+                        color = ApexThemeTokens.current.primary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -1272,13 +1273,13 @@ fun TextPanel(
             TextPanelTab.PRESETS -> {
                 Text(
                     "Style samples  ·  ${TextDesignMotionPack.presets.size} looks + motion",
-                    color = ApexPalette.NeonCyan,
+                    color = ApexThemeTokens.current.primary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     "Tap a preview to keep your words and apply its style + animation.",
-                    color = ApexPalette.TextSecondary,
+                    color = ApexThemeTokens.current.textSecondary,
                     fontSize = 10.sp
                 )
                 Spacer(Modifier.height(5.dp))
@@ -1286,20 +1287,20 @@ fun TextPanel(
                     value = designMotionQuery,
                     onValueChange = { designMotionQuery = it },
                     singleLine = true,
-                    placeholder = { Text("Search design or motion", color = ApexPalette.TextTertiary) },
-                    textStyle = androidx.compose.ui.text.TextStyle(color = Color.White, fontSize = 12.sp),
+                    placeholder = { Text("Search design or motion", color = ApexThemeTokens.current.textTertiary) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = ApexThemeTokens.current.textPrimary, fontSize = 12.sp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ApexPalette.NeonCyan,
-                        unfocusedBorderColor = ApexPalette.BorderGlass,
-                        focusedContainerColor = ApexPalette.BgElevated,
-                        unfocusedContainerColor = ApexPalette.BgElevated,
-                        cursorColor = ApexPalette.NeonCyan
+                        focusedBorderColor = ApexThemeTokens.current.primary,
+                        unfocusedBorderColor = ApexThemeTokens.current.border,
+                        focusedContainerColor = ApexThemeTokens.current.bgElevated,
+                        unfocusedContainerColor = ApexThemeTokens.current.bgElevated,
+                        cursorColor = ApexThemeTokens.current.primary
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
                 val matchingDesignMotions = TextDesignMotionPack.search(designMotionQuery)
                 Text("Swipe samples sideways to browse; tap a preview to apply it.",
-                    color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                    color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp)
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     modifier = Modifier.fillMaxWidth().height(76.dp).testTag("text-design-motion-results")
@@ -1312,10 +1313,10 @@ fun TextPanel(
                     }
                 }
                 if (matchingDesignMotions.isEmpty()) {
-                    Text("No matching text combinations", color = ApexPalette.TextTertiary, fontSize = 10.sp)
+                    Text("No matching text combinations", color = ApexThemeTokens.current.textTertiary, fontSize = 10.sp)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("More sample styles", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("More sample styles", color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(5.dp))
                 // Preset Categories
                 LazyRow(
@@ -1327,13 +1328,13 @@ fun TextPanel(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSel) ApexPalette.NeonCyan else ApexPalette.BgElevated)
+                                .background(if (isSel) ApexThemeTokens.current.primary else ApexThemeTokens.current.bgElevated)
                                 .clickable { selectedCategory = cat }
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 cat,
-                                color = if (isSel) Color(0xFF0A0E1A) else ApexPalette.TextSecondary,
+                                color = if (isSel) ApexThemeTokens.current.bgDeep else ApexThemeTokens.current.textSecondary,
                                 fontSize = 10.sp,
                                 fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
                             )
@@ -1392,8 +1393,8 @@ private fun TextPresetSampleGallery(onApplyPreset: (TextPreset) -> Unit) {
     }
     Column(Modifier.fillMaxWidth().testTag("text-starter-gallery")) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Try a style sample", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-            Text("Tap to apply", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+            Text("Try a style sample", color = ApexThemeTokens.current.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text("Tap to apply", color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp)
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             items(presets, key = { it.id }) { preset ->
@@ -1418,7 +1419,7 @@ private fun TextPresetSampleCard(
             .height(62.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(cardBackground)
-            .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .border(1.5.dp, if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(9.dp))
             .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
@@ -1439,7 +1440,7 @@ private fun TextPresetSampleCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text(preset.name, color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(preset.name, color = ApexThemeTokens.current.textSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1456,8 +1457,8 @@ private fun TextDesignMotionSampleCard(
             .width(136.dp)
             .fillMaxHeight()
             .clip(RoundedCornerShape(9.dp))
-            .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexPalette.BgElevated)
-            .border(1.5.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
+            .background(preset.bgArgb?.let { Color(it.toInt()) } ?: ApexThemeTokens.current.bgElevated)
+            .border(1.5.dp, if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border, RoundedCornerShape(9.dp))
             .clickable(onClick = onClick)
             .testTag(tag)
             .semantics {
@@ -1477,7 +1478,7 @@ private fun TextDesignMotionSampleCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
-        Text("${preset.designName} · ${preset.motionName}", color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("${preset.designName} · ${preset.motionName}", color = ApexThemeTokens.current.textSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1490,12 +1491,12 @@ private fun TextFeatureCard(
         modifier = Modifier
             .width(300.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(ApexPalette.BgElevated)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+            .background(ApexThemeTokens.current.bgElevated)
+            .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(12.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(title, color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = ApexThemeTokens.current.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         content()
     }
 }
@@ -1514,12 +1515,12 @@ private fun AnimationOptionRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(
-                if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                else ApexPalette.BgElevated
+                if (isSelected) ApexThemeTokens.current.primary.copy(alpha = 0.18f)
+                else ApexThemeTokens.current.bgElevated
             )
             .border(
                 1.dp,
-                if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                 RoundedCornerShape(10.dp)
             )
             .clickable { onClick() }
@@ -1532,20 +1533,20 @@ private fun AnimationOptionRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     opt.label,
-                    color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                    color = if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     opt.desc,
-                    color = ApexPalette.TextTertiary,
+                    color = ApexThemeTokens.current.textTertiary,
                     fontSize = 10.sp
                 )
             }
             if (isSelected) {
                 Icon(
                     Icons.Default.Check, null,
-                    tint = ApexPalette.NeonCyan,
+                    tint = ApexThemeTokens.current.primary,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -1600,20 +1601,20 @@ private fun AutoCaptionsTab(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+                .background(ApexThemeTokens.current.bgElevated)
+                .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(12.dp))
                 .padding(12.dp)
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     "Auto captions",
-                    color = ApexPalette.TextPrimary,
+                    color = ApexThemeTokens.current.textPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     "Create editable captions from speech. Urdu and Hindi use phrase timing; English can use optional word timing.",
-                    color = ApexPalette.TextSecondary,
+                    color = ApexThemeTokens.current.textSecondary,
                     fontSize = 11.sp
                 )
             }
@@ -1633,7 +1634,7 @@ private fun AutoCaptionsTab(
         ) {
             Text(
                 "Language",
-                color = ApexPalette.TextSecondary,
+                color = ApexThemeTokens.current.textSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -1643,12 +1644,12 @@ private fun AutoCaptionsTab(
                     modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
                         .background(
-                            if (isSel) ApexPalette.NeonCyan.copy(alpha = 0.18f)
-                            else ApexPalette.BgElevated
+                            if (isSel) ApexThemeTokens.current.primary.copy(alpha = 0.18f)
+                            else ApexThemeTokens.current.bgElevated
                         )
                         .border(
                             1.dp,
-                            if (isSel) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            if (isSel) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                             RoundedCornerShape(16.dp)
                         )
                         .clickable { onLanguageChange(code) }
@@ -1657,7 +1658,7 @@ private fun AutoCaptionsTab(
                 ) {
                     Text(
                         label,
-                        color = if (isSel) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        color = if (isSel) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal
                     )
@@ -1682,9 +1683,9 @@ private fun AutoCaptionsTab(
                 OutlinedButton(
                     onClick = { onTimingChange(mode) }, enabled = enabled,
                     border = androidx.compose.foundation.BorderStroke(1.dp,
-                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.BorderGlass),
+                        if (captionUiState.timingMode == mode) ApexThemeTokens.current.primary else ApexThemeTokens.current.border),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor =
-                        if (captionUiState.timingMode == mode) ApexPalette.NeonCyan else ApexPalette.TextSecondary)
+                        if (captionUiState.timingMode == mode) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary)
                 ) {
                     Text(label, fontSize = 11.sp)
                 }
@@ -1692,65 +1693,65 @@ private fun AutoCaptionsTab(
         }
         if (hasAutoCaptions) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Caption style", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Caption style", color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(CaptionStyles.presets) { style ->
                         val isSelected = style.id == captionStyleId
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(if (isSelected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else ApexPalette.BgElevated)
-                                .border(1.dp, if (isSelected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                                .background(if (isSelected) ApexThemeTokens.current.primary.copy(alpha = 0.18f) else ApexThemeTokens.current.bgElevated)
+                                .border(1.dp, if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                                     RoundedCornerShape(16.dp))
                                 .clickable(enabled = !busy) { onCaptionStyleChange(style.id) }
                                 .padding(horizontal = 12.dp, vertical = 7.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(style.name, color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                            Text(style.name, color = if (isSelected) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary,
                                 fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
                         }
                     }
                 }
                 Text(CaptionStyles.find(captionStyleId)?.description.orEmpty(),
-                    color = ApexPalette.TextTertiary, fontSize = 10.sp)
+                    color = ApexThemeTokens.current.textTertiary, fontSize = 10.sp)
             }
         }
         Text(
             if (captionUiState.language != "en") "Select English to enable measured word timing and karaoke."
             else "Word mode shows one word at a time. Full-phrase karaoke highlights each measured word. Some speech may not support word timing; captions stay unchanged if timing fails.",
-            color = ApexPalette.TextSecondary, fontSize = 10.sp
+            color = ApexThemeTokens.current.textSecondary, fontSize = 10.sp
         )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(ApexPalette.BgElevated)
+                .background(ApexThemeTokens.current.bgElevated)
                 .padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Filler words", color = ApexPalette.TextPrimary, fontSize = 12.sp,
+                Text("Filler words", color = ApexThemeTokens.current.textPrimary, fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 TextButton(onClick = { onFillerWordsChange(CaptionFillerDetector.defaultWords) }) {
                     Text("Reset", fontSize = 10.sp)
                 }
             }
             Text("Saved for the app. Repeated words (for example, ‘the the’) are checked separately.",
-                color = ApexPalette.TextTertiary, fontSize = 10.sp)
+                color = ApexThemeTokens.current.textTertiary, fontSize = 10.sp)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(fillerWords, key = { it }) { word ->
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
-                            .background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(16.dp))
+                            .background(ApexThemeTokens.current.bgSurface)
+                            .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(16.dp))
                             .padding(start = 9.dp, end = 5.dp, top = 3.dp, bottom = 3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(word, color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        Text(word, color = ApexThemeTokens.current.textSecondary, fontSize = 10.sp)
                         Icon(Icons.Default.Close, contentDescription = "Remove $word",
-                            tint = ApexPalette.TextTertiary,
+                            tint = ApexThemeTokens.current.textTertiary,
                             modifier = Modifier.size(19.dp).clickable {
                                 onFillerWordsChange(fillerWords - word)
                             }.padding(4.dp))
@@ -1765,13 +1766,13 @@ private fun AutoCaptionsTab(
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = ApexPalette.NeonCyan,
-                        unfocusedBorderColor = ApexPalette.BorderGlass,
-                        focusedLabelColor = ApexPalette.NeonCyan
+                        focusedBorderColor = ApexThemeTokens.current.primary,
+                        unfocusedBorderColor = ApexThemeTokens.current.border,
+                        focusedLabelColor = ApexThemeTokens.current.primary
                     )
                 )
                 Icon(Icons.Default.Add, contentDescription = "Add filler word",
-                    tint = ApexPalette.NeonCyan,
+                    tint = ApexThemeTokens.current.primary,
                     modifier = Modifier.size(28.dp).clickable {
                         val entry = CaptionFillerDetector.normalizeList(listOf(newFillerWord)).singleOrNull()
                         if (entry != null && entry !in fillerWords) {
@@ -1813,14 +1814,14 @@ private fun AutoCaptionsTab(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(ApexPalette.BgElevated)
+                    .background(ApexThemeTokens.current.bgElevated)
                     .padding(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
                     captionUiState.message.ifBlank { "Working…" },
-                    color = ApexPalette.NeonCyan,
+                    color = ApexThemeTokens.current.primary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -1828,22 +1829,22 @@ private fun AutoCaptionsTab(
                     progress = { captionUiState.progress01.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = ApexPalette.NeonCyan,
+                    color = ApexThemeTokens.current.primary,
                     trackColor = Color(0xFF26334D)
                 )
                 Text(
                     "${(captionUiState.progress01 * 100).toInt()}%",
-                    color = ApexPalette.TextSecondary,
+                    color = ApexThemeTokens.current.textSecondary,
                     fontSize = 11.sp
                 )
                 OutlinedButton(
                     onClick = onCancelCaptions,
                     shape = RoundedCornerShape(10.dp),
                     border = androidx.compose.foundation.BorderStroke(
-                        1.dp, ApexPalette.TextSecondary.copy(alpha = 0.5f)
+                        1.dp, ApexThemeTokens.current.textSecondary.copy(alpha = 0.5f)
                     ),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = ApexPalette.TextSecondary
+                        contentColor = ApexThemeTokens.current.textSecondary
                     ),
                     modifier = Modifier.fillMaxWidth().height(38.dp)
                 ) {
@@ -1855,8 +1856,8 @@ private fun AutoCaptionsTab(
                 onClick = onAutoCaptions,
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = ApexPalette.NeonCyan,
-                    contentColor = Color.Black
+                    containerColor = ApexThemeTokens.current.primary,
+                    contentColor = ApexThemeTokens.current.bgDeep
                 ),
                 modifier = Modifier.fillMaxWidth().height(46.dp)
             ) {
@@ -1933,7 +1934,7 @@ private fun CaptionFillerReviewDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Choose which measured word ranges to remove from captions and the main timeline. Nothing changes until you apply.",
                     fontSize = 12.sp)
-                state.message?.let { Text(it, color = ApexPalette.TextSecondary, fontSize = 11.sp) }
+                state.message?.let { Text(it, color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp) }
                 if (state.findings.isNotEmpty()) {
                     LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                         items(state.findings, key = { it.id }) { finding ->
@@ -1948,14 +1949,14 @@ private fun CaptionFillerReviewDialog(
                                 Checkbox(checked = checked, onCheckedChange = { onSelected(finding.id, it) })
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("Remove ‘${word.word}’ · ${formatFillerTime(word.startMs)}–${formatFillerTime(word.endMs)}",
-                                        color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                        color = ApexThemeTokens.current.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                     Text(
                                         when (finding.kind) {
                                             com.apexstudio.app.data.captions.FillerMatchKind.WORD_LIST -> "Filler list match"
                                             com.apexstudio.app.data.captions.FillerMatchKind.REPEATED_WORD -> "Repeated word"
                                             com.apexstudio.app.data.captions.FillerMatchKind.WORD_LIST_AND_REPEATED -> "Filler list + repeated word"
                                         },
-                                        color = ApexPalette.TextTertiary, fontSize = 10.sp
+                                        color = ApexThemeTokens.current.textTertiary, fontSize = 10.sp
                                     )
                                 }
                             }
@@ -2039,20 +2040,20 @@ private fun WhisperPackDownloadCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(ApexPalette.BgElevated)
-            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .background(ApexThemeTokens.current.bgElevated)
+            .border(1.dp, ApexThemeTokens.current.primary.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             "Caption support needed",
-            color = ApexPalette.TextPrimary,
+            color = ApexThemeTokens.current.textPrimary,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold
         )
         Text(
             "Download caption support once to create editable captions (~103 MB).",
-            color = ApexPalette.TextSecondary,
+            color = ApexThemeTokens.current.textSecondary,
             fontSize = 11.sp
         )
         when {
@@ -2061,7 +2062,7 @@ private fun WhisperPackDownloadCard(
                     progress = { fraction },
                     modifier = Modifier.fillMaxWidth().height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = ApexPalette.NeonCyan,
+                    color = ApexThemeTokens.current.primary,
                     trackColor = Color(0xFF26334D)
                 )
                 Row(
@@ -2071,13 +2072,13 @@ private fun WhisperPackDownloadCard(
                 ) {
                     Text(
                         "Downloading caption support ${(fraction * 100).toInt()}%…",
-                        color = ApexPalette.NeonCyan,
+                        color = ApexThemeTokens.current.primary,
                         fontSize = 11.sp
                     )
                     androidx.compose.foundation.text.ClickableText(
                         text = androidx.compose.ui.text.AnnotatedString("Cancel"),
                         style = androidx.compose.ui.text.TextStyle(
-                            color = ApexPalette.TextSecondary, fontSize = 11.sp
+                            color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp
                         ),
                         onClick = {
                             WhisperCaptionEngine.PACK_IDS.forEach {
@@ -2097,8 +2098,8 @@ private fun WhisperPackDownloadCard(
                     onClick = { downloadMissing() },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ApexPalette.NeonCyan,
-                        contentColor = Color.Black
+                        containerColor = ApexThemeTokens.current.primary,
+                        contentColor = ApexThemeTokens.current.bgDeep
                     ),
                     modifier = Modifier.fillMaxWidth().height(42.dp)
                 ) {
@@ -2110,8 +2111,8 @@ private fun WhisperPackDownloadCard(
                     onClick = { downloadMissing() },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = ApexPalette.NeonCyan,
-                        contentColor = Color.Black
+                        containerColor = ApexThemeTokens.current.primary,
+                        contentColor = ApexThemeTokens.current.bgDeep
                     ),
                     modifier = Modifier.fillMaxWidth().height(42.dp)
                 ) {

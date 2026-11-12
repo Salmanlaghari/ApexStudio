@@ -14,24 +14,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.apexstudio.app.ui.theme.ApexPalette
 
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(20.dp),
     cornerRadius: Dp = 20.dp,
-    backgroundColor: Color = ApexPalette.BgGlass,
-    borderColor: Color = ApexPalette.BorderGlass,
+    backgroundColor: Color? = null,
+    borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
     contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
+    val cardColor = backgroundColor ?: colors.surface.copy(alpha = 0.92f)
+    val strokeColor = borderColor ?: colors.outline.copy(alpha = 0.72f)
     Box(
         modifier = modifier
             .clip(shape)
-            .background(backgroundColor)
-            .border(borderWidth, borderColor, shape)
+            .background(cardColor)
+            .border(borderWidth, strokeColor, shape)
             .padding(contentPadding)
     ) { content() }
 }
@@ -47,14 +49,13 @@ fun NeonGradientBackground(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        ApexPalette.BgBase,
-                        Color(0xFF0E1424),
-                        ApexPalette.BgBase
+                        themeColors.background,
+                        themeColors.surface,
+                        themeColors.background
                     )
                 )
             )
     ) {
-        // ambient orbs
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -87,19 +88,20 @@ fun NeonGradientBackground(
 
 @Composable
 fun GlowingDot(
-    color: Color = ApexPalette.NeonCyan,
+    color: Color? = null,
     size: Dp = 10.dp,
     modifier: Modifier = Modifier
 ) {
+    val dotColor = color ?: MaterialTheme.colorScheme.primary
     Box(
         modifier = modifier
             .size(size * 2)
             .blur(8.dp)
-            .background(color.copy(alpha = 0.5f), RoundedCornerShape(50))
+            .background(dotColor.copy(alpha = 0.5f), RoundedCornerShape(50))
     )
     Box(
         modifier = Modifier
             .size(size)
-            .background(color, RoundedCornerShape(50))
+            .background(dotColor, RoundedCornerShape(50))
     )
 }

@@ -23,7 +23,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.apexstudio.app.ui.theme.ApexPalette
 
 data class BottomNavItem(
     val id: String,
@@ -40,15 +39,16 @@ fun BottomNavBar(
     items: List<BottomNavItem> = defaultNavItems(current),
     referenceStyle: Boolean = false
 ) {
+    val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (referenceStyle) Modifier.background(ApexPalette.BgDeep) else Modifier.background(
+            .then(if (referenceStyle) Modifier.background(colors.background) else Modifier.background(
                 Brush.verticalGradient(
                     listOf(
                         Color.Transparent,
-                        ApexPalette.BgDeep.copy(alpha = 0.95f),
-                        ApexPalette.BgDeep
+                        colors.background.copy(alpha = 0.95f),
+                        colors.background
                     )
                 )
             ))
@@ -60,8 +60,8 @@ fun BottomNavBar(
                 .testTag(if (referenceStyle) "bottom-nav-reference-style" else "bottom-nav-glass-style")
                 .then(if (referenceStyle) Modifier else Modifier
                     .clip(RoundedCornerShape(22.dp))
-                    .background(ApexPalette.BgGlass)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(22.dp)))
+                    .background(colors.surface.copy(alpha = 0.94f))
+                    .border(1.dp, colors.outline, RoundedCornerShape(22.dp)))
                 .padding(vertical = if (referenceStyle) 3.dp else 8.dp, horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
@@ -75,9 +75,10 @@ fun BottomNavBar(
 
 @Composable
 private fun BottomNavCell(item: BottomNavItem, isActive: Boolean, referenceStyle: Boolean, onSelect: () -> Unit) {
-    val accent = item.selectedColor ?: ApexPalette.NeonCyan
+    val colors = MaterialTheme.colorScheme
+    val accent = item.selectedColor ?: colors.primary
     val tint by animateColorAsState(
-        if (isActive) accent else ApexPalette.TextSecondary,
+        if (isActive) accent else colors.onSurfaceVariant,
         label = "nav-tint"
     )
     Column(

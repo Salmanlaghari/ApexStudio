@@ -55,7 +55,6 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.components.GlassCard
-import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -411,15 +410,15 @@ internal fun DashboardHeader(onOpenSettings: () -> Unit) {
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("YOUR CREATIVE WORKSPACE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Text("ApexStudio", color = ApexPalette.TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Make every frame yours.", color = ApexPalette.TextSecondary, fontSize = 13.sp)
+            Text("ApexStudio", color = MaterialTheme.colorScheme.onSurface, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Text("Make every frame yours.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
         }
         IconButton(
             onClick = onOpenSettings,
             modifier = Modifier.size(48.dp).clip(RoundedCornerShape(16.dp))
-                .background(ApexPalette.BgElevated).testTag("dashboard-settings")
+                .background(MaterialTheme.colorScheme.surfaceVariant).testTag("dashboard-settings")
         ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = ApexPalette.TextPrimary)
+            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }
@@ -520,8 +519,8 @@ private fun DashboardEditorEntry(
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(title, color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(subtitle, color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                Text(title, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
         }
     }
@@ -537,9 +536,9 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
             .background(
                 Brush.linearGradient(
                     listOf(
-                        Color(0xFF0F1F2E),
-                        Color(0xFF1A0F2E),
-                        Color(0xFF0F2A22)
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.58f),
+                        MaterialTheme.colorScheme.surface
                     )
                 )
             )
@@ -581,7 +580,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                     Icon(
                         Icons.Default.Add,
                         null,
-                        tint = ApexPalette.BgDeep,
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -590,7 +589,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Create New Project",
-                    color = ApexPalette.TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 22.sp
                 )
@@ -604,14 +603,14 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
                 Spacer(Modifier.height(3.dp))
                 Text(
                     "Start with video, photos, or both.",
-                    color = ApexPalette.TextSecondary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
             }
             Icon(
                 Icons.Default.ChevronRight,
                 null,
-                tint = ApexPalette.TextSecondary,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(22.dp)
             )
         }
@@ -622,7 +621,7 @@ private fun NewProjectHero(enabled: Boolean, onCreate: () -> Unit) {
 private fun SectionLabel(text: String) {
     Text(
         text,
-        color = ApexPalette.TextSecondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         fontWeight = FontWeight.Bold,
         fontSize = 13.sp,
         modifier = Modifier.padding(start = 4.dp, top = 4.dp)
@@ -639,8 +638,8 @@ internal fun ProjectsShortcut(projectCount: Int, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Icon(Icons.Default.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f)) {
-                Text("Your Projects", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("$projectCount projects available", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                Text("Your Projects", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("$projectCount projects available", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
             }
             Text("View", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
@@ -728,7 +727,7 @@ internal fun ProjectRow(
                 Icon(
                     Icons.Default.Movie,
                     null,
-                    tint = ApexPalette.BgDeep,
+                    tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -736,7 +735,7 @@ internal fun ProjectRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     project.name,
-                    color = ApexPalette.TextPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     maxLines = 2,
@@ -747,13 +746,13 @@ internal fun ProjectRow(
                     Icon(
                         Icons.Default.Schedule,
                         null,
-                        tint = ApexPalette.TextTertiary,
+                        tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(11.dp)
                     )
                     Spacer(Modifier.width(3.dp))
                     Text(
                         TimeFormat.msToShort(project.durationMs),
-                        color = ApexPalette.TextSecondary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 10.sp
                     )
                 }
@@ -763,7 +762,7 @@ internal fun ProjectRow(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(ApexPalette.BgElevated)
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
                         .border(
                             1.dp,
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
@@ -781,7 +780,7 @@ internal fun ProjectRow(
                 Spacer(Modifier.height(3.dp))
                 Text(
                     "${project.fps}fps",
-                    color = ApexPalette.NeonEmerald,
+                    color = MaterialTheme.colorScheme.tertiary,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -791,13 +790,13 @@ internal fun ProjectRow(
                             onClick = onRename,
                             modifier = Modifier.size(40.dp).testTag("home-project-rename-${project.id}")
                         ) {
-                            Icon(Icons.Default.Edit, contentDescription = "Rename ${project.name}", tint = ApexPalette.TextSecondary)
+                            Icon(Icons.Default.Edit, contentDescription = "Rename ${project.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         IconButton(
                             onClick = onDelete,
                             modifier = Modifier.size(40.dp).testTag("home-project-delete-${project.id}")
                         ) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${project.name}", tint = ApexPalette.TextSecondary)
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${project.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

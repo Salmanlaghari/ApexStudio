@@ -27,7 +27,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.apexstudio.app.ui.theme.ApexPalette
 
 @Composable
 fun NeonIconButton(
@@ -35,19 +34,22 @@ fun NeonIconButton(
     label: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    tint: Color = ApexPalette.TextPrimary,
-    background: Color = ApexPalette.BgElevated,
+    tint: Color? = null,
+    background: Color? = null,
     size: Dp = 44.dp,
     iconSize: Dp = 22.dp,
     selected: Boolean = false,
     enabled: Boolean = true
 ) {
+    val colors = MaterialTheme.colorScheme
+    val iconTint = tint ?: colors.onSurface
+    val buttonBackground = background ?: colors.surfaceVariant
     val bg by animateColorAsState(
-        if (selected) ApexPalette.NeonCyan.copy(alpha = 0.18f) else background,
+        if (selected) colors.primary.copy(alpha = 0.18f) else buttonBackground,
         label = "neon-icon-bg"
     )
     val border by animateColorAsState(
-        if (selected) ApexPalette.NeonCyan else Color.Transparent,
+        if (selected) colors.primary else Color.Transparent,
         label = "neon-icon-border"
     )
     Column(
@@ -68,13 +70,13 @@ fun NeonIconButton(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(iconSize))
+            Icon(icon, contentDescription = label, tint = iconTint, modifier = Modifier.size(iconSize))
         }
         if (label != null) {
             Spacer(Modifier.height(4.dp))
             Text(
                 label,
-                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                color = if (selected) colors.primary else colors.onSurfaceVariant,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -90,6 +92,7 @@ fun NeonPrimaryButton(
     icon: ImageVector? = null,
     enabled: Boolean = true
 ) {
+    val colors = MaterialTheme.colorScheme
     val transition = rememberInfiniteTransition(label = "shimmer")
     val offset by transition.animateFloat(
         initialValue = 0f, targetValue = 1f,
@@ -105,28 +108,28 @@ fun NeonPrimaryButton(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        ApexPalette.NeonPurple,
-                        ApexPalette.NeonCyan,
-                        ApexPalette.NeonPurple
+                        colors.secondary,
+                        colors.primary,
+                        colors.secondary
                     ),
                     start = androidx.compose.ui.geometry.Offset(offset * 400 - 100, 0f),
                     end = androidx.compose.ui.geometry.Offset(offset * 400, 0f)
                 )
             )
             .shadow(if (enabled) 16.dp else 0.dp, RoundedCornerShape(16.dp),
-                ambientColor = ApexPalette.NeonCyan,
-                spotColor = ApexPalette.NeonPurple)
+                ambientColor = colors.primary,
+                spotColor = colors.secondary)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 28.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
-                Icon(icon, null, tint = ApexPalette.BgDeep, modifier = Modifier.size(20.dp))
+                Icon(icon, null, tint = colors.onPrimary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
             }
             Text(
-                text, color = ApexPalette.BgDeep,
+                text, color = colors.onPrimary,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.ExtraBold
             )
@@ -141,9 +144,10 @@ fun GlassChip(
     modifier: Modifier = Modifier,
     selected: Boolean = false
 ) {
-    val border = if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass
-    val textColor = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary
-    val bg = if (selected) ApexPalette.NeonCyan.copy(alpha = 0.14f) else ApexPalette.BgElevated
+    val colors = MaterialTheme.colorScheme
+    val border = if (selected) colors.primary else colors.outline
+    val textColor = if (selected) colors.primary else colors.onSurface
+    val bg = if (selected) colors.primary.copy(alpha = 0.14f) else colors.surfaceVariant
     Box(
         modifier = modifier
             .height(36.dp)
@@ -164,6 +168,7 @@ fun PulsingPlayButton(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = MaterialTheme.colorScheme
     val scale by animateFloatAsState(
         if (isPlaying) 0.92f else 1f,
         spring(dampingRatio = Spring.DampingRatioMediumBouncy), label = "play-scale"
@@ -177,7 +182,7 @@ fun PulsingPlayButton(
                 .size(76.dp)
                 .scale(pulse)
                 .clip(CircleShape)
-                .background(ApexPalette.NeonCyan.copy(alpha = 0.18f))
+                .background(colors.primary.copy(alpha = 0.18f))
         )
         Box(
             modifier = Modifier
@@ -185,14 +190,14 @@ fun PulsingPlayButton(
                 .scale(scale)
                 .clip(CircleShape)
                 .background(
-                    Brush.linearGradient(listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple))
+                    Brush.linearGradient(listOf(colors.primary, colors.secondary))
                 )
                 .clickable(onClick = onToggle),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                null, tint = ApexPalette.BgDeep,
+                null, tint = colors.onPrimary,
                 modifier = Modifier.size(32.dp)
             )
         }

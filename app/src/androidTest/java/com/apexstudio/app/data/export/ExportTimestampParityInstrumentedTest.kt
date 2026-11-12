@@ -19,6 +19,7 @@ import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.data.stickers.LottieFrameCache
 import com.apexstudio.app.data.stickers.StickerAssetResolver
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.MediaClip
@@ -492,9 +493,8 @@ class ExportTimestampParityInstrumentedTest {
             endMs = 1_800L,
             assetPath = assetPath
         )
-        // The bundled heart-pop is visibly opaque at 600 ms; the later sample checks another phase.
-        val earlyTimeUs = 600_000L
-        val laterTimeUs = 1_250_000L
+        var earlyTimeUs = 0L
+        var laterTimeUs = 0L
 
         fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
             .digest(bytes)
@@ -559,6 +559,57 @@ class ExportTimestampParityInstrumentedTest {
             IntArray(frame.width * frame.height).also { pixels ->
                 frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
             }
+
+        fun animationChangedPixels(first: IntArray, second: IntArray): Int {
+            var changed = 0
+            for (index in first.indices) {
+                val a = first[index]
+                val b = second[index]
+                if (Color.alpha(a) > 32 || Color.alpha(b) > 32) {
+                    val delta = pixelDistance(a, b) + abs(Color.alpha(a) - Color.alpha(b))
+                    if (delta >= 80) changed++
+                }
+            }
+            return changed
+        }
+
+        fun selectVisibleAnimationSamples() {
+            val frames = requireNotNull(LottieFrameCache.frames(context, assetPath)) {
+                "The installed heart-pop pack must render Lottie frames"
+            }
+            val pixels = frames.map(::framePixels)
+            val visible = pixels.mapIndexedNotNull { index, frame ->
+                val opaquePixels = frame.count { Color.alpha(it) >= 32 }
+                if (opaquePixels >= 500) index to opaquePixels else null
+            }
+            assertTrue("The downloaded Lottie pack must contain at least two visible frames", visible.size >= 2)
+
+            var bestEarlyIndex = -1
+            var bestLaterIndex = -1
+            var bestScore = -1
+            for (early in 0 until visible.lastIndex) {
+                val (earlyIndex, earlyOpaquePixels) = visible[early]
+                for (later in early + 1 until visible.size) {
+                    val (laterIndex, laterOpaquePixels) = visible[later]
+                    val changedPixels = animationChangedPixels(pixels[earlyIndex], pixels[laterIndex])
+                    if (changedPixels >= 100) {
+                        val score = minOf(earlyOpaquePixels, laterOpaquePixels) + changedPixels
+                        if (score > bestScore) {
+                            bestEarlyIndex = earlyIndex
+                            bestLaterIndex = laterIndex
+                            bestScore = score
+                        }
+                    }
+                }
+            }
+            assertTrue("The downloaded Lottie pack must have two distinct visible animation phases", bestEarlyIndex >= 0)
+
+            // Match LottieFrameCache.frameIndex's 33 ms buckets and sample near their centers.
+            earlyTimeUs = (bestEarlyIndex * 33L + 16L) * 1_000L
+            laterTimeUs = (bestLaterIndex * 33L + 16L) * 1_000L
+            assertEquals(bestEarlyIndex, LottieFrameCache.frameIndex(earlyTimeUs / 1_000L, sticker.startMs, frames.size))
+            assertEquals(bestLaterIndex, LottieFrameCache.frameIndex(laterTimeUs / 1_000L, sticker.startMs, frames.size))
+        }
 
         fun assertStickerPixels(
             label: String,
@@ -697,6 +748,7 @@ class ExportTimestampParityInstrumentedTest {
             assertTrue("The test pack must be registered as installed", PackManager.isDownloaded(context, packId))
             assertTrue("The downloaded sticker URI must resolve inside its installed pack",
                 StickerAssetResolver.downloadedFile(context, assetPath)?.isFile == true)
+            selectVisibleAnimationSamples()
 
             engine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
             val baselineResult = awaitTerminalState(engine)

@@ -492,7 +492,8 @@ class ExportTimestampParityInstrumentedTest {
             endMs = 1_800L,
             assetPath = assetPath
         )
-        val earlyTimeUs = 250_000L
+        // The bundled heart-pop is visibly opaque at 600 ms; the later sample checks another phase.
+        val earlyTimeUs = 600_000L
         val laterTimeUs = 1_250_000L
 
         fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
@@ -661,15 +662,15 @@ class ExportTimestampParityInstrumentedTest {
                 val baselineLaterPixels = framePixels(baselineLater)
                 val outputLaterPixels = framePixels(outputLater)
                 assertStickerPixels(
-                    "$label first animation frame", outputEarly, baselineEarly, bounds,
+                    "$label early sample frame", outputEarly, baselineEarly, bounds,
                     outputEarlyPixels, baselineEarlyPixels
                 )
                 assertStickerPixels(
-                    "$label later animation frame", outputLater, baselineLater, bounds,
+                    "$label later sample frame", outputLater, baselineLater, bounds,
                     outputLaterPixels, baselineLaterPixels
                 )
                 assertBackgroundUnchangedOutsideSticker(
-                    "$label first animation frame", outputEarly, baselineEarly, bounds,
+                    "$label early sample frame", outputEarly, baselineEarly, bounds,
                     outputEarlyPixels, baselineEarlyPixels
                 )
                 assertBackgroundUnchangedOutsideSticker(

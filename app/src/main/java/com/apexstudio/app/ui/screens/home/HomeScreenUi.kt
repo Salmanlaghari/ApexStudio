@@ -637,7 +637,7 @@ private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
 
 
 @Composable
-private fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
+internal fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
     val accent = profileAvatarColor(profile.avatarId)
     Box(
         modifier = Modifier.size(48.dp)
@@ -659,7 +659,7 @@ private fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Uni
 }
 
 @Composable
-private fun LocalCreatorProfileDialog(
+internal fun LocalCreatorProfileDialog(
     displayName: String,
     onDisplayNameChange: (String) -> Unit,
     avatarId: String,

@@ -96,6 +96,7 @@ internal fun ApexHomeContent(
     onSaveLocalProfile: (LocalCreatorProfile) -> Unit = {}
 ) {
     val theme = ApexThemeTokens.current
+    val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
     var showCreateChoices by remember { mutableStateOf(false) }
     var showLocalProfile by remember { mutableStateOf(false) }
@@ -130,6 +131,8 @@ internal fun ApexHomeContent(
                 onNotifications = onNotifications,
                 profile = localProfile,
                 onProfile = {
+                    // Clear dashboard focus before showing the dialog; the name field stays opt-in.
+                    focusManager.clearFocus(force = true)
                     profileNameDraft = localProfile.displayName
                     profileAvatarDraft = localProfile.avatarId
                     showLocalProfile = true
@@ -671,9 +674,6 @@ private fun LocalCreatorProfileDialog(
         containerColor = theme.bgSurface,
         title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
-            val focusManager = LocalFocusManager.current
-            // Keep the avatar choices visible; the name field can request focus when tapped.
-            LaunchedEffect(focusManager) { focusManager.clearFocus(force = true) }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",

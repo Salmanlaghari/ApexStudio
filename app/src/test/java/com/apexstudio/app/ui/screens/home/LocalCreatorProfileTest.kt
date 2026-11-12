@@ -54,7 +54,9 @@ class LocalCreatorProfileTest {
 
         compose.onNodeWithTag("dashboard-profile").assertIsDisplayed().performClick()
         compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
-        compose.onNodeWithText("This profile stays on this device. It does not create an account or sync online.").assertIsDisplayed()
+        compose.onNodeWithText(
+            "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device."
+        ).assertIsDisplayed()
         compose.onNodeWithTag("local-profile-name").performTextClearance()
         compose.onNodeWithTag("local-profile-name").performTextInput("Ayesha")
         compose.onNodeWithTag("profile-avatar-cyan").performClick()

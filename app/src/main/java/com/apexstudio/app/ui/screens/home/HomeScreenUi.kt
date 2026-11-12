@@ -50,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
@@ -636,11 +637,11 @@ private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
 private fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
     val accent = profileAvatarColor(profile.avatarId)
     Box(
-        modifier = Modifier.size(36.dp)
+        modifier = Modifier.size(48.dp)
             .clip(CircleShape)
             .background(accent.copy(alpha = 0.18f))
             .border(1.dp, accent.copy(alpha = 0.8f), CircleShape)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = "Open local creator profile" }
             .testTag("dashboard-profile"),
         contentAlignment = Alignment.Center
@@ -672,7 +673,7 @@ private fun LocalCreatorProfileDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "This profile stays on this device. It does not create an account or sync online.",
+                    "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",
                     color = theme.textSecondary,
                     fontSize = 12.sp
                 )

@@ -11,6 +11,7 @@ import android.opengl.EGLConfig
 import android.opengl.GLES20
 import android.opengl.GLUtils
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.BaseGlShaderProgram
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
@@ -144,7 +145,7 @@ class ExportTimestampParityInstrumentedTest {
             )
             publishedProfiles.forEach { effect ->
                 val program = FxGlEffect(effect, intensity = 0.73f, speed = effect.defaultSpeed)
-                    .toGlShaderProgram(instrumentation.targetContext, useHdr = false)
+                    .toGlShaderProgram(instrumentation.targetContext, useHdr = false) as BaseGlShaderProgram
                 try {
                     val outputSize = program.configure(320, 180)
                     assertEquals("${effect.id} program width", 320, outputSize.width)

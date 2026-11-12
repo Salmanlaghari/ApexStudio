@@ -28,7 +28,7 @@ class GpuVideoFilterPanelTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `featured Viral HDR look is visible at the top and applies its stable id`() {
+    fun `featured Viral Punch SDR look is visible at the top and applies its stable id`() {
         var appliedId: String? = null
         compose.setContent {
             Box(Modifier.width(375.dp).height(830.dp)) {
@@ -54,6 +54,8 @@ class GpuVideoFilterPanelTest {
         }
 
         compose.onNodeWithText("One-Tap Looks").assertIsDisplayed()
+        compose.onNodeWithText("Viral Punch (SDR Look)").assertIsDisplayed()
+        compose.onNodeWithText("SDR").assertIsDisplayed()
         compose.onNodeWithTag("one-tap-look-viral_hdr").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals("viral_hdr", appliedId) }
     }

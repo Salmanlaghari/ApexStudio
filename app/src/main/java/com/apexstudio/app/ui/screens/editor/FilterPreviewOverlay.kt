@@ -461,24 +461,6 @@ private fun AdjustmentsLayer(adjustments: VideoAdjustments, saturationMultiplier
         )
     }
 
-    // 10. HDR+ (0..1)
-    if (adjustments.hdr > 0f) {
-        val hdr = adjustments.hdr.coerceIn(0f, 1f)
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        listOf(
-                            Color(0xFFFFFAED).copy(alpha = 0.30f * hdr),
-                            Color(0xFF00E5FF).copy(alpha = 0.15f * hdr),
-                            Color.Transparent
-                        )
-                    )
-                )
-        )
-    }
-
     // 11. Sharpness (0..1)
     if (adjustments.sharpness > 0f) {
         val sh = adjustments.sharpness.coerceIn(0f, 1f)

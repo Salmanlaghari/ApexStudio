@@ -478,7 +478,7 @@ class AdjustmentsGlEffect(
                     c = c * (1.0 - uFade * 0.22) + vec3(uFade * 0.16);
                 }
 
-                // 16. HDR+ dynamic tone-mapping boost
+                // 16. SDR tone-map look; this does not create HDR output.
                 if (uHdr > 0.0) {
                     vec3 toneMapped = c / (c + vec3(1.0));
                     vec3 boosted = mix(c, toneMapped * 1.8, uHdr * 0.7);

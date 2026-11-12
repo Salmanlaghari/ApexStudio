@@ -241,7 +241,7 @@ class ExportEngine(private val context: Context) {
         val isPhotoExport: Boolean = false,
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
-        /** Per-clip GPU filter recipe; currently Viral HDR is export-supported. */
+        /** Per-clip GPU filter recipe; currently Viral Punch (SDR Look) is export-supported. */
         val gpuFilterConfig: com.apexstudio.app.data.filter.GpuFilterConfig =
             com.apexstudio.app.data.filter.GpuFilterConfig(),
         val adjustments: com.apexstudio.app.domain.model.VideoAdjustments = com.apexstudio.app.domain.model.VideoAdjustments(),

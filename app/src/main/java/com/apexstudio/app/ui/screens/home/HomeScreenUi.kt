@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -670,6 +671,9 @@ private fun LocalCreatorProfileDialog(
         containerColor = theme.bgSurface,
         title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
+            val focusManager = LocalFocusManager.current
+            // Keep the avatar choices visible; the name field can request focus when tapped.
+            LaunchedEffect(focusManager) { focusManager.clearFocus(force = true) }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",

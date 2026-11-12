@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -122,17 +124,22 @@ internal fun ExportProjectPreviewCard(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Export progress", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("${(progressFraction * 100).toInt()}%", color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        }
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(8.dp)).background(ApexPalette.BgElevated)) {
-            if (progressFraction > 0f) {
-                Box(Modifier.fillMaxWidth(progressFraction).fillMaxHeight().background(Brush.horizontalGradient(listOf(ApexPalette.NeonPurple, Color(0xFF427BFF), ApexPalette.NeonCyan))))
-            }
+            Text(
+                "Export progress",
+                color = ApexPalette.TextSecondary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            ExportProgressRing(
+                progress = progressFraction,
+                showPercentage = isExporting || completed,
+                modifier = Modifier.size(52.dp)
+            )
         }
         Text(
             if (isExporting) "Rendering on this device. You can cancel from the export button."
-            else if (completed) "The finished file is stored in ApexStudio's export folder on this device."
+            else if (completed) "The finished file is stored in ApexStudio's app-specific export folder on this device. Closing this screen will not delete it."
             else "Choose output settings below before rendering.",
             color = ApexPalette.TextTertiary,
             fontSize = 9.sp,
@@ -304,5 +311,46 @@ private fun ExportSettingPickerRow(
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun ExportProgressRing(progress: Float, showPercentage: Boolean, modifier: Modifier = Modifier) {
+    val fraction = progress.coerceIn(0f, 1f)
+    val percentage = if (showPercentage) (fraction * 100f).toInt().coerceIn(1, 100) else null
+    Box(modifier.testTag("export-progress-ring"), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 4.dp.toPx()
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            drawArc(
+                color = ApexPalette.BgElevated,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = Offset(stroke / 2f, stroke / 2f),
+                size = arcSize,
+                style = Stroke(stroke, cap = StrokeCap.Round)
+            )
+            if (fraction > 0f) {
+                drawArc(
+                    brush = Brush.sweepGradient(
+                        listOf(ApexPalette.NeonPurple, Color(0xFF427BFF), ApexPalette.NeonCyan)
+                    ),
+                    startAngle = -90f,
+                    sweepAngle = 360f * fraction,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                    size = arcSize,
+                    style = Stroke(stroke, cap = StrokeCap.Round)
+                )
+            }
+        }
+        Text(
+            text = percentage?.let { "$it%" } ?: "Ready",
+            color = if (percentage == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
+            fontSize = if (percentage == null) 8.sp else 10.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
     }
 }

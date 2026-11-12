@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -211,6 +212,66 @@ fun ExportScreen(
         measuredOutputSize = withContext(Dispatchers.IO) { measureCompletedOutputSize(context, uri) }
     }
 
+    var observedExportRun by remember(projectId) { mutableStateOf(export.isExporting) }
+    var completionDialogUri by remember(projectId) { mutableStateOf<String?>(null) }
+    var showPremiumInfo by remember(projectId) { mutableStateOf(false) }
+    LaunchedEffect(export.isExporting, export.outputUri, export.error) {
+        if (export.isExporting) {
+            observedExportRun = true
+        } else if (observedExportRun) {
+            observedExportRun = false
+            if (export.outputUri != null && export.error == null) {
+                completionDialogUri = export.outputUri
+            }
+        }
+    }
+
+    completionDialogUri?.let { completedUri ->
+        AlertDialog(
+            modifier = Modifier.testTag("export-completion-dialog"),
+            onDismissRequest = { completionDialogUri = null },
+            title = { Text("Export complete") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Your file is ready.")
+                    Text("It is saved in ApexStudio's app-specific export folder on this device. Closing this dialog will not delete it.")
+                    Text("Nothing is shared automatically; choose Share export when you are ready.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    completionDialogUri = null
+                    shareError = runCatching { shareCompletedExport(context, completedUri) }
+                        .exceptionOrNull()?.let { it.message ?: "No sharing app is available. The export remains saved." }
+                }) {
+                    Icon(Icons.Default.Share, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Share export")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showPremiumInfo = true }) { Text("Premium info") }
+                    TextButton(onClick = { completionDialogUri = null }) { Text("Done") }
+                }
+            }
+        )
+    }
+
+    if (showPremiumInfo) {
+        AlertDialog(
+            modifier = Modifier.testTag("export-premium-info-dialog"),
+            onDismissRequest = { showPremiumInfo = false },
+            title = { Text("Premium") },
+            text = {
+                Text("ApexStudio is free in this build, with no paid tier or subscription. This information button cannot start a purchase.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showPremiumInfo = false }) { Text("Got it") }
+            }
+        )
+    }
+
 
     Column(
         modifier = if (embedded) {
@@ -317,7 +378,11 @@ fun ExportScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("SIZE & PROGRESS", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            GaugeArc(progress = if (export.isExporting || export.outputUri != null) export.progress else 0f, modifier = Modifier.size(42.dp))
+                            GaugeArc(
+                                progress = if (export.isExporting || export.outputUri != null) export.progress else 0f,
+                                showProgress = export.isExporting || export.outputUri != null,
+                                modifier = Modifier.size(42.dp)
+                            )
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(exportProgressLabel(export.isExporting, export.progress, export.stage) ?: "Estimated video payload", color = ApexPalette.TextSecondary, fontSize = 9.sp)
@@ -672,18 +737,6 @@ fun ExportScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // The gauge now drives off the live export
-                        // progress (was hardcoded 0.78f so it never
-                        // changed once the export started). When
-                        // export.progress == 0f and isExporting is
-                        // false we leave the gauge blank rather than
-                        // showing a misleading "0%" before the user
-                        // taps the button.
-                        GaugeArc(
-                            progress = if (export.isExporting || export.outputUri != null) export.progress else 0f,
-                            modifier = Modifier.size(56.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 exportProgressLabel(export.isExporting, export.progress, export.stage)
@@ -849,7 +902,7 @@ fun ExportScreen(
                             )
                         }
                         Text(
-                            "Completed file saved on this device:",
+                            "Saved in ApexStudio's app-specific export folder on this device:",
                             color = ApexPalette.TextSecondary,
                             fontSize = 10.sp
                         )
@@ -1161,7 +1214,7 @@ private fun ResolutionPill(
 }
 
 @Composable
-private fun GaugeArc(progress: Float, modifier: Modifier = Modifier) {
+private fun GaugeArc(progress: Float, showProgress: Boolean, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -1191,9 +1244,9 @@ private fun GaugeArc(progress: Float, modifier: Modifier = Modifier) {
             )
         }
         Text(
-            "${(progress * 100).toInt()}%",
-            color = ApexPalette.NeonCyan,
-            fontSize = 12.sp,
+            text = if (showProgress) "${(progress * 100).toInt().coerceIn(1, 100)}%" else "Ready",
+            color = if (showProgress) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
+            fontSize = if (showProgress) 12.sp else 8.sp,
             fontWeight = FontWeight.ExtraBold
         )
     }

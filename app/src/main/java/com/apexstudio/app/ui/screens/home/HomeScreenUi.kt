@@ -422,6 +422,7 @@ internal fun DashboardQuickActions(
     onOpenShortsTemplates: () -> Unit,
     onOpenTextStyles: () -> Unit
 ) {
+    val theme = ApexThemeTokens.current
     val fontScale = LocalDensity.current.fontScale
     val featuredStyle = remember { TextDesignMotionPack.presets.firstOrNull() }
     BoxWithConstraints(modifier = Modifier.fillMaxWidth().testTag("home-quick-starts")) {
@@ -429,7 +430,7 @@ internal fun DashboardQuickActions(
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 "TRY A STARTING POINT",
-                color = ApexPalette.TextTertiary,
+                color = theme.textTertiary,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.8.sp
@@ -442,7 +443,7 @@ internal fun DashboardQuickActions(
                         description = "Browse ready-made edits",
                         action = "Browse templates →",
                         icon = Icons.Default.Movie,
-                        accent = ApexPalette.NeonPurple,
+                        accent = theme.secondary,
                         tag = "home-shorts-templates-entry",
                         onClick = onOpenShortsTemplates,
                         modifier = Modifier.fillMaxWidth()
@@ -453,7 +454,7 @@ internal fun DashboardQuickActions(
                         description = "See a look before you apply it",
                         action = "Preview styles →",
                         icon = Icons.Default.TextFields,
-                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: ApexPalette.NeonCyan,
+                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: theme.primary,
                         sampleBackground = featuredStyle?.bgArgb?.let { Color(it.toInt()) },
                         sampleStyle = featuredStyle,
                         tag = "home-text-styles-entry",
@@ -469,7 +470,7 @@ internal fun DashboardQuickActions(
                         description = "Browse ready-made edits",
                         action = "Browse templates →",
                         icon = Icons.Default.Movie,
-                        accent = ApexPalette.NeonPurple,
+                        accent = theme.secondary,
                         tag = "home-shorts-templates-entry",
                         onClick = onOpenShortsTemplates,
                         modifier = Modifier.weight(1f)
@@ -480,7 +481,7 @@ internal fun DashboardQuickActions(
                         description = "See a look before you apply it",
                         action = "Preview styles →",
                         icon = Icons.Default.TextFields,
-                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: ApexPalette.NeonCyan,
+                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: theme.primary,
                         sampleBackground = featuredStyle?.bgArgb?.let { Color(it.toInt()) },
                         sampleStyle = featuredStyle,
                         tag = "home-text-styles-entry",
@@ -507,11 +508,12 @@ private fun DashboardQuickStartCard(
     sampleBackground: Color? = null,
     sampleStyle: TextDesignMotionPreset? = null
 ) {
+    val theme = ApexThemeTokens.current
     Column(
         modifier = modifier
             .heightIn(min = 94.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(Brush.linearGradient(listOf(ApexPalette.BgElevated, ApexPalette.BgSurface)))
+            .background(Brush.linearGradient(listOf(theme.bgElevated, theme.bgSurface)))
             .border(1.dp, accent.copy(alpha = 0.48f), RoundedCornerShape(14.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .testTag(tag)
@@ -520,7 +522,7 @@ private fun DashboardQuickStartCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
-            Text(title, color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, color = theme.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (sampleStyle == null) {
             Text(
@@ -552,12 +554,12 @@ private fun DashboardQuickStartCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .clip(RoundedCornerShape(5.dp))
-                    .background(sampleBackground ?: ApexPalette.BgElevated)
+                    .background(sampleBackground ?: theme.bgElevated)
                     .padding(horizontal = 4.dp, vertical = 2.dp)
             )
-            Text(sample, color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sample, color = theme.textSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Text(description, color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(description, color = theme.textSecondary, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(action, color = accent, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }

@@ -280,39 +280,42 @@ object PackManager {
                     var installFailure: String? = null
                     val ok = withContext(Dispatchers.IO) {
                         try {
-                            require(pack.sizeBytes <= 0L || destFile.length() == pack.sizeBytes) {
-                                "Pack size mismatch: expected ${pack.sizeBytes} bytes, received ${destFile.length()}"
-                            }
+                            // Graceful validation only: a malformed pack fails the
+                            // install with a reason — it never throws out of the
+                            // download coroutine (fix-forward for PR #230's Kilo
+                            // CRITICAL: no require()/check() in this path).
+                            installFailure = packSizeFailure(pack.sizeBytes, destFile.length())
                             // Unpack zips; single files are used as-is.
-                            if (destFile.extension.equals("zip", ignoreCase = true)) {
-                                unzip(destFile, dir)
-                                destFile.delete()
+                            if (installFailure == null && destFile.extension.equals("zip", ignoreCase = true)) {
+                                if (unzip(destFile, dir)) {
+                                    destFile.delete()
+                                } else {
+                                    installFailure = "Pack archive contains an unsafe entry path"
+                                }
                             }
-                            val reg = readRegistry(appContext)
-                            writeRegistry(
-                                appContext,
-                                reg.copy(packs = reg.packs + (packId to InstalledEntry(pack.version, pack.sha256)))
-                            )
-                            // Let feature repositories verify the installed content. FX
-                            // payloads must parse into at least one pinned profile before
-                            // the pack can be reported as installed.
-                            check(DownloadedPacks.onPackInstalled(appContext, packId)) {
-                                "Pack content did not pass its feature validation"
+                            if (installFailure == null) {
+                                val reg = readRegistry(appContext)
+                                writeRegistry(
+                                    appContext,
+                                    reg.copy(packs = reg.packs + (packId to InstalledEntry(pack.version, pack.sha256)))
+                                )
+                                // Let feature repositories verify the installed content. FX
+                                // payloads must parse into at least one pinned profile before
+                                // the pack can be reported as installed.
+                                if (!DownloadedPacks.onPackInstalled(appContext, packId)) {
+                                    installFailure = "Pack content did not pass its feature validation"
+                                }
                             }
-                            true
+                            if (installFailure == null) {
+                                true
+                            } else {
+                                rejectInstalledPack(appContext, packId, dir)
+                                false
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Pack install failed: $packId", e)
                             installFailure = e.message ?: e.javaClass.simpleName
-                            runCatching {
-                                dir.deleteRecursively()
-                                val current = readRegistry(appContext)
-                                writeRegistry(appContext, current.copy(packs = current.packs - packId))
-                                if (_packsState.value.any { it.pack.id == packId && it.pack.category == "effects" }) {
-                                    DownloadedPacks.ensureDownloadedEffectPacksRegistered(appContext)
-                                }
-                            }.onFailure { cleanupError ->
-                                Log.w(TAG, "Rejected pack cleanup failed: $packId", cleanupError)
-                            }
+                            rejectInstalledPack(appContext, packId, dir)
                             false
                         }
                     }
@@ -389,13 +392,39 @@ object PackManager {
         _packsState.value = _packsState.value.map { if (it.pack.id == packId) transform(it) else it }
     }
 
-    private fun unzip(zipFile: File, destDir: File) {
+    /**
+     * Remove every trace of a rejected pack: its files, its registry entry and,
+     * for effect packs, the feature registrations it may have added. Best
+     * effort — cleanup failures are logged, never thrown.
+     */
+    private suspend fun rejectInstalledPack(appContext: Context, packId: String, dir: File) {
+        runCatching {
+            dir.deleteRecursively()
+            val current = readRegistry(appContext)
+            writeRegistry(appContext, current.copy(packs = current.packs - packId))
+            if (_packsState.value.any { it.pack.id == packId && it.pack.category == "effects" }) {
+                DownloadedPacks.ensureDownloadedEffectPacksRegistered(appContext)
+            }
+        }.onFailure { cleanupError ->
+            Log.w(TAG, "Rejected pack cleanup failed: $packId", cleanupError)
+        }
+    }
+
+    /**
+     * Extract [zipFile] into [destDir]. Returns false — without throwing — when
+     * an entry would escape [destDir] (zip-slip), so the caller rejects the
+     * whole pack; genuine I/O failures still throw and are handled upstream.
+     */
+    private fun unzip(zipFile: File, destDir: File): Boolean {
         ZipFile(zipFile).use { zip ->
-            zip.entries().asSequence().forEach { entry ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
                 // Zip-slip guard: entries must stay inside destDir.
                 val out = File(destDir, entry.name).canonicalFile
-                require(out.path.startsWith(destDir.canonicalPath + File.separator)) {
-                    "Bad zip entry: ${entry.name}"
+                if (!isCanonicalPathInside(out.path, destDir.canonicalPath)) {
+                    Log.w(TAG, "Pack archive entry escapes its folder: ${entry.name}")
+                    return false
                 }
                 if (entry.isDirectory) out.mkdirs()
                 else {
@@ -404,5 +433,23 @@ object PackManager {
                 }
             }
         }
+        return true
     }
 }
+
+/**
+ * Failure message when a downloaded pack file's size does not match the size
+ * pinned in the catalog manifest; null when the size is acceptable (a
+ * non-positive manifest size means "unknown" and accepts any size). Pure and
+ * total: malformed pack metadata yields a message, never an exception.
+ */
+internal fun packSizeFailure(expectedBytes: Long, actualBytes: Long): String? =
+    if (expectedBytes > 0L && actualBytes != expectedBytes) {
+        "Pack size mismatch: expected $expectedBytes bytes, received $actualBytes"
+    } else {
+        null
+    }
+
+/** True when [canonicalChild] lies inside [canonicalDir] (zip-slip guard). Pure string check. */
+internal fun isCanonicalPathInside(canonicalChild: String, canonicalDir: String): Boolean =
+    canonicalChild.startsWith(canonicalDir + File.separator)

@@ -53,6 +53,7 @@ class LocalCreatorProfileTest {
         }
 
         compose.onNodeWithTag("dashboard-profile").assertIsDisplayed().performClick()
+        compose.mainClock.advanceTimeBy(1_000L)
         compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
         compose.onNodeWithText(
             "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device."

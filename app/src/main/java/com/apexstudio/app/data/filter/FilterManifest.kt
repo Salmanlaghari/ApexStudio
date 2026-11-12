@@ -85,6 +85,24 @@ data class FilterManifest(
             }
         }
 
+        /**
+         * True when two presets for the same id point at different LUT
+         * content. The comparison is explicit, field by field, over exactly
+         * the fields that determine the cached pixels — [FilterPreset.asset],
+         * [FilterPreset.assetSha256] and [FilterPreset.assetSizeBytes] —
+         * instead of relying on data-class `equals` over every field
+         * (including display-only name/category and nullable metadata, where
+         * a null-vs-value difference is easy to misread).
+         * (Fix-forward for PR #231, Kilo CRITICAL 3.)
+         */
+        @VisibleForTesting
+        fun lutContentChanged(old: FilterPreset?, new: FilterPreset?): Boolean {
+            if (old == null || new == null) return old !== new
+            return old.asset != new.asset ||
+                !old.assetSha256.equals(new.assetSha256, ignoreCase = true) ||
+                old.assetSizeBytes != new.assetSizeBytes
+        }
+
         /** Atomically replaces downloaded presets; invalid/removed packs disappear from future lookups. */
         @Synchronized
         fun replaceDownloadedPresets(presets: List<FilterPreset>) {
@@ -95,11 +113,21 @@ data class FilterManifest(
                 }
             }
             if (downloadedRegistry == next && downloadedRegistry.keys.toList() == next.keys.toList()) return
-            (downloadedRegistry.keys + next.keys)
-                .filter { downloadedRegistry[it] != next[it] }
-                .forEach { LutBitmapCache.evict(it) }
+            // Work out which ids need cache eviction BEFORE the swap, using
+            // the explicit content comparison above: removed ids, newly
+            // added ids, and ids whose LUT content (asset/sha/size) changed.
+            val evictions = (downloadedRegistry.keys + next.keys)
+                .filter { id -> lutContentChanged(downloadedRegistry[id], next[id]) }
+            // Eviction ordering matters (Kilo CRITICAL 3): swap the registry
+            // and bump the version FIRST, then evict. Evicting before the
+            // swap left a window where a concurrent reader could re-load the
+            // OLD preset from the still-live old registry and repopulate the
+            // cache after the eviction, leaving stale pixels cached under
+            // the new preset. After the swap, any re-load resolves the new
+            // preset and its fingerprint no longer matches the stale entry.
             downloadedRegistry = java.util.Collections.unmodifiableMap(next)
             _downloadedRegistryVersion.value = _downloadedRegistryVersion.value + 1
+            evictions.forEach { LutBitmapCache.evict(it) }
         }
 
         fun downloadedPresets(): List<FilterPreset> = downloadedRegistry.values.toList()

@@ -69,6 +69,9 @@ object DownloadedPacks {
         DownloadedLutFilterRepository.refreshInstalled(context, manifest)
     }
 
+    /** Upper bound for a parametric filter-profile pack entry file; anything larger is not a plausible filter list. */
+    private const val MAX_FILTER_ENTRY_BYTES = 1024L * 1024L
+
     private fun registerFilterPacks(
         context: Context,
         packs: List<PackManifestRepo.RemotePack>
@@ -80,7 +83,23 @@ object DownloadedPacks {
                 Log.w(TAG, "Pack entry missing or unsafe: ${pack.id}/${pack.entry}")
                 continue
             }
+            // Structural validation of the entry file before its contents
+            // are trusted (fix-forward for PR #231, Kilo WARNING 6):
+            // safeEntryFile only proves the path stays inside the pack dir;
+            // also enforce a sane size cap and, after parsing, drop entries
+            // with blank/duplicate ids or blank names instead of registering
+            // whatever the JSON happened to contain.
+            if (entryFile.length() !in 1..MAX_FILTER_ENTRY_BYTES) {
+                Log.w(TAG, "Pack entry size out of bounds (${entryFile.length()}): ${pack.id}/${pack.entry}")
+                continue
+            }
             val filters = PackLoader.loadFiltersFromFile(entryFile)
+                .filter { filter ->
+                    val valid = filter.id.isNotBlank() && filter.name.isNotBlank()
+                    if (!valid) Log.w(TAG, "Dropping structurally invalid filter entry in pack ${pack.id}: '${filter.id}'")
+                    valid
+                }
+                .distinctBy { it.id }
             if (filters.isEmpty()) {
                 Log.w(TAG, "No filters parsed from pack ${pack.id}")
                 continue

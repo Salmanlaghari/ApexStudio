@@ -78,16 +78,6 @@ fun GpuVideoFilterPanel(
     val panelManifest = remember(manifest, downloadedFilterRegistryVersion) {
         FilterManifest.withDownloadedPresets(manifest)
     }
-    LaunchedEffect(packContext, loadPackCatalog) {
-        if (!loadPackCatalog) return@LaunchedEffect
-        com.apexstudio.app.data.packs.download.PackManager.refreshSync(packContext)
-        withContext(Dispatchers.IO) {
-            com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
-            com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
-        }
-        packsReady = true
-        dlVersion++
-    }
     val downloadedPackIds = dlPacks
         .filter {
             it.pack.category == "filters" &&
@@ -95,9 +85,30 @@ fun GpuVideoFilterPanel(
         }
         .map { it.pack.id }
         .toSet()
-    LaunchedEffect(downloadedPackIds, loadPackCatalog) {
+    // Single consolidated registration effect (fix-forward for PR #231,
+    // Kilo WARNING 4): previously one effect registered packs on panel open
+    // and a second, separate effect re-ran the same registration scan when
+    // the downloaded pack-id set changed, so opening the panel with packs
+    // already installed ran the scan (and its catalog fetch) twice. Now the
+    // full refresh + registration runs once on open, and a pack-id-set
+    // change re-runs only the registration scan. The registry-version
+    // thumbnail effect below stays separate on purpose: it must fire on
+    // every registry bump WITHOUT re-fetching the catalog or re-registering
+    // packs — folding it in here would recreate the redundant work this
+    // consolidation removes.
+    var registrationScanDone by remember { mutableStateOf(false) }
+    LaunchedEffect(packContext, loadPackCatalog, downloadedPackIds) {
         if (!loadPackCatalog) return@LaunchedEffect
-        if (downloadedPackIds.isNotEmpty()) {
+        if (!registrationScanDone) {
+            com.apexstudio.app.data.packs.download.PackManager.refreshSync(packContext)
+            withContext(Dispatchers.IO) {
+                com.apexstudio.app.data.packs.PackLoader.ensurePackProfilesRegistered(packContext)
+                com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
+            }
+            registrationScanDone = true
+            packsReady = true
+            dlVersion++
+        } else if (downloadedPackIds.isNotEmpty()) {
             withContext(Dispatchers.IO) {
                 com.apexstudio.app.data.packs.download.DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(packContext)
             }

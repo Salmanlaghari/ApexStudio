@@ -2,14 +2,15 @@ package com.apexstudio.app.data.filter
 
 import android.content.Context
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.packs.download.PackManifestRepo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.BufferedReader
-import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.security.MessageDigest
 
@@ -48,9 +49,12 @@ object DownloadedLutFilterRepository {
             val expectedHash = preset.assetSha256?.lowercase() ?: return null
             if (expectedSize !in 1L..MAX_CUBE_BYTES || file.length() != expectedSize) return null
             if (!SAFE_HASH.matches(expectedHash)) return null
-            val bytes = file.readBytes()
-            if (bytes.size.toLong() != expectedSize || sha256(bytes) != expectedHash) return null
-            parseCube(bytes)
+            // Stream the hash verification (fixed-size buffer, byte-count
+            // cap enforced while streaming) instead of readBytes() loading
+            // the whole file into memory. (PR #231 fix-forward, Kilo
+            // CRITICAL 2.) Any mismatch/oversize fails gracefully as null.
+            if (sha256Streaming(file, expectedSize) != expectedHash) return null
+            parseCube(file)
         } catch (e: Exception) {
             Log.w(TAG, "Downloaded LUT failed verification: ${preset.id}", e)
             null
@@ -83,8 +87,9 @@ object DownloadedLutFilterRepository {
                     if (size !in 1L..MAX_CUBE_BYTES || !SAFE_HASH.matches(hash)) continue
                     val file = resolveUnder(root, relativePath) ?: continue
                     if (!file.isFile || file.length() != size) continue
-                    val bytes = file.readBytes()
-                    if (bytes.size.toLong() != size || sha256(bytes) != hash || parseCube(bytes) == null) continue
+                    // Streaming verification, same as loadVerifiedLut: no
+                    // whole-file readBytes() into memory. (Kilo CRITICAL 2.)
+                    if (sha256Streaming(file, size) != hash || parseCube(file) == null) continue
                     add(
                         FilterPreset(
                             id = "dl_${pack.id}_$sourceId",
@@ -129,12 +134,11 @@ object DownloadedLutFilterRepository {
         return packRoot.takeIf { it.parentFile == packsRoot && it.isDirectory }
     }
 
-    private fun parseCube(bytes: ByteArray): FloatArray? {
-        if (bytes.isEmpty() || bytes.size > MAX_CUBE_BYTES) return null
+    /** Parse a `.cube` file by streaming it through the parser; the raw bytes are never fully resident. */
+    private fun parseCube(file: File): FloatArray? {
+        if (!file.isFile || file.length() !in 1L..MAX_CUBE_BYTES) return null
         val values = try {
-            CubeLutParser.parse(
-                BufferedReader(InputStreamReader(ByteArrayInputStream(bytes), Charsets.UTF_8))
-            )
+            file.inputStream().use { stream -> parseCube(stream) }
         } catch (_: Exception) {
             null
         } ?: return null
@@ -143,6 +147,54 @@ object DownloadedLutFilterRepository {
         return values
     }
 
-    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes).joinToString("") { "%02x".format(it) }
+    private fun parseCube(stream: InputStream): FloatArray? = try {
+        CubeLutParser.parse(BufferedReader(InputStreamReader(stream, Charsets.UTF_8)))
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * SHA-256 of [file] computed by streaming in [STREAM_BUFFER_BYTES]
+     * chunks. Returns null — a graceful verification failure, never a
+     * crash — when the streamed byte count does not equal [expectedSize]
+     * or exceeds [MAX_CUBE_BYTES] (the size cap is enforced *during* the
+     * read, so an oversized file is rejected without being fully read).
+     * This replaces the previous whole-file `readBytes()` hashing, which
+     * held the entire LUT in memory. (PR #231 fix-forward, Kilo CRITICAL 2.)
+     */
+    private fun sha256Streaming(file: File, expectedSize: Long): String? {
+        if (expectedSize !in 1L..MAX_CUBE_BYTES) return null
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        var oversized = false
+        try {
+            file.inputStream().use { stream ->
+                val buffer = ByteArray(STREAM_BUFFER_BYTES)
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_CUBE_BYTES || total > expectedSize) {
+                        oversized = true
+                        break
+                    }
+                    digest.update(buffer, 0, read)
+                }
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        if (oversized || total != expectedSize) return null
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private const val STREAM_BUFFER_BYTES = 8 * 1024
+
+    /** The sane size cap enforced while streaming; exposed so tests can pin the rejection boundary. */
+    @VisibleForTesting
+    const val MAX_CUBE_BYTES_FOR_TESTING: Long = MAX_CUBE_BYTES
+
+    @VisibleForTesting
+    fun sha256StreamingForTesting(file: File, expectedSize: Long): String? =
+        sha256Streaming(file, expectedSize)
 }

@@ -54,7 +54,7 @@ import kotlin.math.max
 
 private fun ChromaKey.toLegacySettings() = ChromaKeySettings(
     enabled = enabled,
-    keyColorArgb = color.toArgb().toLong(),
+    keyColorArgb = color.toArgb().toLong() and 0xFFFF_FFFFL,
     similarity = tolerance,
     smoothness = softness,
     spillSuppression = spill,
@@ -755,7 +755,7 @@ private fun MediaClip.toSharedVideoClip(
         saturationKeyframes = imported?.saturationKeyframes ?: existing?.saturationKeyframes.orEmpty(),
         mask = if (refreshLegacyClipFields) mask?.toTypedMask() else existing?.mask ?: mask?.toTypedMask(),
         chromaKey = if (refreshLegacyClipFields) {
-            chromaKeySettings?.toTypedChromaKey() ?: existing?.chromaKey
+            chromaKeySettings?.toTypedChromaKey()
         } else {
             existing?.chromaKey ?: chromaKeySettings?.toTypedChromaKey()
         },

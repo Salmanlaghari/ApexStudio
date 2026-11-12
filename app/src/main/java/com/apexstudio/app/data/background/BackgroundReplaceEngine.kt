@@ -15,6 +15,7 @@ import android.media.MediaMuxer
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Log
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.ai.safety.ProtectedAiAction
@@ -41,6 +42,7 @@ import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -99,7 +101,7 @@ object BackgroundReplaceEngine {
     private const val IMAGE_READER_MAX_IMAGES = 4
     private const val DECODER_TIMEOUT_US = 10_000L
     private const val IMAGE_WAIT_TIMEOUT_MS = 200L
-    private const val IMAGE_WAIT_DEADLINE_MS = 10_000L
+    private const val IMAGE_WAIT_DEADLINE_MS = 30_000L
     private const val PROGRESS_EMIT_INTERVAL_MS = 250L
     private const val BG_IMAGE_MAX_DIM = 1920
 
@@ -177,8 +179,12 @@ object BackgroundReplaceEngine {
             throw IllegalArgumentException("Pick a background image first.")
         }
 
-        outputFile.parentFile?.mkdirs()
-        val tmp = File(outputFile.parentFile, outputFile.name + ".${java.util.UUID.randomUUID()}.tmp")
+        val outputDirectory = outputFile.parentFile
+            ?: throw IllegalArgumentException("Output file needs a parent directory.")
+        if (!outputDirectory.exists() && !outputDirectory.mkdirs()) {
+            throw IllegalStateException("Could not create the background output directory.")
+        }
+        val tmp = File.createTempFile("bg-replace-", ".tmp", outputDirectory)
 
         var segmenter: ImageSegmenter? = null
         var extractor: MediaExtractor? = null
@@ -470,7 +476,7 @@ object BackgroundReplaceEngine {
                             decoderEos = true
                         } else {
                             dec.releaseOutputBuffer(outIndex, true)
-                            val image = waitForImage(imageQueue)
+                            val image = waitForImage(imageQueue, coroutineContext)
                                 ?: throw IllegalStateException("Decoder produced no frame.")
                             try {
                                 val frame = yuv420ToBitmap(image, yuvParams)
@@ -556,9 +562,10 @@ object BackgroundReplaceEngine {
      * Wait for the next decoded [Image] from the reader queue.
      * Returns null after a generous deadline (decoder stall).
      */
-    private fun waitForImage(queue: LinkedBlockingQueue<Image>): Image? {
-        val deadline = System.currentTimeMillis() + IMAGE_WAIT_DEADLINE_MS
-        while (System.currentTimeMillis() < deadline) {
+    private fun waitForImage(queue: LinkedBlockingQueue<Image>, context: CoroutineContext): Image? {
+        val deadline = SystemClock.elapsedRealtime() + IMAGE_WAIT_DEADLINE_MS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            context.ensureActive()
             val img = queue.poll(IMAGE_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             if (img != null) return img
         }
@@ -632,7 +639,7 @@ object BackgroundReplaceEngine {
      * absent metadata falls back to BT.601 limited — the historical
      * default for phone clips.
      */
-    private data class YuvParams(
+    internal data class YuvParams(
         /** Y offset (16 = limited range, 0 = full range). */
         val yOffset: Int,
         /** Y scale ×256 (298 = 255/219 limited, 256 = full). */
@@ -655,7 +662,7 @@ object BackgroundReplaceEngine {
         }
     }
 
-    private fun yuvParamsFor(format: MediaFormat): YuvParams {
+    internal fun yuvParamsFor(format: MediaFormat): YuvParams {
         // containsKey + getInteger: minSdk 26, so the API-29
         // getInteger(key, default) overload is not available.
         val standard = if (format.containsKey(MediaFormat.KEY_COLOR_STANDARD)) {
@@ -734,21 +741,26 @@ object BackgroundReplaceEngine {
             }
     }
 
+    internal fun parseRotationMetadata(value: String?): Int {
+        if (value == null) return 0
+        val rotation = value.toIntOrNull()
+            ?: throw IllegalArgumentException("Video rotation metadata is not an integer.")
+        require(rotation == 0 || rotation == 90 || rotation == 180 || rotation == 270) {
+            "Unsupported video rotation metadata: $rotation degrees."
+        }
+        return rotation
+    }
+
     private fun readRotation(context: Context, uri: String): Int {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(context, Uri.parse(uri))
-            return retriever.extractMetadata(
+            val value = retriever.extractMetadata(
                 MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
-            )?.toIntOrNull() ?: 0
+            )
+            return parseRotationMetadata(value)
         } catch (e: Exception) {
-            // Rotation metadata unreadable (corrupt file / permission /
-            // unsupported format): log and assume 0° rather than
-            // failing the whole run for a cosmetic metadata read
-            // (Kilo review). The output may be mis-oriented in that
-            // case — the log line is the diagnostic.
-            Log.w(TAG, "Rotation metadata unreadable; assuming 0°", e)
-            return 0
+            throw IllegalStateException("Could not verify this video's rotation metadata.", e)
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }

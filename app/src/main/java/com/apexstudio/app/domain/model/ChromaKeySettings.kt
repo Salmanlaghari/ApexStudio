@@ -18,14 +18,19 @@ data class ChromaKeySettings(
 )
 
 fun ChromaKeySettings.hasValidParameters(): Boolean =
-    similarity.isFinite() && similarity in 0.01f..1f &&
+    keyColorArgb in Int.MIN_VALUE.toLong()..0xFFFF_FFFFL &&
+        similarity.isFinite() && similarity in 0.01f..1f &&
         smoothness.isFinite() && smoothness in 0.01f..0.5f &&
         spillSuppression.isFinite() && spillSuppression in 0f..1f &&
         depth3D.isFinite() && depth3D in 0f..1f &&
         tiltX.isFinite() && tiltX in -1f..1f &&
         tiltY.isFinite() && tiltY in -1f..1f
 
+/** Clamp numeric values; normalize valid signed ARGB values and default colors outside 32-bit ARGB. */
 fun ChromaKeySettings.sanitized(): ChromaKeySettings = copy(
+    keyColorArgb = if (keyColorArgb in Int.MIN_VALUE.toLong()..0xFFFF_FFFFL) {
+        keyColorArgb and 0xFFFF_FFFFL
+    } else 0xFF00E676L,
     similarity = similarity.takeIf { it.isFinite() }?.coerceIn(0.01f, 1f) ?: 0.4f,
     smoothness = smoothness.takeIf { it.isFinite() }?.coerceIn(0.01f, 0.5f) ?: 0.15f,
     spillSuppression = spillSuppression.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0.5f,

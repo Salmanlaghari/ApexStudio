@@ -1000,6 +1000,7 @@ fun ChromaKeyPanelOverlay(
     var installedWallpapers by remember {
         mutableStateOf(emptyList<com.apexstudio.app.data.background.InstalledWallpaper>())
     }
+    var wallpaperLoadGeneration by remember { mutableStateOf(0) }
     val catalogItemCount = remember(context) {
         runCatching { com.apexstudio.app.data.background.WallpaperCatalogRepository.bundledCatalog(context).wallpapers.size }
             .getOrDefault(0)
@@ -1007,14 +1008,17 @@ fun ChromaKeyPanelOverlay(
     LaunchedEffect(Unit) {
         com.apexstudio.app.data.packs.download.PackManager.refreshSync(context)
     }
-    LaunchedEffect(packItem?.state) {
-        installedWallpapers = if (packItem?.state is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded ||
+    val wallpaperPackAvailable =
+        packItem?.state is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded ||
             packItem?.state is com.apexstudio.app.data.packs.download.PackManager.PackState.UpdateAvailable
-        ) {
+    LaunchedEffect(wallpaperPackAvailable) {
+        val requestGeneration = ++wallpaperLoadGeneration
+        val loaded = if (wallpaperPackAvailable) {
             withContext(Dispatchers.IO) {
                 com.apexstudio.app.data.background.WallpaperCatalogRepository.installedWallpapers(context)
             }
         } else emptyList()
+        if (requestGeneration == wallpaperLoadGeneration) installedWallpapers = loaded
     }
     val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
     val selectedSettings = selectedClip?.chromaKeySettings

@@ -884,7 +884,7 @@ data class BackgroundReplaceSettings(
     /** Pinned bytes used for a catalog wallpaper, so content updates invalidate the render cache. */
     val imageAssetSha256: String? = null
 ) {
-    /** Clamped copy: blur in 0..1, colour alpha forced opaque. */
+    /** Clamped copy: blur is 0..1; solid-color alpha is intentionally forced to FF so encoding cannot punch a transparent hole. */
     fun sanitized(): BackgroundReplaceSettings = copy(
         blurStrength = blurStrength.coerceIn(0f, 1f),
         // A transparent "solid colour" would punch a hole to black in

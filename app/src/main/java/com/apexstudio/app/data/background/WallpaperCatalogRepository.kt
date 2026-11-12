@@ -3,6 +3,7 @@ package com.apexstudio.app.data.background
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.packs.download.PackManifestRepo
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +49,7 @@ data class InstalledWallpaper(
  * so a removed, replaced, or damaged file can never be selected or processed.
  */
 object WallpaperCatalogRepository {
+    private const val TAG = "WallpaperCatalog"
     const val PACK_ID = "apexstudio-wallpapers-vol-01"
     const val PAYLOAD_TYPE = "wallpaper_images_v1"
     private const val CATALOG_ASSET = "backgrounds/wallpapers.json"
@@ -127,14 +129,23 @@ object WallpaperCatalogRepository {
     )
 
     private fun validateAssetFile(root: File, asset: WallpaperAsset): Boolean {
+        fun reject(reason: String): Boolean {
+            Log.w(TAG, "Wallpaper '${asset.id}' rejected: $reason")
+            return false
+        }
         if (asset.id.isBlank() || asset.name.isBlank() || asset.width <= 0 || asset.height <= 0 ||
             asset.sizeBytes <= 0L || !asset.sha256.matches(Regex("[0-9a-fA-F]{64}"))
-        ) return false
-        val file = safeEntryFile(root, asset.assetPath) ?: return false
-        if (!file.isFile || file.length() != asset.sizeBytes || sha256(file) != asset.sha256.lowercase()) return false
+        ) return reject("invalid catalog metadata")
+        val file = safeEntryFile(root, asset.assetPath) ?: return reject("unsafe asset path")
+        if (!file.isFile) return reject("asset file is missing")
+        if (file.length() != asset.sizeBytes) return reject("asset size does not match the catalog")
+        if (sha256(file) != asset.sha256.lowercase()) return reject("asset SHA-256 does not match the catalog")
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
-        return bounds.outWidth == asset.width && bounds.outHeight == asset.height
+        if (bounds.outWidth != asset.width || bounds.outHeight != asset.height) {
+            return reject("decoded dimensions do not match the catalog")
+        }
+        return true
     }
 
     private fun safeEntryFile(root: File, relative: String): File? {
@@ -145,7 +156,16 @@ object WallpaperCatalogRepository {
         return entry.takeIf { it.path.startsWith(base.path + File.separator) }
     }
 
-    private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256")
-        .digest(file.inputStream().use { it.readBytes() })
-        .joinToString("") { "%02x".format(it) }
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                if (count > 0) digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
 }

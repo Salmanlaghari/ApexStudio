@@ -189,6 +189,7 @@ fun EditorViewModel.applyBackgroundReplace(
                 val wallpaper = withContext(Dispatchers.IO) {
                     WallpaperCatalogRepository.resolveInstalledWallpaper(ctxApp, effective.imageAssetId)
                 } ?: throw IllegalStateException("Wallpaper is missing or failed its integrity check. Download it again.")
+                if (!isCurrentBackgroundJob(requestJob)) return@launch
                 effective.copy(
                     imageUri = wallpaper.uri.toString(),
                     imageAssetSha256 = wallpaper.asset.sha256.lowercase()
@@ -336,6 +337,7 @@ private suspend fun EditorViewModel.finishBackgroundApply(
             uri = Uri.fromFile(processed).toString(),
             backgroundReplace = effective,
             chromaKeySettings = null,
+            // The processed output has baked pixels and orientation; the source-space face-crop track no longer applies.
             faceCropTrack = null,
         )
     }

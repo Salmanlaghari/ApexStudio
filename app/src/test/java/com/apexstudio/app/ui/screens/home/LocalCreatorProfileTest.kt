@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.home
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -42,37 +43,36 @@ class LocalCreatorProfileTest {
     }
 
     @Test
-    fun localProfileDialogEditsOnlyLocalDisplayNameAndAvatarSelection() {
+    fun localProfileSaveDefaultsBlankNamesToCreator() {
+        assertEquals(LocalCreatorProfile(displayName = "Creator", avatarId = "amber"), localCreatorProfileForSave("   ", "amber"))
+    }
+
+    @Test
+    fun localProfileFormEditsOnlyLocalDisplayNameAndAvatarSelection() {
         var displayName by mutableStateOf("Raza")
         var avatarId by mutableStateOf("violet")
         var savedProfile: LocalCreatorProfile? = null
-        compose.mainClock.autoAdvance = false
         compose.setContent {
-            LocalCreatorProfileDialog(
-                displayName = displayName,
-                onDisplayNameChange = { displayName = it.take(24) },
-                avatarId = avatarId,
-                onAvatarSelected = { avatarId = it },
-                onDismiss = {},
-                onSave = {
-                    savedProfile = LocalCreatorProfile(
-                        displayName = displayName.trim().ifBlank { "Creator" },
-                        avatarId = avatarId
-                    )
+            Column {
+                LocalCreatorProfileForm(
+                    displayName = displayName,
+                    onDisplayNameChange = { displayName = it.take(24) },
+                    avatarId = avatarId,
+                    onAvatarSelected = { avatarId = it }
+                )
+                LocalCreatorProfileSaveAction {
+                    savedProfile = localCreatorProfileForSave(displayName, avatarId)
                 }
-            )
+            }
         }
-        compose.mainClock.advanceTimeBy(1_000L)
 
-        // Keep the platform dialog as a stable root in Robolectric; opening a new Dialog window
-        // dynamically over the full dashboard repeatedly leaves Espresso non-idle in this runner.
-        compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
+        // Test the production form and its production save action without Robolectric's platform dialog window.
         compose.onNodeWithText(
             "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device."
         ).assertIsDisplayed()
         compose.runOnIdle { assertNull(savedProfile) }
         compose.onNodeWithTag("local-profile-name").performTextClearance()
-        compose.onNodeWithTag("local-profile-name").performTextInput("Ayesha")
+        compose.onNodeWithTag("local-profile-name").performTextInput(" Ayesha ")
         compose.onNodeWithTag("profile-avatar-cyan").performClick()
         compose.onNodeWithText("Save profile").performClick()
 

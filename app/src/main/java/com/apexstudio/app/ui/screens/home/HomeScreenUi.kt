@@ -220,12 +220,7 @@ internal fun ApexHomeContent(
             onAvatarSelected = { profileAvatarDraft = it },
             onDismiss = { showLocalProfile = false },
             onSave = {
-                onSaveLocalProfile(
-                    LocalCreatorProfile(
-                        displayName = profileNameDraft.trim().ifBlank { "Creator" },
-                        avatarId = profileAvatarDraft
-                    )
-                )
+                onSaveLocalProfile(localCreatorProfileForSave(profileNameDraft, profileAvatarDraft))
                 showLocalProfile = false
             }
         )
@@ -674,51 +669,73 @@ internal fun LocalCreatorProfileDialog(
         containerColor = theme.bgSurface,
         title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",
-                    color = theme.textSecondary,
-                    fontSize = 12.sp
-                )
-                OutlinedTextField(
-                    value = displayName,
-                    onValueChange = onDisplayNameChange,
-                    modifier = Modifier.fillMaxWidth().testTag("local-profile-name"),
-                    singleLine = true,
-                    label = { Text("Display name") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = theme.textPrimary,
-                        unfocusedTextColor = theme.textPrimary,
-                        focusedBorderColor = theme.secondary,
-                        unfocusedBorderColor = theme.border,
-                        focusedLabelColor = theme.primary,
-                        unfocusedLabelColor = theme.textTertiary,
-                        cursorColor = theme.primary,
-                        focusedContainerColor = theme.bgElevated,
-                        unfocusedContainerColor = theme.bgElevated
-                    )
-                )
-                Text("Avatar color", color = theme.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("violet" to "Violet", "cyan" to "Cyan", "amber" to "Amber").forEach { (id, label) ->
-                        FilterChip(
-                            selected = avatarId == id,
-                            onClick = { onAvatarSelected(id) },
-                            modifier = Modifier.testTag("profile-avatar-$id"),
-                            label = { Text(label, fontSize = 10.sp) }
-                        )
-                    }
-                }
-            }
+            LocalCreatorProfileForm(
+                displayName = displayName,
+                onDisplayNameChange = onDisplayNameChange,
+                avatarId = avatarId,
+                onAvatarSelected = onAvatarSelected
+            )
         },
-        confirmButton = {
-            TextButton(onClick = onSave) { Text("Save profile") }
-        },
+        confirmButton = { LocalCreatorProfileSaveAction(onSave = onSave) },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }
+
+@Composable
+internal fun LocalCreatorProfileForm(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
+    avatarId: String,
+    onAvatarSelected: (String) -> Unit
+) {
+    val theme = ApexThemeTokens.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",
+            color = theme.textSecondary,
+            fontSize = 12.sp
+        )
+        OutlinedTextField(
+            value = displayName,
+            onValueChange = onDisplayNameChange,
+            modifier = Modifier.fillMaxWidth().testTag("local-profile-name"),
+            singleLine = true,
+            label = { Text("Display name") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = theme.textPrimary,
+                unfocusedTextColor = theme.textPrimary,
+                focusedBorderColor = theme.secondary,
+                unfocusedBorderColor = theme.border,
+                focusedLabelColor = theme.primary,
+                unfocusedLabelColor = theme.textTertiary,
+                cursorColor = theme.primary,
+                focusedContainerColor = theme.bgElevated,
+                unfocusedContainerColor = theme.bgElevated
+            )
+        )
+        Text("Avatar color", color = theme.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("violet" to "Violet", "cyan" to "Cyan", "amber" to "Amber").forEach { (id, label) ->
+                FilterChip(
+                    selected = avatarId == id,
+                    onClick = { onAvatarSelected(id) },
+                    modifier = Modifier.testTag("profile-avatar-$id"),
+                    label = { Text(label, fontSize = 10.sp) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun LocalCreatorProfileSaveAction(onSave: () -> Unit) {
+    TextButton(onClick = onSave) { Text("Save profile") }
+}
+
+internal fun localCreatorProfileForSave(displayName: String, avatarId: String): LocalCreatorProfile =
+    LocalCreatorProfile(displayName = displayName.trim().ifBlank { "Creator" }, avatarId = avatarId)
 
 private fun profileAvatarColor(avatarId: String): Color = when (avatarId) {
     "cyan" -> Color(0xFF38D9F5)

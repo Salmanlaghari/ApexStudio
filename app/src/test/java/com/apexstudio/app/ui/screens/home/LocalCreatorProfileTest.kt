@@ -46,6 +46,7 @@ class LocalCreatorProfileTest {
         var displayName by mutableStateOf("Raza")
         var avatarId by mutableStateOf("violet")
         var savedProfile: LocalCreatorProfile? = null
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             LocalCreatorProfileDialog(
                 displayName = displayName,
@@ -61,6 +62,7 @@ class LocalCreatorProfileTest {
                 }
             )
         }
+        compose.mainClock.advanceTimeBy(1_000L)
 
         // Keep the platform dialog as a stable root in Robolectric; opening a new Dialog window
         // dynamically over the full dashboard repeatedly leaves Espresso non-idle in this runner.

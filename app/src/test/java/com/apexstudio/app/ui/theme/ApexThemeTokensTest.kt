@@ -70,10 +70,9 @@ class ApexThemeTokensTest {
             }
         }
 
-        compose.waitUntil(timeoutMillis = 5_000) {
-            observed.get()?.background == ApexThemeOption.NEON.palette.bgBase
-        }
+        compose.waitForIdle()
         val neon = requireNotNull(observed.get())
+        assertEquals(ApexThemeOption.NEON.palette.bgBase, neon.background)
         val neonWindow = requireNotNull(observedWindow.get())
         assertEquals(ApexThemeOption.NEON.palette.bgSurface, neon.surface)
         assertEquals(ApexThemeOption.NEON.palette.primary, neon.primary)
@@ -87,19 +86,17 @@ class ApexThemeTokensTest {
         ).isAppearanceLightStatusBars)
 
         compose.runOnIdle { selected.value = ApexThemeOption.VIOLET }
-        compose.waitUntil(timeoutMillis = 5_000) {
-            observed.get()?.background == ApexThemeOption.VIOLET.palette.bgBase
-        }
+        compose.waitForIdle()
         val violet = requireNotNull(observed.get())
+        assertEquals(ApexThemeOption.VIOLET.palette.bgBase, violet.background)
         assertEquals(ApexThemeOption.VIOLET.palette.primary, violet.primary)
         assertEquals(ApexThemeOption.VIOLET.palette.primaryGlow, violet.tertiary)
         assertEquals(violet.background.toArgb(), requireNotNull(observedWindow.get()).statusBarColor)
 
         compose.runOnIdle { selected.value = ApexThemeOption.EMBER }
-        compose.waitUntil(timeoutMillis = 5_000) {
-            observed.get()?.background == ApexThemeOption.EMBER.palette.bgBase
-        }
+        compose.waitForIdle()
         val ember = requireNotNull(observed.get())
+        assertEquals(ApexThemeOption.EMBER.palette.bgBase, ember.background)
         assertEquals(ApexThemeOption.EMBER.palette.primary, ember.primary)
         assertEquals(ApexThemeOption.EMBER.palette.primaryGlow, ember.tertiary)
         assertNotEquals(neon.background, violet.background)

@@ -29,6 +29,9 @@ class LocalCreatorProfileTest {
     @Test
     fun dashboardProfileEditsOnlyLocalDisplayNameAndAvatarSelection() {
         var savedProfile: LocalCreatorProfile? = null
+        // Freeze before opening the dialog: its focused text field starts cursor
+        // animation during the click, before a later clock freeze can take effect.
+        compose.mainClock.autoAdvance = false
         compose.setContent {
             Box(Modifier.requiredSize(375.dp, 830.dp)) {
                 ApexHomeContent(
@@ -53,9 +56,6 @@ class LocalCreatorProfileTest {
         }
 
         compose.onNodeWithTag("dashboard-profile").assertIsDisplayed().performClick()
-        // The dialog focuses its text field; freeze the test clock after the click so
-        // its cursor animation cannot keep Robolectric's Espresso idler busy.
-        compose.mainClock.autoAdvance = false
         compose.mainClock.advanceTimeBy(1_000L)
         compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
         compose.onNodeWithText(

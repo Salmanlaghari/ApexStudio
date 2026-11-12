@@ -36,6 +36,7 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
       "sha256": "…",             // hex SHA-256 of the download; "" when n/a
       "minAppVersion": "1.0.0",  // hide pack on older app versions
       "entry": "filters.json",   // content descriptor inside the installed pack
+      "entrySha256": "…",        // optional checksum of the installed entry file
       "itemCount": 25,            // optional count of selectable pack entries
       "payloadType": "filter_profiles", // optional parser contract; cube_lut_v1 is verified .cube LUT content
       "status": "available | coming_soon"
@@ -55,6 +56,15 @@ asset appears in the editor. LUT archives use `payloadType: "cube_lut_v1"`; each
 `.cube` file is independently size/hash-checked, parsed, and validated before it
 can appear in the filter gallery. Downloaded LUTs are reverified when loaded for
 preview, sample thumbnails, and export.
+
+The downloadable FX volume uses `payloadType: "fx_profiles_v1"` and an
+`entrySha256` pin for `effects.json`. Its 30 original profiles contain only
+bounded numeric parameters for ten shader families already implemented in the
+app. The app verifies the file checksum, schema, family, IDs, and parameter
+ranges before making a profile selectable; downloaded content never supplies
+GLSL or executable code. Preview and export use the same app-owned Media3 shader
+renderer. The reproducible profile source and generator are in
+`packs/effects-source/`.
 
 ## Publishing / updating packs
 

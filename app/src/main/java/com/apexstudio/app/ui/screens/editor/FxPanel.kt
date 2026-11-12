@@ -35,7 +35,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxPreset
+import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
@@ -53,6 +55,9 @@ fun FxPanel(
     onIntensityChange: (Float) -> Unit,
     speed: Float = 1f,
     onSpeedChange: (Float) -> Unit = {},
+    downloadedEffects: List<DownloadedFxEffect> = emptyList(),
+    effectsPackState: PackManager.PackState? = null,
+    onDownloadEffectsPack: (() -> Unit)? = null,
     onKeyframesClick: (() -> Unit)? = null,
     onClose: () -> Unit
 ) {
@@ -114,10 +119,52 @@ fun FxPanel(
 
         var activeCategory by remember { mutableStateOf("All") }
 
+        if (activeCategory == "Downloaded") {
+            val state = effectsPackState
+            val damagedInstalledPack = state == PackManager.PackState.Downloaded && downloadedEffects.isEmpty()
+            val canDownload = state == PackManager.PackState.NotDownloaded ||
+                state == PackManager.PackState.UpdateAvailable || state is PackManager.PackState.Failed ||
+                damagedInstalledPack
+            val status = when (state) {
+                PackManager.PackState.NotDownloaded -> "Download 30 effects · 5.2 KB"
+                PackManager.PackState.UpdateAvailable -> "Update FX pack · 5.2 KB"
+                is PackManager.PackState.Downloading -> {
+                    val percent = if (state.fraction >= 0f) " · ${(state.fraction * 100).toInt()}%" else ""
+                    "Downloading FX pack$percent"
+                }
+                PackManager.PackState.Downloaded -> if (downloadedEffects.isEmpty()) {
+                    "No verified FX profiles · tap to reinstall"
+                } else "${downloadedEffects.size} verified effects ready"
+                is PackManager.PackState.Failed -> "Retry FX pack download · ${state.reason.take(90)}"
+                PackManager.PackState.ComingSoon -> "Effect pack coming soon"
+                null -> "Checking downloadable FX…"
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                    .clickable(enabled = canDownload && onDownloadEffectsPack != null) {
+                        onDownloadEffectsPack?.invoke()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    status,
+                    color = if (canDownload) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
         // Category pills
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().testTag("fx-category-list")
         ) {
             items(FxPreset.categories(), key = { it }) { cat ->
                 val selected = cat == activeCategory
@@ -172,6 +219,18 @@ fun FxPanel(
                     onClick = { onFxSelected(preset.id) }
                 )
             }
+            items(
+                if (activeCategory == "Downloaded") downloadedEffects else emptyList(),
+                key = { it.id }
+            ) { effect ->
+                FxChip(
+                    label = effect.label,
+                    icon = Icons.Default.Layers,
+                    colors = colorsForFamily(effect.family),
+                    selected = activeFxId == effect.id,
+                    onClick = { onFxSelected(effect.id) }
+                )
+            }
         }
 
         Spacer(Modifier.height(16.dp))
@@ -194,8 +253,9 @@ fun FxPanel(
         )
 
         // Speed control, only for animated (time-driven) presets.
-        val activePreset = FxPreset.byId(activeFxId)
-        if (activePreset?.isAnimated == true) {
+        val isAnimatedFx = FxPreset.byId(activeFxId)?.isAnimated == true ||
+            downloadedEffects.any { it.id == activeFxId && it.isAnimated }
+        if (isAnimatedFx) {
             Spacer(Modifier.height(8.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -356,6 +416,20 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
 
     FxPreset.LIGHT_LEAK_SWEEP -> Icons.Default.CenterFocusWeak
     else -> Icons.Default.Layers
+}
+
+private fun colorsForFamily(family: String): List<Color> = when (family) {
+    "PRISM" -> listOf(Color(0xFF00E5FF), Color(0xFFFF4FA3))
+    "SPLIT_TONE" -> listOf(Color(0xFFFF9E65), Color(0xFF4AD3C8))
+    "RIPPLE" -> listOf(Color(0xFF1665A8), Color(0xFF61E3DB))
+    "MOSAIC" -> listOf(Color(0xFFFFA35C), Color(0xFF6A43BD))
+    "CRT" -> listOf(Color(0xFF164B36), Color(0xFF66CC7A))
+    "HALATION" -> listOf(Color(0xFFFF774C), Color(0xFF843D77))
+    "INK" -> listOf(Color(0xFF312D34), Color(0xFFED5E81))
+    "MIRROR" -> listOf(Color(0xFF4A2B86), Color(0xFF1AA9D0))
+    "GLITCH" -> listOf(Color(0xFF5D174E), Color(0xFF1FC8D8))
+    "STREAK" -> listOf(Color(0xFF162B64), Color(0xFFF4893F))
+    else -> listOf(ApexPalette.BgElevated, ApexPalette.BgDeep)
 }
 
 private fun colorsFor(preset: FxPreset): List<Color> = when (preset) {

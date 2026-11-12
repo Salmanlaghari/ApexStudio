@@ -189,7 +189,8 @@ enum class FxPreset(
             "Retro & Film",
             "Blur & Motion",
             "Stylize & Art",
-            "Creator Pack"
+            "Creator Pack",
+            "Downloaded"
         )
     }
 }

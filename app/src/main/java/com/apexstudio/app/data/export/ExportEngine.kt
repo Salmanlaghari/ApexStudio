@@ -258,6 +258,8 @@ class ExportEngine(private val context: Context) {
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
             com.apexstudio.app.domain.model.KeyframeTrack(),
         val fxPreset: FxPreset? = null,
+        /** Verified allowlisted profile for an on-demand FX pack. */
+        val downloadedFxEffect: com.apexstudio.app.data.fx.DownloadedFxEffect? = null,
         val fxIntensity: Float = 1f,
         val fxSpeed: Float = 1f,
         // AR Face filter (previewed via ArFaceFilterOverlay): the graded
@@ -564,10 +566,13 @@ class ExportEngine(private val context: Context) {
                                 }
                             }
                             addViralHdrEffects(context, clip.gpuFilterConfig, this)
-                            if (config.fxPreset != null && config.fxIntensity > 0f) {
-                                add(com.apexstudio.app.data.fx.FxGlEffect(
-                                    config.fxPreset, config.fxIntensity, config.fxSpeed
-                                ))
+                            if (config.fxIntensity > 0f) {
+                                val fxEffect = config.fxPreset?.let {
+                                    com.apexstudio.app.data.fx.FxGlEffect(it, config.fxIntensity, config.fxSpeed)
+                                } ?: config.downloadedFxEffect?.let {
+                                    com.apexstudio.app.data.fx.FxGlEffect(it, config.fxIntensity, config.fxSpeed)
+                                }
+                                if (fxEffect != null) add(fxEffect)
                             }
                             // Keyframes are in project-global time. This effect runs before
                             // speed changes PTS, so the mapper can apply this clip's source trim,
@@ -1198,8 +1203,13 @@ class ExportEngine(private val context: Context) {
                 addViralHdrEffects(context, config.gpuFilterConfig, videoEffects)
 
                 // 3. Dynamic Visual Effects (Glitch, RGB Split, VHS)
-                if (config.fxPreset != null && config.fxIntensity > 0f) {
-                    videoEffects.add(FxGlEffect(config.fxPreset, config.fxIntensity, config.fxSpeed))
+                if (config.fxIntensity > 0f) {
+                    val fxEffect = config.fxPreset?.let {
+                        FxGlEffect(it, config.fxIntensity, config.fxSpeed)
+                    } ?: config.downloadedFxEffect?.let {
+                        FxGlEffect(it, config.fxIntensity, config.fxSpeed)
+                    }
+                    fxEffect?.let(videoEffects::add)
                 }
 
                 // 3.5 AR Face filter: bake the graded look of the active AR

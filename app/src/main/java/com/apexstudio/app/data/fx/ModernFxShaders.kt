@@ -84,10 +84,30 @@ internal object ModernFxShaders {
 
     fun shaderFor(preset: FxPreset): String? = profiles[preset]?.let(::buildShader)
 
-    private fun buildShader(p: Profile): String {
-        val speedUniform = if (p.preset.isAnimated) "uniform float uSpeed;" else ""
-        val phase = if (p.preset.isAnimated) "uTime * uSpeed" else "0.0"
-        val body = when (p.family) {
+    fun supportsFamily(name: String): Boolean = Family.values().any { it.name == name }
+
+    /** The downloaded payload selects only an allowlisted family and bounded numeric parameters. */
+    fun shaderFor(effect: DownloadedFxEffect): String? {
+        val family = Family.values().firstOrNull { it.name == effect.family } ?: return null
+        val tint = "${effect.tintR}, ${effect.tintG}, ${effect.tintB}"
+        return buildShader(family, effect.a.toString(), effect.b.toString(), effect.c.toString(), tint, effect.isAnimated)
+    }
+
+    private fun buildShader(p: Profile): String = buildShader(
+        p.family, p.a, p.b, p.c, p.tint, p.preset.isAnimated
+    )
+
+    private fun buildShader(
+        family: Family,
+        a: String,
+        b: String,
+        c: String,
+        tint: String,
+        isAnimated: Boolean
+    ): String {
+        val speedUniform = if (isAnimated) "uniform float uSpeed;" else ""
+        val phase = if (isAnimated) "uTime * uSpeed" else "0.0"
+        val body = when (family) {
             Family.PRISM -> """
                 vec2 uv = vTextureCoord;
                 float fringe = uTexel.x * P_A * (0.5 + 0.5 * sin(uv.y * 9.0 + PHASE));
@@ -200,9 +220,9 @@ internal object ModernFxShaders {
             }
         """.trimIndent()
             .replace("PHASE", "phase")
-            .replace("@A@", p.a)
-            .replace("@B@", p.b)
-            .replace("@C@", p.c)
-            .replace("@TINT@", p.tint)
+            .replace("@A@", a)
+            .replace("@B@", b)
+            .replace("@C@", c)
+            .replace("@TINT@", tint)
     }
 }

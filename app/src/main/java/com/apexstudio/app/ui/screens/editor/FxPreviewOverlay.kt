@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import com.apexstudio.app.data.fx.DownloadedFxEffect
 import kotlin.random.Random
 
 /**
@@ -27,7 +28,8 @@ fun FxPreviewOverlay(
     intensity: Float,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
-    speed: Float = 1f
+    speed: Float = 1f,
+    downloadedEffect: DownloadedFxEffect? = null
 ) {
     if (fxId == null || intensity <= 0f) return
 
@@ -67,7 +69,9 @@ fun FxPreviewOverlay(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        if (fxId.startsWith("creator_")) {
+        if (downloadedEffect?.id == fxId) {
+            DownloadedEffectComposePreview(downloadedEffect, clampedIntensity, animProgress)
+        } else if (fxId.startsWith("creator_")) {
             CreatorPackFxPreview(fxId, clampedIntensity, animProgress)
         } else when (fxId) {
             "vignette" -> {
@@ -511,6 +515,129 @@ fun FxPreviewOverlay(
     }
 }
 
+
+/** Parameter-driven visual preview for downloaded shader profiles on still photos. */
+@Composable
+private fun DownloadedEffectComposePreview(
+    effect: DownloadedFxEffect,
+    intensity: Float,
+    progress: Float
+) {
+    val tint = Color(effect.tintR, effect.tintG, effect.tintB)
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val w = size.width
+        val h = size.height
+        val center = Offset(w * 0.5f, h * 0.5f)
+        val alpha = intensity.coerceIn(0f, 1f)
+        val maxRadius = kotlin.math.max(w, h) * 0.72f
+        when (effect.family) {
+            "PRISM" -> {
+                val fringe = (effect.a * 2f).coerceIn(4f, 24f)
+                drawRect(Brush.horizontalGradient(listOf(
+                    tint.copy(alpha = 0.20f * alpha), Color.Transparent,
+                    Color.White.copy(alpha = 0.08f * alpha), Color.Transparent,
+                    tint.copy(alpha = 0.16f * alpha)
+                )), size = size)
+                drawRect(tint.copy(alpha = 0.12f * alpha), Offset.Zero, Size(fringe, h))
+                drawRect(tint.copy(alpha = 0.12f * alpha), Offset(w - fringe, 0f), Size(fringe, h))
+            }
+            "SPLIT_TONE" -> drawRect(
+                Brush.verticalGradient(listOf(
+                    tint.copy(alpha = 0.22f * alpha), Color.Transparent,
+                    tint.copy(alpha = 0.08f * alpha)
+                )), size = size
+            )
+            "RIPPLE" -> {
+                val rings = effect.a.toInt().coerceIn(2, 10)
+                for (i in 1..rings) {
+                    val phase = (progress + i.toFloat() / rings) % 1f
+                    drawCircle(
+                        tint.copy(alpha = (0.18f * alpha * (1f - phase)).coerceAtLeast(0f)),
+                        radius = maxRadius * phase,
+                        center = center,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f + effect.b * 100f)
+                    )
+                }
+            }
+            "MOSAIC" -> {
+                val stepX = (w / effect.a.coerceIn(4f, 20f)).coerceAtLeast(12f)
+                val stepY = (h / effect.b.coerceIn(4f, 20f)).coerceAtLeast(12f)
+                var y = 0f
+                while (y < h) {
+                    var x = 0f
+                    while (x < w) {
+                        drawRect(tint.copy(alpha = (0.10f + effect.c * 0.22f) * alpha),
+                            Offset(x, y), Size(stepX * 0.46f, stepY * 0.46f))
+                        x += stepX
+                    }
+                    y += stepY
+                }
+            }
+            "CRT" -> {
+                drawRect(tint.copy(alpha = 0.08f * alpha), size = size)
+                val spacing = (1600f / effect.a.coerceAtLeast(1f)).coerceIn(5f, 14f)
+                var y = progress * spacing
+                while (y < h) {
+                    drawLine(Color.Black.copy(alpha = 0.22f * alpha), Offset(0f, y), Offset(w, y), 1.4f)
+                    y += spacing
+                }
+                drawRect(Brush.radialGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f * alpha)),
+                    center = center, radius = maxRadius), size = size)
+            }
+            "HALATION" -> drawRect(
+                Brush.radialGradient(listOf(tint.copy(alpha = 0.26f * alpha), Color.Transparent),
+                    center = Offset(w * effect.a.coerceIn(0.05f, 0.95f), h * 0.42f),
+                    radius = (maxRadius / effect.b.coerceAtLeast(0.5f) * 8f).coerceIn(16f, maxRadius)),
+                size = size
+            )
+            "INK" -> {
+                val spacing = (24f / effect.b.coerceAtLeast(0.1f)).coerceIn(14f, 34f)
+                var y = 0f
+                while (y < h) {
+                    var x = 0f
+                    while (x < w) {
+                        val wave = (kotlin.math.sin(x * 0.035f + y * 0.027f) + 1f) * 0.5f
+                        drawCircle(tint.copy(alpha = (0.18f + wave * effect.c * 0.3f) * alpha),
+                            (1.2f + wave * 2.2f) * alpha, Offset(x, y))
+                        x += spacing
+                    }
+                    y += spacing
+                }
+            }
+            "MIRROR" -> {
+                val spokes = effect.a.toInt().coerceIn(2, 24)
+                for (i in 1..8) drawCircle(tint.copy(alpha = 0.06f * alpha), maxRadius * i / 9f,
+                    center, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f))
+                for (i in 0 until spokes) {
+                    val angle = i * (2.0 * Math.PI / spokes) + effect.b + progress * 0.05
+                    drawLine(tint.copy(alpha = 0.14f * alpha), center,
+                        Offset(center.x + kotlin.math.cos(angle).toFloat() * w,
+                            center.y + kotlin.math.sin(angle).toFloat() * h), 1.2f)
+                }
+            }
+            "GLITCH" -> {
+                val rng = Random((progress * 80f).toInt() + effect.id.hashCode())
+                repeat(effect.a.toInt().coerceIn(3, 32)) {
+                    val y = rng.nextFloat() * h
+                    val bandHeight = 2f + rng.nextFloat() * (4f + effect.c * 18f)
+                    val x = rng.nextFloat() * w * 0.22f
+                    drawRect(tint.copy(alpha = 0.24f * alpha), Offset(x, y), Size(w - x, bandHeight))
+                }
+            }
+            "STREAK" -> {
+                val rays = 8 + (effect.c * 16f).toInt().coerceIn(0, 16)
+                for (i in 0 until rays) {
+                    val angle = effect.a + i * (2.0 * Math.PI / rays) + progress * 0.08
+                    drawLine(tint.copy(alpha = 0.13f * alpha), center,
+                        Offset(center.x + kotlin.math.cos(angle).toFloat() * w,
+                            center.y + kotlin.math.sin(angle).toFloat() * h), 2f)
+                }
+                drawRect(Brush.radialGradient(listOf(Color.Transparent, tint.copy(alpha = 0.10f * alpha)),
+                    center = center, radius = maxRadius), size = size)
+            }
+        }
+    }
+}
 
 /**
  * Compose preview approximation for the Creator Pack shader families. The

@@ -152,6 +152,7 @@ private fun EditorScreenContent(
     val mediaImportProgress by mediaPicker.importProgress.collectAsStateWithLifecycle()
     val filterEngine = remember { LutFilterEngine(context) }
     val downloadedFilterRegistryVersion by com.apexstudio.app.data.filter.FilterManifest.downloadedRegistryVersion.collectAsStateWithLifecycle()
+    val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var transitionPreviewPlayer by remember(projectId) { mutableStateOf<CompositionPlayer?>(null) }
     var transitionPreviewReady by remember(projectId) { mutableStateOf(false) }
@@ -635,6 +636,15 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
+    val activeDownloadedFx by produceState<com.apexstudio.app.data.fx.DownloadedFxEffect?>(
+        initialValue = null,
+        key1 = state.activeFxId,
+        key2 = downloadedFxProfiles
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+        }
+    }
     val previewGpuFilterConfig = mainPreviewClip
         ?.takeIf { it.type == ClipType.VIDEO }
         ?.gpuFilterConfig
@@ -652,6 +662,7 @@ private fun EditorScreenContent(
     val previewGpuFilterStageConfig = gpuFilterConfigPreviewKey(previewGpuFilterConfig)
     val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
+    val resolvedActiveDownloadedFx = activeDownloadedFx
 
     val currentEffects = remember(
         activePreset,
@@ -660,6 +671,7 @@ private fun EditorScreenContent(
         state.gpuFilterCompareMode,
         state.lutCompareMode,
         activeFx,
+        resolvedActiveDownloadedFx,
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
@@ -744,6 +756,12 @@ private fun EditorScreenContent(
                 add(
                     com.apexstudio.app.data.fx.FxGlEffect(
                         activeFx, state.fxIntensity, state.fxSpeed
+                    )
+                )
+            } else if (resolvedActiveDownloadedFx != null && state.fxIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.fx.FxGlEffect(
+                        resolvedActiveDownloadedFx, state.fxIntensity, state.fxSpeed
                     )
                 )
             }

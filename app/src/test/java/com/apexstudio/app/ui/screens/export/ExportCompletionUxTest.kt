@@ -25,7 +25,7 @@ class ExportCompletionUxTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun progressRingShowsReadyAndOneToOneHundredPercentWithoutZero() {
+    fun progressRingShowsReadyPreparingAndOneToOneHundredPercent() {
         var isExporting by mutableStateOf(false)
         var progress by mutableFloatStateOf(0f)
         var completed by mutableStateOf(false)
@@ -43,6 +43,9 @@ class ExportCompletionUxTest {
         compose.onNodeWithText("0%").assertDoesNotExist()
 
         compose.runOnIdle { isExporting = true }
+        compose.onNodeWithText("Preparing").assertIsDisplayed()
+        compose.onNodeWithText("0%").assertDoesNotExist()
+        compose.runOnIdle { progress = 0.001f }
         compose.onNodeWithText("1%").assertIsDisplayed()
         compose.runOnIdle { progress = 0.28f }
         compose.onNodeWithText("28%").assertIsDisplayed()
@@ -55,13 +58,29 @@ class ExportCompletionUxTest {
     }
 
     @Test
-    fun successfulExportShowsDismissibleStorageAndSharePromptWithInfoOnlyPremium() {
+    fun failedOrCancelledExportDoesNotPromptAndSuccessfulRunsPromptOnlyOnceEach() {
         val vm = EditorViewModel()
         compose.setContent {
             ExportScreen(projectId = "completion-prompt", onBack = {}, onExport = {}, vm = vm)
         }
 
         compose.onNodeWithTag("export-completion-dialog").assertDoesNotExist()
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(isExporting = true, progress = 0f, outputUri = null, error = null)
+        }
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(isExporting = false, outputUri = null, error = "Synthetic failure")
+        }
+        compose.onNodeWithTag("export-completion-dialog").assertDoesNotExist()
+
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(isExporting = true, progress = 0f, outputUri = null, error = null)
+        }
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(isExporting = false, outputUri = null, error = null)
+        }
+        compose.onNodeWithTag("export-completion-dialog").assertDoesNotExist()
+
         compose.runOnIdle {
             vm._export.value = vm.export.value.copy(isExporting = true, progress = 0.4f, outputUri = null, error = null)
         }
@@ -73,7 +92,6 @@ class ExportCompletionUxTest {
                 error = null
             )
         }
-
         compose.onNodeWithTag("export-completion-dialog").assertIsDisplayed()
         compose.onNodeWithText(
             "It is saved in ApexStudio's app-specific export folder on this device. Closing this dialog will not delete it."
@@ -85,5 +103,23 @@ class ExportCompletionUxTest {
         compose.onNodeWithText("Got it").performClick()
         compose.onNodeWithText("Done").performClick()
         compose.onNodeWithTag("export-completion-dialog").assertDoesNotExist()
+
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(outputUri = "file:///tmp/duplicate-terminal.mp4")
+        }
+        compose.onNodeWithTag("export-completion-dialog").assertDoesNotExist()
+
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(isExporting = true, progress = 0f, outputUri = null, error = null)
+        }
+        compose.runOnIdle {
+            vm._export.value = vm.export.value.copy(
+                isExporting = false,
+                progress = 1f,
+                outputUri = "file:///tmp/apexstudio-second-test.mp4",
+                error = null
+            )
+        }
+        compose.onNodeWithTag("export-completion-dialog").assertIsDisplayed()
     }
 }

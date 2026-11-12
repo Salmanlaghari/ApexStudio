@@ -133,7 +133,7 @@ internal fun ExportProjectPreviewCard(
             )
             ExportProgressRing(
                 progress = progressFraction,
-                showPercentage = isExporting || completed,
+                isActive = isExporting || completed,
                 modifier = Modifier.size(52.dp)
             )
         }
@@ -316,9 +316,9 @@ private fun ExportSettingPickerRow(
 
 
 @Composable
-private fun ExportProgressRing(progress: Float, showPercentage: Boolean, modifier: Modifier = Modifier) {
+private fun ExportProgressRing(progress: Float, isActive: Boolean, modifier: Modifier = Modifier) {
     val fraction = progress.coerceIn(0f, 1f)
-    val percentage = if (showPercentage) (fraction * 100f).toInt().coerceIn(1, 100) else null
+    val percentage = if (isActive && fraction > 0f) (fraction * 100f).toInt().coerceIn(1, 100) else null
     Box(modifier.testTag("export-progress-ring"), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 4.dp.toPx()
@@ -347,9 +347,9 @@ private fun ExportProgressRing(progress: Float, showPercentage: Boolean, modifie
             }
         }
         Text(
-            text = percentage?.let { "$it%" } ?: "Ready",
+            text = percentage?.let { "$it%" } ?: if (isActive) "Preparing" else "Ready",
             color = if (percentage == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
-            fontSize = if (percentage == null) 8.sp else 10.sp,
+            fontSize = if (percentage == null) 6.sp else 10.sp,
             fontWeight = FontWeight.ExtraBold
         )
     }

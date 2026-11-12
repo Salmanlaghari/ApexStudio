@@ -1244,9 +1244,13 @@ private fun GaugeArc(progress: Float, showProgress: Boolean, modifier: Modifier 
             )
         }
         Text(
-            text = if (showProgress) "${(progress * 100).toInt().coerceIn(1, 100)}%" else "Ready",
+            text = when {
+                !showProgress -> "Ready"
+                progress <= 0f -> "Preparing"
+                else -> "${(progress * 100).toInt().coerceIn(1, 100)}%"
+            },
             color = if (showProgress) ApexPalette.NeonCyan else ApexPalette.TextTertiary,
-            fontSize = if (showProgress) 12.sp else 8.sp,
+            fontSize = if (showProgress && progress > 0f) 12.sp else 8.sp,
             fontWeight = FontWeight.ExtraBold
         )
     }

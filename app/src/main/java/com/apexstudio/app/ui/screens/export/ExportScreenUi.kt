@@ -175,6 +175,13 @@ internal fun ExportBrandHeader(onSettings: (() -> Unit)?) {
     }
 }
 
+internal fun exportFrameRateDisclosure(frameRate: Int): String =
+    if (frameRate == 60) {
+        "60 fps output is verified after encoding. No motion interpolation is used."
+    } else {
+        "The selected fps is an output target. No motion interpolation is used."
+    }
+
 @Composable
 internal fun ExportPrimarySettingsRows(
     resolution: String,
@@ -217,12 +224,19 @@ internal fun ExportPrimarySettingsRows(
         ExportSettingPickerRow(
             badge = "FPS",
             value = "$frameRate FPS",
-            subtitle = "Smooth motion",
+            subtitle = if (frameRate == 60) "Verified after encoding" else "Output rate target",
             options = fpsOptions,
             selected = "$frameRate FPS",
             enabled = enabled,
             testTag = "export-frame-rate-setting",
             onSelect = { onFrameRateSelected(it.substringBefore(' ').toInt()) }
+        )
+        Text(
+            exportFrameRateDisclosure(frameRate),
+            modifier = Modifier.padding(horizontal = 4.dp),
+            color = ApexPalette.TextSecondary,
+            fontSize = 9.sp,
+            maxLines = 2
         )
         ExportSettingPickerRow(
             badge = "FILE",

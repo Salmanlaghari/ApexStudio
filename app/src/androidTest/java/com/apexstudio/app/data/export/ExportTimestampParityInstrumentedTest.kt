@@ -223,6 +223,94 @@ class ExportTimestampParityInstrumentedTest {
         }
     }
 
+    @Test
+    fun selectedAndProjectExportsMeetVerified60FpsCadence() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val engine = ExportEngine(context)
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "cfr-60fps-source-$id.mp4")
+        val selectedName = "cfr-60fps-selected-$id.mp4"
+        val projectName = "cfr-60fps-project-$id.mp4"
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val clipDurationMs = 1_800L
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertEquals("Fixture must contain 60 constant-rate source samples", 60, sourceTrack.presentationTimesUs.size)
+            assertTrue("Fixture must be 30 fps", sourceTrack.maxGapUs in 33_000L..34_000L)
+            assertTrue("Fixture must retain its audio track", hasTrack(source, "audio/"))
+
+            engine.startExport(
+                Uri.fromFile(source).toString(),
+                ExportEngine.ExportConfig(
+                    resolution = "720p",
+                    fps = 60,
+                    aspectRatio = "16:9",
+                    trimEndMs = clipDurationMs
+                ),
+                selectedName
+            )
+            val selectedResult = awaitTerminalState(engine)
+            assertNull("Selected 60 fps export must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(selectedResult.outputUri).path))
+            val selectedTrack = readVideoTrack(selectedOutput!!)
+            assertOutputTiming(
+                label = "selected 60 fps export",
+                output = selectedTrack,
+                expectedDurationUs = clipDurationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            assertActual60FpsCadence("selected export", selectedTrack, clipDurationMs * 1_000L)
+
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
+            val clips = (0..1).map { index ->
+                MediaClip(
+                    id = "cfr-60fps-$id-$index",
+                    name = "30 fps CFR fixture $index",
+                    uri = Uri.fromFile(source).toString(),
+                    durationMs = sourceDurationMs,
+                    trimEndMs = clipDurationMs
+                )
+            }
+            val plan = ProjectCompositionTimeline.build(clips)
+            assertEquals("Two 1.8-second clips must form a 3.6-second project", 3_600L, plan.durationMs)
+
+            engine.startProjectExport(
+                clips = clips,
+                config = ExportEngine.ExportConfig(resolution = "720p", fps = 60, aspectRatio = "16:9"),
+                outputFileName = projectName
+            )
+            val projectResult = awaitTerminalState(engine)
+            assertNull("Whole-project 60 fps export must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
+            val projectTrack = readVideoTrack(projectOutput!!)
+            assertOutputTiming(
+                label = "whole-project 60 fps export",
+                output = projectTrack,
+                expectedDurationUs = plan.durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            assertActual60FpsCadence("whole-project export", projectTrack, plan.durationMs * 1_000L)
+        } finally {
+            instrumentation.runOnMainSync { engine.release() }
+            source.delete()
+            selectedOutput?.delete()
+            projectOutput?.delete()
+            File(outputDir, selectedName).delete()
+            File(outputDir, projectName).delete()
+            File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
+            File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
     private suspend fun awaitTerminalState(engine: ExportEngine): ExportEngine.ExportProgressState =
         withTimeout(180_000L) {
             engine.exportState.first { it.error != null || it.outputUri != null }
@@ -281,6 +369,22 @@ class ExportTimestampParityInstrumentedTest {
                 nearestDistanceUs <= anchorToleranceUs
             )
         }
+    }
+
+    private fun assertActual60FpsCadence(label: String, output: VideoTrack, expectedDurationUs: Long) {
+        val timestamps = output.presentationTimesUs
+        val expectedSamples = (expectedDurationUs * 60L + 999_999L) / 1_000_000L
+        assertTrue(
+            "$label must contain approximately $expectedSamples samples at 60 fps; got ${timestamps.size}",
+            timestamps.size.toLong() in (expectedSamples - 1L)..(expectedSamples + 1L)
+        )
+        assertTrue("$label must expose positive video track duration", output.videoTrackDurationUs > 0L)
+        val averageFps = timestamps.size * 1_000_000.0 / output.videoTrackDurationUs
+        assertTrue("$label encoded average must be 60 fps, got $averageFps", averageFps in 59.5..60.5)
+        val intervals = timestamps.zipWithNext { first, second -> second - first }
+        assertTrue("$label must contain timestamp intervals", intervals.isNotEmpty())
+        assertTrue("$label has an interval shorter than the 60 fps cadence", intervals.minOrNull()!! >= 12_500L)
+        assertTrue("$label has a gap too large for 60 fps: ${intervals.maxOrNull()} us", intervals.maxOrNull()!! <= 25_000L)
     }
 
     private fun hasTrack(file: File, mimePrefix: String): Boolean {

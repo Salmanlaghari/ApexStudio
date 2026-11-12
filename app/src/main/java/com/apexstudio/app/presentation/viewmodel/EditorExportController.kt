@@ -487,7 +487,11 @@ fun EditorViewModel.startPhotoExport(
             // Phase 4: Ken Burns motion bakes into the still-video when enabled.
             try {
                 tempVideo = PhotoVideoEncoder.encodeStillImage(
-                    ctx, bitmap, trimmedMs, kenBurns = clip.photoEdit.kenBurns
+                    ctx,
+                    bitmap,
+                    trimmedMs,
+                    kenBurns = clip.photoEdit.kenBurns,
+                    frameRate = fps
                 ) ?: throw IllegalStateException("Could not encode photo video")
             } finally {
                 bitmap.recycle()

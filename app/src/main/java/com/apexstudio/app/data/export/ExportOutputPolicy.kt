@@ -38,16 +38,22 @@ internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
 
 /**
  * Media3 1.11.x can stall muxing when continuous audio crosses a long video-sample gap.
- * Repeat the last image during gaps so the video track continues advancing; this is a
- * best-effort encoder request and the timeout policy still explains unsupported devices.
+ * Below 60 fps keep the existing long-gap fill. At 60 fps and above, request repeats at
+ * the target frame interval so lower-rate input can produce output samples between source
+ * frames. The encoder request is best effort; the final muxed sample cadence is validated.
  */
 internal const val EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US = 100_000L
+
+internal fun exportRepeatPreviousFrameIntervalUs(requestedFps: Int): Long {
+    val fps = effectiveExportFrameRate(requestedFps)
+    return if (fps >= 60) (1_000_000L + fps / 2L) / fps else EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US
+}
 
 /** Encoder settings shared by selected-video and sequential project exports. */
 internal fun exportVideoEncoderSettings(config: ExportEngine.ExportConfig): VideoEncoderSettings =
     VideoEncoderSettings.Builder()
         .setBitrate(exportTargetBitrate(config))
-        .setRepeatPreviousFrameIntervalUs(EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US)
+        .setRepeatPreviousFrameIntervalUs(exportRepeatPreviousFrameIntervalUs(config.fps))
         .build()
 
 /**

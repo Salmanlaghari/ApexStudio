@@ -1893,12 +1893,20 @@ class ExportEngine(private val context: Context) {
             )
             if (mismatch != null) throw IllegalStateException(mismatch)
         }
+        val warning = audit.warning
+        if (config.fps == 60 && warning != null) throw IllegalStateException(warning)
         diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
-        audit.warning
+        warning
     } catch (failure: Exception) {
         diagnostics?.stage("encoded_output_validation_failed", "failure=${failure.javaClass.simpleName}")
         if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
             throw IllegalStateException("8K export was blocked because its final video format could not be verified.", failure)
+        }
+        if (config.fps == 60) {
+            throw IllegalStateException(
+                failure.message ?: "The final encoded video could not be verified at 60 fps.",
+                failure
+            )
         }
         Log.w(TAG, "Could not validate encoded export output", failure)
         "Export finished, but its encoded video stream could not be validated."

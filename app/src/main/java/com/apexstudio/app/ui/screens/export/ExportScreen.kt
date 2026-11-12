@@ -278,13 +278,13 @@ fun ExportScreen(
                                 CompactResolutionPill(label, sub, selectedAspect == label, !export.isExporting, { vm.updateExport { it.copy(aspectRatio = label) } }, Modifier.weight(1f))
                             }
                         }
-                        Text("MAX FPS • ${selectedFps.toInt()} fps", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                        Text("OUTPUT FPS • ${selectedFps.toInt()} fps", color = ApexPalette.TextSecondary, fontSize = 10.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             for (fps in listOf(24, 30, 60, 90, 120)) {
                                 CompactExportChoice("$fps", selectedFps.toInt() == fps, !export.isExporting) { vm.updateExport { it.copy(frameRate = fps) } }
                             }
                         }
-                        Text("FPS is an output ceiling; no frame interpolation.", color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
+                        Text(exportFrameRateDisclosure(selectedFps.toInt()), color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
                     }
                 }
 
@@ -517,8 +517,8 @@ fun ExportScreen(
                 }
             }
 
-            Text("FPS is an output ceiling: higher-rate source frames can be dropped; lower-rate sources are not interpolated.", color = ApexPalette.TextSecondary, fontSize = 10.sp)
-            SectionLabel("MAXIMUM OUTPUT FPS")
+            Text(exportFrameRateDisclosure(selectedFps.toInt()), color = ApexPalette.TextSecondary, fontSize = 10.sp)
+            SectionLabel("OUTPUT FRAME RATE")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp

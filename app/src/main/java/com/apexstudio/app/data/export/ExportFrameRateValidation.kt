@@ -37,11 +37,7 @@ internal fun inspectSourceVideoFormat(context: Context, inputUri: String): Sourc
     }
 }
 
-/**
- * Facts read from the encoded video track. Sample count and timestamp gaps describe
- * the actual muxed stream; the CFR count is only a requested-rate reference, because
- * source cadence/VFR and intentional frame-rate conversion can produce fewer samples.
- */
+/** Facts read from actual muxed video samples; requested 60 fps is checked as a cadence contract. */
 internal data class EncodedFrameRateAudit(
     val sampleCount: Int,
     val firstPresentationTimeUs: Long?,
@@ -53,6 +49,7 @@ internal data class EncodedFrameRateAudit(
     val negativeTimestampCount: Int,
     val largeTimestampGapCount: Int,
     val maxTimestampGapUs: Long,
+    val minPositiveTimestampGapUs: Long,
     val expectedCfrSampleCount: Long?,
     val encodedAverageFps: Double?,
     val requestedFps: Int,
@@ -62,11 +59,37 @@ internal data class EncodedFrameRateAudit(
     val videoWidth: Int? = null,
     val videoHeight: Int? = null
 ) {
+    /** Null for other targets; 60 fps must be verified from final sample timestamps. */
+    val strict60FpsCadenceError: String?
+        get() {
+            if (requestedFps != 60) return null
+            val average = encodedAverageFps
+                ?: return "The final video could not be verified at 60 fps because its duration is unavailable."
+            val expected = expectedCfrSampleCount
+                ?: return "The final video could not be verified at 60 fps because its sample count is unavailable."
+            val targetIntervalUs = 1_000_000.0 / 60.0
+            val minimumSamples = (expected - 1L).coerceAtLeast(1L)
+            val maximumSamples = expected + 1L
+            val minimumGapUs = (targetIntervalUs * 0.75).toLong()
+            val maximumGapUs = ceil(targetIntervalUs * 1.5).toLong()
+            val cadenceIsVerified = sampleCount.toLong() in minimumSamples..maximumSamples &&
+                average in 59.5..60.5 &&
+                sampleCount > 1 &&
+                minPositiveTimestampGapUs >= minimumGapUs &&
+                maxTimestampGapUs <= maximumGapUs
+            if (cadenceIsVerified) return null
+            val measured = "%.2f".format(java.util.Locale.ROOT, average)
+            return "The final video did not meet the requested 60 fps cadence " +
+                "(measured ${measured} fps; PTS gaps ${minPositiveTimestampGapUs}–${maxTimestampGapUs} µs). " +
+                "Try 30 fps or a different output resolution."
+        }
+
     val warning: String?
         get() = when {
             sampleCount <= 0 -> "The exported file has no readable video frames."
             duplicateTimestampCount > 0 || negativeTimestampCount > 0 ->
                 "The exported video has invalid frame timestamps."
+            strict60FpsCadenceError != null -> strict60FpsCadenceError
             transformerFrameCountDelta != null && kotlin.math.abs(transformerFrameCountDelta) >
                 maxOf(2L, (sampleCount * 0.02).roundToLong()) ->
                 "The exported video frame count differs from the renderer's report."
@@ -115,6 +138,7 @@ internal fun auditEncodedFrameTimestamps(
     var duplicates = 0
     var largeGaps = 0
     var maxGap = 0L
+    var minPositiveGap = Long.MAX_VALUE
     val targetFps = requestedFps.coerceIn(24, 120)
     val targetIntervalUs = 1_000_000.0 / targetFps
     for (index in 1 until presentationTimes.size) {
@@ -122,6 +146,7 @@ internal fun auditEncodedFrameTimestamps(
         if (gap == 0L) duplicates++
         else if (gap > 0L) {
             maxGap = maxOf(maxGap, gap)
+            minPositiveGap = minOf(minPositiveGap, gap)
             if (gap > targetIntervalUs * 1.5) largeGaps++
         }
     }
@@ -143,6 +168,7 @@ internal fun auditEncodedFrameTimestamps(
         negativeTimestampCount = negative,
         largeTimestampGapCount = largeGaps,
         maxTimestampGapUs = maxGap,
+        minPositiveTimestampGapUs = minPositiveGap.takeIf { it != Long.MAX_VALUE } ?: 0L,
         expectedCfrSampleCount = expected,
         encodedAverageFps = averageFps,
         requestedFps = fps ?: 0,

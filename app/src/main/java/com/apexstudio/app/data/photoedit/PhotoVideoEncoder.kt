@@ -23,48 +23,49 @@ import java.io.File
  * video inputs) can export photo clips with text overlays, stickers,
  * transitions, etc. exactly like video clips.
  *
- * The bitmap is repeated at 10 fps. Duration is quantized to complete frames;
- * the codec/muxer may apply its own final-sample duration behavior.
+ * The bitmap is sampled at the requested export frame rate. Duration is quantized to complete
+ * frames; the codec/muxer may apply its own final-sample duration behavior.
  */
 object PhotoVideoEncoder {
 
     private const val TAG = "PhotoVideoEncoder"
     private const val MIME = MediaFormat.MIMETYPE_VIDEO_AVC
-    private const val FRAME_RATE = 10
-    private const val FRAME_DURATION_US = 1_000_000L / FRAME_RATE
+    private const val DEFAULT_FRAME_RATE = 10
     private const val I_FRAME_INTERVAL_S = 1
     private const val MAX_DURATION_MS = 24L * 60L * 60L * 1000L
 
-    // Bitrate scales with resolution (~0.5 bits/pixel/frame at 10fps) to avoid
-    // generation loss in the intermediate before Transformer re-encodes.
+    // Bitrate scales with resolution (~0.5 bits/pixel/frame) to avoid generation
+    // loss in the intermediate before Transformer re-encodes.
     // Clamped to 40 Mbps (typical MediaCodec H.264 ceiling).
-    private fun bitrateFor(width: Int, height: Int): Int =
-        (width.toLong() * height.toLong() * FRAME_RATE / 2L).toInt()
+    private fun bitrateFor(width: Int, height: Int, frameRate: Int): Int =
+        (width.toLong() * height.toLong() * frameRate / 2L).toInt()
             .coerceAtLeast(2_000_000)
             .coerceAtMost(40_000_000)
 
     /** Return null for invalid or impractically long requests; round valid durations up to frames. */
-    internal fun frameCountForDurationMs(durationMs: Long): Int? {
-        if (durationMs <= 0L || durationMs > MAX_DURATION_MS) return null
+    internal fun frameCountForDurationMs(durationMs: Long, frameRate: Int = DEFAULT_FRAME_RATE): Int? {
+        if (durationMs <= 0L || durationMs > MAX_DURATION_MS || frameRate !in 1..120) return null
         val wholeSeconds = durationMs / 1000L
         val remainingMs = durationMs % 1000L
-        val frames = wholeSeconds * FRAME_RATE +
-            (remainingMs * FRAME_RATE + 999L) / 1000L
+        val frames = wholeSeconds * frameRate +
+            (remainingMs * frameRate + 999L) / 1000L
         return frames.takeIf { it in 1L..Int.MAX_VALUE.toLong() }?.toInt()
     }
 
     /**
      * Encode [bitmap] into a temp .mp4 in the app cache dir lasting approximately
-     * [durationMs] (quantized to 100 ms frames). Returns the finalized file, or null on failure.
+     * [durationMs] (quantized to [frameRate]). Returns the finalized file, or null on failure.
      */
     suspend fun encodeStillImage(
         context: Context,
         bitmap: Bitmap,
         durationMs: Long,
         /** Phase 4: Ken Burns pan/zoom — animates the still into motion. */
-        kenBurns: Boolean = false
+        kenBurns: Boolean = false,
+        frameRate: Int = DEFAULT_FRAME_RATE
     ): File? = withContext(Dispatchers.Default) {
-        val frameCount = frameCountForDurationMs(durationMs) ?: return@withContext null
+        val frameCount = frameCountForDurationMs(durationMs, frameRate) ?: return@withContext null
+        val frameDurationUs = 1_000_000L / frameRate
         val coroutineContext = currentCoroutineContext()
         var codec: MediaCodec? = null
         var muxer: MediaMuxer? = null
@@ -85,8 +86,8 @@ object PhotoVideoEncoder {
 
             val format = MediaFormat.createVideoFormat(MIME, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar)
-                setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height))
-                setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height, frameRate))
+                setInteger(MediaFormat.KEY_FRAME_RATE, frameRate)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL_S)
             }
             codec = MediaCodec.createEncoderByType(MIME)
@@ -144,7 +145,7 @@ object PhotoVideoEncoder {
                         val frameYuv = yuvForFrame(framesQueued)
                         check(inputBuffer.remaining() >= frameYuv.size) { "Codec input buffer is too small" }
                         inputBuffer.put(frameYuv)
-                        val ptsUs = framesQueued.toLong() * FRAME_DURATION_US
+                        val ptsUs = framesQueued.toLong() * frameDurationUs
                         val lastFrame = framesQueued == frameCount - 1
                         codec!!.queueInputBuffer(
                             inputIndex,

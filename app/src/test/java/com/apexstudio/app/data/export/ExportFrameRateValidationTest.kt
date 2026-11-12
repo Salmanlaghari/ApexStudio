@@ -119,4 +119,53 @@ class ExportFrameRateValidationTest {
             audit.warning
         )
     }
+
+    @Test
+    fun `accepts measured 60 fps constant cadence`() {
+        val audit = auditEncodedFrameTimestamps(
+            timestampsUs = (0 until 60).map { it * 16_667L },
+            outputDurationMs = 1_000L,
+            requestedFps = 60
+        )
+
+        assertEquals(60, audit.sampleCount)
+        assertEquals(60.0, audit.encodedAverageFps!!, 0.1)
+        assertEquals(16_667L, audit.maxTimestampGapUs)
+        assertEquals(16_667L, audit.minPositiveTimestampGapUs)
+        assertNull(audit.strict60FpsCadenceError)
+        assertNull(audit.warning)
+    }
+
+    @Test
+    fun `rejects output below requested 60 fps`() {
+        val audit = auditEncodedFrameTimestamps(
+            timestampsUs = (0 until 30).map { it * 33_333L },
+            outputDurationMs = 1_000L,
+            requestedFps = 60
+        )
+
+        assertEquals(30.0, audit.encodedAverageFps!!, 0.1)
+        assertTrue(requireNotNull(audit.warning).contains("did not meet the requested 60 fps cadence"))
+    }
+
+    @Test
+    fun `rejects large VFR gap even when average sample count equals 60 fps`() {
+        var timeUs = 0L
+        val timestamps = buildList {
+            add(timeUs)
+            for (index in 1 until 60) {
+                timeUs += if (index == 30) 50_000L else 16_000L
+                add(timeUs)
+            }
+        }
+        val audit = auditEncodedFrameTimestamps(
+            timestampsUs = timestamps,
+            outputDurationMs = 1_000L,
+            requestedFps = 60
+        )
+
+        assertEquals(60.0, audit.encodedAverageFps!!, 0.1)
+        assertEquals(50_000L, audit.maxTimestampGapUs)
+        assertTrue(requireNotNull(audit.warning).contains("did not meet the requested 60 fps cadence"))
+    }
 }

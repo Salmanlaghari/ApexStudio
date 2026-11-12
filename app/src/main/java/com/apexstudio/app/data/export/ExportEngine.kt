@@ -1060,6 +1060,9 @@ class ExportEngine(private val context: Context) {
                 require(config.chromaKeySettings == null || config.chromaKeySettings.hasValidChromaParameters()) {
                     "Invalid chroma-key parameters; export stopped rather than changing the keyed result."
                 }
+                require(config.chromaKeySettings?.enabled != true) {
+                    "Apply chroma key and its wallpaper to the clip before exporting."
+                }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))
                 if (config.trimStartMs > 0L || (config.trimEndMs > 0L && config.trimEndMs > config.trimStartMs)) {

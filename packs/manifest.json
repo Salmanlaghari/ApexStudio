@@ -191,6 +191,23 @@
       "itemCount": 30,
       "payloadType": "fx_profiles_v1",
       "status": "available"
+    },
+    {
+      "id": "apexstudio-wallpapers-vol-01",
+      "name": "ApexStudio Wallpapers · Vol. 01",
+      "description": "10 original downloadable 1920×1080 backgrounds: abstract, city, studio, space, and nature.",
+      "category": "backgrounds",
+      "version": 1,
+      "versionName": "1.0",
+      "sizeBytes": 793539,
+      "url": "https://raw.githubusercontent.com/Salmanlaghari/ApexStudio/main/remote-assets/backgrounds/apexstudio-wallpapers-vol-01.zip",
+      "sha256": "33647adc79203ad52d01441890de45aaebaa9775bddc4012d4fdcc2f13250831",
+      "entrySha256": "012d5b7ec33dcc033176c407876b4c799a3367a2688af73f855810a4ec0d7146",
+      "minAppVersion": "1.0.0",
+      "entry": "manifest.json",
+      "itemCount": 10,
+      "payloadType": "wallpaper_images_v1",
+      "status": "available"
     }
   ],
   "updatedAt": "2026-11-12"

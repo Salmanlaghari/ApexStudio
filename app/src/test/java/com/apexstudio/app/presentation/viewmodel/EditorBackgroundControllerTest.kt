@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
+import com.apexstudio.app.domain.model.ChromaKeySettings
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import org.junit.Assert.assertFalse
@@ -30,6 +31,14 @@ class EditorBackgroundControllerTest {
     @Test
     fun `result is rejected after clip source changes`() {
         assertFalse(backgroundApplyCanCommit(original, original.copy(uri = "content://media/replacement.mp4")))
+    }
+
+    @Test
+    fun `result is rejected after chroma settings change`() {
+        assertFalse(backgroundApplyCanCommit(
+            original,
+            original.copy(chromaKeySettings = ChromaKeySettings(enabled = true, similarity = 0.7f))
+        ))
     }
 
     @Test

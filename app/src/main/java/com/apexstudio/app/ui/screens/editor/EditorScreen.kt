@@ -323,17 +323,6 @@ private fun EditorScreenContent(
         }
     }
 
-    // Phase 3: custom background image picker for BG Remover panel.
-    val bgImagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            vm.updateChromaKeySettings(
-                vm.state.value.chromaKeySettings.copy(customBackgroundUri = it.toString())
-            )
-        }
-    }
-
     // PR-G: replacement-image picker for the per-clip Background panel.
     // The picked image is stored on the panel state (pending Apply),
     // never applied immediately.
@@ -796,7 +785,6 @@ private fun EditorScreenContent(
         state.adjustments,
         state.fxIntensity,
         state.fxSpeed,
-        state.chromaKeySettings,
         state.gpuFilterCompareMode,
         state.lutCompareMode
     ) {
@@ -826,8 +814,6 @@ private fun EditorScreenContent(
                 }
                 clip.videoCrop.takeUnless { it.isFullFrame }
                     ?.let { com.apexstudio.app.data.effect.VideoCropGlEffect.fromSettings(it) }
-                    ?.let(::add)
-                com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(state.chromaKeySettings)
                     ?.let(::add)
                 com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(clip.projectVideoEffectId)
                     ?.let(::add)
@@ -1751,7 +1737,7 @@ private fun EditorScreenContent(
     if (activeEditorPanel == EditorPanelKey.VOICE_RECORDER) VoiceRecorderOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.AR_FILTER) ArFilterPanelOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.COVER) CoverPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
-    if (activeEditorPanel == EditorPanelKey.CHROMA_KEY) ChromaKeyPanelOverlay(state = state, vm = vm, mediaPicker = mediaPicker)
+    if (activeEditorPanel == EditorPanelKey.CHROMA_KEY) ChromaKeyPanelOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.MASK) MaskPanelOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.TEXT_MASK) TextMaskPanelOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.OVERLAY_PROPERTIES) OverlayPropertiesPanelOverlay(state = state, vm = vm)
@@ -1774,13 +1760,7 @@ private fun EditorScreenContent(
     })
     if (activeEditorPanel == EditorPanelKey.ADJUST_PACK) AdjustPackPanelOverlay(state = state, vm = vm)
     if (activeEditorPanel == EditorPanelKey.COLOR_SCOPES) ColorScopesPanelOverlay(state = state, vm = vm)
-    if (activeEditorPanel == EditorPanelKey.BG_REMOVER) BgRemoverPanelOverlay(
-        state = state,
-        vm = vm,
-        onPickCustomBackground = {
-            bgImagePickerLauncher.launch("image/*")
-        }
-    )
+    if (activeEditorPanel == EditorPanelKey.BG_REMOVER) BgRemoverPanelOverlay(state = state, vm = vm)
     // PR-G: per-clip Background replace (MediaPipe segmentation).
     if (activeEditorPanel == EditorPanelKey.BACKGROUND_REPLACE) BackgroundReplacePanelOverlay(
         state = state,

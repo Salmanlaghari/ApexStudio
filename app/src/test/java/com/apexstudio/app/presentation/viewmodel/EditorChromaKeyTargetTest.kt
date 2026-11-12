@@ -31,17 +31,20 @@ class EditorChromaKeyTargetTest {
         assertFalse(vm.state.value.activeFxId == "3d_chromakey")
     }
 
-    @Test fun `chroma key only updates the explicitly selected visual clip`() {
+    @Test fun `chroma key only updates an explicitly selected video clip`() {
         val vm = EditorViewModel()
         val project = Project("p", "Project", 5_000L, clips = listOf(video, image))
-        vm._state.value = vm.state.value.copy(project = project, selectedClipId = image.id)
+        vm._state.value = vm.state.value.copy(project = project, selectedClipId = video.id)
         val requested = ChromaKeySettings(enabled = true, similarity = 0.63f)
 
         assertTrue(vm.updateChromaKeySettings(requested))
         val clips = vm.state.value.project!!.clips
-        assertEquals(video, clips[0])
-        assertEquals(requested, clips[1].chromaKeySettings)
+        assertEquals(requested, clips[0].chromaKeySettings)
+        assertEquals(image, clips[1])
         assertEquals(requested, vm.state.value.chromaKeySettings)
-        assertNull(clips[0].chromaKeySettings)
+
+        vm.selectClip(image.id)
+        assertFalse(vm.updateChromaKeySettings(requested))
+        assertEquals(image, vm.state.value.project!!.clips[1])
     }
 }

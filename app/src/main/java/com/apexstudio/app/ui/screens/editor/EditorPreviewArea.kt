@@ -58,7 +58,6 @@ internal const val LOCKED_EDITOR_PREVIEW_ASPECT = 16f / 9f
 fun VideoPreviewArea(
     exoPlayer: ExoPlayer? = null,
     previewPlayer: Player? = exoPlayer,
-    chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings = com.apexstudio.app.domain.model.ChromaKeySettings(),
     // PiP overlay clips (V2 track). Rendered by the interactive
     // PipOverlayCanvas: tap to select, drag to move, pinch to
     // scale/rotate, with delete + resize handles on the selection.
@@ -201,7 +200,7 @@ fun VideoPreviewArea(
     val pausedWorkspaceEffectSnapshot = workspaceEffectPausedRefreshSnapshot(workspaceEffects, isPlaying)
     val editorGradeEffects = LocalEditorPreviewEffects.current
     LaunchedEffect(
-        exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId, chromaKeySettings,
+        exoPlayer, videoCrop, faceCropConfig, projectVideoEffectId,
         workspaceEffectBinding.renderStageIds, pausedWorkspaceEffectSnapshot, editorGradeEffects, photoClip?.id,
         gpuFilterStageKey, gpuFilterPreset
     ) {
@@ -227,7 +226,6 @@ fun VideoPreviewArea(
                 } else emptyList()
                 val geometryAndWorkspaceEffects = listOfNotNull(
                     dynamicCrop ?: VideoCropGlEffect.fromSettings(videoCrop),
-                    com.apexstudio.app.data.effect.ChromaKeyGlEffect.fromSettings(chromaKeySettings),
                     com.apexstudio.app.data.template.ProjectVideoPresets.colorEffect(projectVideoEffectId),
                     *workspaceEffectBinding.renderEffects.toTypedArray()
                 )
@@ -429,14 +427,6 @@ fun VideoPreviewArea(
                     config = gpuFilterConfig,
                     compareMode = gpuFilterCompareMode,
                     splitPosition = gpuFilterSplitPosition,
-                    modifier = mediaContentModifier
-                )
-            }
-
-            // Real-time 3D Chroma Key Live Overlay
-            if (chromaKeySettings.enabled) {
-                ChromaKeyPreviewOverlay(
-                    settings = chromaKeySettings,
                     modifier = mediaContentModifier
                 )
             }

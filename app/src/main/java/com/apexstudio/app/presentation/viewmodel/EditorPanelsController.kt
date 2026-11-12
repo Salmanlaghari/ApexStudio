@@ -111,7 +111,7 @@ fun EditorViewModel.saveCoverWords(text: String, style: String) {
 internal fun EditorState.selectedChromaKeyTarget(): MediaClip? {
     val selectedId = selectedClipId ?: return null
     val clip = project?.clips?.firstOrNull { it.id == selectedId } ?: return null
-    return clip.takeIf { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY }
+    return clip.takeIf { it.type == ClipType.VIDEO }
 }
 
 fun EditorViewModel.openChromaKeyPanel() = _state.update { it.copy(chromaKeyPanelOpen = true) }
@@ -138,8 +138,6 @@ fun EditorViewModel.updateChromaKeySettings(settings: com.apexstudio.app.domain.
         applied = true
         state.copy(
             chromaKeySettings = settings,
-            activeFxId = if (settings.enabled) "3d_chromakey" else state.activeFxId,
-            fxIntensity = if (settings.enabled) 1.0f else state.fxIntensity,
             project = state.project?.copy(clips = updatedClips)
         )
     }

@@ -1,0 +1,118 @@
+{
+  "license": "ApexStudio original procedural artwork; no third-party assets.",
+  "packId": "apexstudio-wallpapers-vol-01",
+  "packVersion": 1,
+  "schemaVersion": 1,
+  "wallpapers": [
+    {
+      "assetPath": "wallpapers/cyber-portal.jpg",
+      "category": "Abstract",
+      "height": 1080,
+      "id": "cyber-portal",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Cyber Portal",
+      "sha256": "0b8aa4082e9be7ab4d3f7ccff147e44d79aec74522a34801bd22c851092894cb",
+      "sizeBytes": 131613,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/neon-city.jpg",
+      "category": "City",
+      "height": 1080,
+      "id": "neon-city",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Neon City",
+      "sha256": "f450b26224cce5573ce07bed51376e9db14d98196e965bec9c459339309522d0",
+      "sizeBytes": 101425,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/virtual-studio.jpg",
+      "category": "Studio",
+      "height": 1080,
+      "id": "virtual-studio",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Virtual Studio",
+      "sha256": "063eb24735f7addedf6707904919328d6f841d697dc2d302ccd9de30c279bca5",
+      "sizeBytes": 83902,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/deep-space.jpg",
+      "category": "Space",
+      "height": 1080,
+      "id": "deep-space",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Deep Space",
+      "sha256": "01d5f7b2dde3b5c8801b09def8093e4a008c4d57646a59905c45eca3ede66e34",
+      "sizeBytes": 57679,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/matrix-grid.jpg",
+      "category": "Abstract",
+      "height": 1080,
+      "id": "matrix-grid",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Matrix Grid",
+      "sha256": "f05a12d221410985aa2d20e5ef18428658cebedf0b7257bcb4b2bc02d61edc71",
+      "sizeBytes": 127484,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/aurora-borealis.jpg",
+      "category": "Nature",
+      "height": 1080,
+      "id": "aurora-borealis",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Aurora Borealis",
+      "sha256": "47e195fa346f4a48742a724e2bb76c6e58d45bf8c3cf788c30c365adf985ac2f",
+      "sizeBytes": 37944,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/ocean-dusk.jpg",
+      "category": "Nature",
+      "height": 1080,
+      "id": "ocean-dusk",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Ocean Dusk",
+      "sha256": "64ea3cea99658394e3add5b805292e8ae7149b7c7bae393eb5566685fb115dd3",
+      "sizeBytes": 77692,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/sandstone-sunrise.jpg",
+      "category": "Nature",
+      "height": 1080,
+      "id": "sandstone-sunrise",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Sandstone Sunrise",
+      "sha256": "3984b0e89652ae567cfa6c842930faea6d495f6e53378d1805948f72ced8603e",
+      "sizeBytes": 58335,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/cinema-bokeh.jpg",
+      "category": "Studio",
+      "height": 1080,
+      "id": "cinema-bokeh",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Cinema Bokeh",
+      "sha256": "9c823aacae0429f4525d51ad4ec0f7acd26b84a84f6dca451625c40fdf3a92a2",
+      "sizeBytes": 52192,
+      "width": 1920
+    },
+    {
+      "assetPath": "wallpapers/rose-gold.jpg",
+      "category": "Abstract",
+      "height": 1080,
+      "id": "rose-gold",
+      "license": "ApexStudio original procedural artwork; no third-party assets.",
+      "name": "Rose Gold",
+      "sha256": "5a4a78ef931b4957bbb7ef2bac692c78fffae00d6cb0e5b4960ce01996f118d1",
+      "sizeBytes": 62854,
+      "width": 1920
+    }
+  ]
+}

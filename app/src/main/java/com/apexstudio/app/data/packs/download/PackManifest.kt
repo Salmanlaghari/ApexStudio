@@ -135,10 +135,12 @@ object PackManifestRepo {
             return@withContext remote
         }
 
+        val refreshError = lastFetchError
         try {
             val cached = cacheFile(context).takeIf { it.exists() }?.readText()
                 ?: run {
-                    lastFetchError = "Couldn't load the pack catalog — check your connection and retry"
+                    lastFetchError = refreshError?.let { "$it. No cached pack catalog is available." }
+                        ?: "Couldn't load the pack catalog — check your connection and retry"
                     return@withContext PackManifestFile()
                 }
             // Serving the cache after a failed refresh: lastFetchError already
@@ -146,7 +148,9 @@ object PackManifestRepo {
             json.decodeFromString<PackManifestFile>(cached)
         } catch (e: Exception) {
             Log.w(TAG, "Manifest cache read failed", e)
-            lastFetchError = "Couldn't load the pack catalog — check your connection and retry"
+            lastFetchError = refreshError?.let {
+                "$it. The cached pack catalog is invalid or unreadable (${e.message ?: "unknown error"})."
+            } ?: "Couldn't load the pack catalog — check your connection and retry"
             PackManifestFile()
         }
     }
@@ -169,6 +173,7 @@ object PackManifestRepo {
         "models" -> "AI Models"
         "camera" -> "Camera & Lenses"
         "stickers" -> "Animated Stickers"
+        "backgrounds" -> "Wallpaper Catalog"
         else -> category.replaceFirstChar { it.uppercase() }
     }
 }

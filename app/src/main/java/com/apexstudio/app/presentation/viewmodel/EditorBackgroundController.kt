@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.data.background.BackgroundReplaceEngine
+import com.apexstudio.app.data.background.WallpaperCatalogRepository
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
@@ -43,7 +44,8 @@ internal data class BackgroundApplyVersion(
     val projectId: String,
     val clipId: String,
     val uri: String,
-    val backgroundReplace: BackgroundReplaceSettings?
+    val backgroundReplace: BackgroundReplaceSettings?,
+    val chromaKeySettings: com.apexstudio.app.domain.model.ChromaKeySettings? = null
 )
 
 /** Pure commit policy: a removed, replaced, restored, or otherwise changed clip is stale. */
@@ -140,14 +142,17 @@ fun EditorViewModel.applyBackgroundReplace(
         )
         return
     }
-    val pendingImageUri = _backgroundUi.value.imageUri ?: settings.imageUri
+    val pickedDifferentImage = _backgroundUi.value.imageUri?.let { it != settings.imageUri } == true
+    val imageAssetId = settings.imageAssetId?.takeUnless { pickedDifferentImage }
+    val pendingImageUri = if (imageAssetId != null) settings.imageUri
+        else _backgroundUi.value.imageUri ?: settings.imageUri
     if (settings.mode == BackgroundReplaceMode.IMAGE &&
-        !isExistingProjectImageSource(project.clips, pendingImageUri)
+        imageAssetId.isNullOrBlank() && !isExistingProjectImageSource(project.clips, pendingImageUri)
     ) {
         _backgroundUi.value = _backgroundUi.value.copy(
             phase = BackgroundPhase.FAILED,
             progress01 = 0f,
-            message = "Choose a replacement image already in this project.",
+            message = "Choose an image from this project or an installed wallpaper.",
         )
         return
     }
@@ -158,14 +163,16 @@ fun EditorViewModel.applyBackgroundReplace(
         projectId = project.id,
         clipId = clip.id,
         uri = clip.uri,
-        backgroundReplace = clip.backgroundReplace
+        backgroundReplace = clip.backgroundReplace,
+        chromaKeySettings = clip.chromaKeySettings
     )
     val sourceUri = clip.backgroundReplace?.sourceUri?.takeIf { it.isNotBlank() } ?: clip.uri
     // Capture pending UI input synchronously. A later panel edit cannot
     // silently change the settings of this already-started request.
     val effective = settings.sanitized().copy(
         sourceUri = sourceUri,
-        imageUri = pendingImageUri
+        imageUri = pendingImageUri,
+        imageAssetId = imageAssetId
     )
     val ctxApp = ctx.applicationContext
 
@@ -178,7 +185,18 @@ fun EditorViewModel.applyBackgroundReplace(
     val job = viewModelScope.launch(Dispatchers.Main.immediate, start = kotlinx.coroutines.CoroutineStart.LAZY) {
         val requestJob = coroutineContext[Job] ?: return@launch
         try {
-            val ready = BackgroundReplaceEngine.isModelReady(ctxApp)
+            val resolvedEffective = if (effective.imageAssetId != null) {
+                val wallpaper = withContext(Dispatchers.IO) {
+                    WallpaperCatalogRepository.resolveInstalledWallpaper(ctxApp, effective.imageAssetId)
+                } ?: throw IllegalStateException("Wallpaper is missing or failed its integrity check. Download it again.")
+                if (!isCurrentBackgroundJob(requestJob)) return@launch
+                effective.copy(
+                    imageUri = wallpaper.uri.toString(),
+                    imageAssetSha256 = wallpaper.asset.sha256.lowercase()
+                )
+            } else effective
+            val needsSegmentationModel = resolvedEffective.chromaKeySettings?.enabled != true
+            val ready = !needsSegmentationModel || BackgroundReplaceEngine.isModelReady(ctxApp)
             if (!isCurrentBackgroundJob(requestJob)) return@launch
             if (!ready) {
                 publishBackgroundState(requestJob) {
@@ -187,8 +205,8 @@ fun EditorViewModel.applyBackgroundReplace(
                 }
                 return@launch
             }
-            if (effective.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
-                effective.imageUri.isNullOrBlank()
+            if (resolvedEffective.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
+                resolvedEffective.imageUri.isNullOrBlank()
             ) {
                 publishBackgroundState(requestJob) {
                     it.copy(phase = BackgroundPhase.FAILED, message = "Pick a background image first.")
@@ -196,7 +214,7 @@ fun EditorViewModel.applyBackgroundReplace(
                 return@launch
             }
 
-            var outputFile = BackgroundReplaceEngine.outputFileFor(ctxApp, clipId, effective)
+            var outputFile = BackgroundReplaceEngine.outputFileFor(ctxApp, clipId, resolvedEffective)
             // Never overwrite a path that may be held by undo/history. A
             // valid deterministic cache entry is reused; a damaged one is
             // left intact and this run gets its own output path.
@@ -207,7 +225,7 @@ fun EditorViewModel.applyBackgroundReplace(
                 )
             }
             if (outputFile.exists() && outputFile.length() > 0L) {
-                finishBackgroundApply(requestJob, version, effective, outputFile)
+                finishBackgroundApply(requestJob, version, resolvedEffective, outputFile)
                 return@launch
             }
 
@@ -219,7 +237,7 @@ fun EditorViewModel.applyBackgroundReplace(
                 BackgroundReplaceEngine.process(
                     ctxApp,
                     sourceUri,
-                    effective,
+                    resolvedEffective,
                     outputFile
                 ) { progress ->
                     // Progress originates on the engine worker. Dispatch it
@@ -233,7 +251,7 @@ fun EditorViewModel.applyBackgroundReplace(
                     }
                 }
             }
-            finishBackgroundApply(requestJob, version, effective, processed)
+            finishBackgroundApply(requestJob, version, resolvedEffective, processed)
         } catch (e: CancellationException) {
             // Cancellation is expected; the cancelling action owns the UI status.
             throw e
@@ -249,6 +267,33 @@ fun EditorViewModel.applyBackgroundReplace(
     }
     backgroundJob = job
     job.start()
+}
+
+/** Bake the selected verified wallpaper and chroma settings into the chosen video clip. */
+fun EditorViewModel.applyChromaKeyBackground(
+    clipId: String,
+    settings: com.apexstudio.app.domain.model.ChromaKeySettings
+) {
+    val wallpaperId = WallpaperCatalogRepository.resolveLegacyId(settings.backgroundType)
+    if (!settings.enabled || wallpaperId == null) {
+        _backgroundUi.value = _backgroundUi.value.copy(
+            phase = BackgroundPhase.FAILED,
+            progress01 = 0f,
+            message = "Enable chroma key and choose a wallpaper from the catalog."
+        )
+        return
+    }
+    // A stale image picked in the separate AI-background sheet must not
+    // override this stable catalog ID.
+    _backgroundUi.value = _backgroundUi.value.copy(imageUri = null)
+    applyBackgroundReplace(
+        clipId,
+        BackgroundReplaceSettings(
+            mode = BackgroundReplaceMode.IMAGE,
+            imageAssetId = wallpaperId,
+            chromaKeySettings = settings.copy(backgroundType = wallpaperId)
+        )
+    )
 }
 
 private fun EditorViewModel.isCurrentBackgroundJob(job: Job): Boolean =
@@ -275,7 +320,7 @@ private suspend fun EditorViewModel.finishBackgroundApply(
     val project = _state.value.project
     val clip = project?.clips?.firstOrNull { it.id == expected.clipId }
     val currentVersion = if (project != null && clip != null) {
-        BackgroundApplyVersion(project.id, clip.id, clip.uri, clip.backgroundReplace)
+        BackgroundApplyVersion(project.id, clip.id, clip.uri, clip.backgroundReplace, clip.chromaKeySettings)
     } else null
     if (!backgroundApplyCanCommit(expected, currentVersion)) {
         backgroundJob = null
@@ -291,6 +336,8 @@ private suspend fun EditorViewModel.finishBackgroundApply(
         current.copy(
             uri = Uri.fromFile(processed).toString(),
             backgroundReplace = effective,
+            chromaKeySettings = null,
+            // The processed output has baked pixels and orientation; the source-space face-crop track no longer applies.
             faceCropTrack = null,
         )
     }
@@ -321,7 +368,7 @@ fun EditorViewModel.restoreOriginalBackground(clipId: String) {
     }
     pushUndo()
     updateClip(clipId) { current ->
-        current.copy(uri = settings.sourceUri, backgroundReplace = null, faceCropTrack = null)
+        current.copy(uri = settings.sourceUri, backgroundReplace = null, chromaKeySettings = null, faceCropTrack = null)
     }
     _backgroundUi.value = _backgroundUi.value.copy(
         phase = BackgroundPhase.IDLE, progress01 = 0f,

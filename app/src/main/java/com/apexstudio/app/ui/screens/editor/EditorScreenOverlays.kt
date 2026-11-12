@@ -986,11 +986,46 @@ fun CoverPanelOverlay(
 @Composable
 fun ChromaKeyPanelOverlay(
     state: EditorState,
-    vm: EditorViewModel,
-    mediaPicker: MediaPickerHelper
+    vm: EditorViewModel
 ) {
     if (!state.chromaKeyPanelOpen) return
-    val targetAvailable = state.selectedChromaKeyTarget() != null
+    val context = LocalContext.current.applicationContext
+    val backgroundUi by vm.backgroundUi.collectAsState()
+    val packs by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsState()
+    val packLoading by com.apexstudio.app.data.packs.download.PackManager.isLoading.collectAsState()
+    val packError by com.apexstudio.app.data.packs.download.PackManager.manifestError.collectAsState()
+    val packItem = packs.firstOrNull {
+        it.pack.id == com.apexstudio.app.data.background.WallpaperCatalogRepository.PACK_ID
+    }
+    var installedWallpapers by remember {
+        mutableStateOf(emptyList<com.apexstudio.app.data.background.InstalledWallpaper>())
+    }
+    var wallpaperLoadGeneration by remember { mutableStateOf(0) }
+    val catalogItemCount = remember(context) {
+        runCatching { com.apexstudio.app.data.background.WallpaperCatalogRepository.bundledCatalog(context).wallpapers.size }
+            .getOrDefault(0)
+    }
+    LaunchedEffect(Unit) {
+        com.apexstudio.app.data.packs.download.PackManager.refreshSync(context)
+    }
+    val wallpaperPackAvailable =
+        packItem?.state is com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded ||
+            packItem?.state is com.apexstudio.app.data.packs.download.PackManager.PackState.UpdateAvailable
+    LaunchedEffect(wallpaperPackAvailable) {
+        val requestGeneration = ++wallpaperLoadGeneration
+        val loaded = if (wallpaperPackAvailable) {
+            withContext(Dispatchers.IO) {
+                com.apexstudio.app.data.background.WallpaperCatalogRepository.installedWallpapers(context)
+            }
+        } else emptyList()
+        if (requestGeneration == wallpaperLoadGeneration) installedWallpapers = loaded
+    }
+    val selectedClip = state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
+    val selectedSettings = selectedClip?.chromaKeySettings
+        ?: selectedClip?.backgroundReplace?.chromaKeySettings
+        ?: state.chromaKeySettings
+    val isApplied = selectedClip?.backgroundReplace?.chromaKeySettings?.enabled == true
+    val targetAvailable = selectedClip?.type == ClipType.VIDEO
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -999,12 +1034,34 @@ fun ChromaKeyPanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-            ChromaKeyPanel(
-                settings = state.chromaKeySettings,
+            WallpaperChromaPanel(
+                settings = selectedSettings,
                 onUpdate = { vm.updateChromaKeySettings(it) },
-                onPickCustomBg = {
-                    mediaPicker.pickSingleMedia.launch("image/*")
+                wallpapers = installedWallpapers,
+                packState = packItem?.state,
+                packLoading = packLoading,
+                packError = packError,
+                packSizeBytes = packItem?.pack?.sizeBytes ?: 0L,
+                catalogItemCount = catalogItemCount,
+                ui = backgroundUi,
+                isApplied = isApplied,
+                onDownloadPack = {
+                    com.apexstudio.app.data.packs.download.PackManager.download(
+                        context,
+                        com.apexstudio.app.data.background.WallpaperCatalogRepository.PACK_ID
+                    )
                 },
+                onRefreshPack = {
+                    com.apexstudio.app.data.packs.download.PackManager.refresh(context)
+                },
+                onRepairPack = {
+                    com.apexstudio.app.data.packs.download.PackManager.reinstall(
+                        context,
+                        com.apexstudio.app.data.background.WallpaperCatalogRepository.PACK_ID
+                    )
+                },
+                onApply = { settings -> selectedClip?.let { vm.applyChromaKeyBackground(it.id, settings) } },
+                onRestoreOriginal = { selectedClip?.let { vm.restoreOriginalBackground(it.id) } },
                 onClose = { vm.closeChromaKeyPanel() },
                 targetAvailable = targetAvailable
             )
@@ -1690,8 +1747,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             onEffectPreviewFailure = { vm.setPlayerError(it); vm.setPlaying(false) },
             compositionAspectRatio = previewStageAspectRatio,
             firstFrameRendered = firstFrameRendered,
-            chromaKeySettings = if (isTransitionPreview) com.apexstudio.app.domain.model.ChromaKeySettings()
-                else state.chromaKeySettings,
             overlayClips = overlayClips,
             selectedOverlayClipId = state.selectedOverlayClipId,
             overlayPlayer = overlayPlayer,
@@ -2256,8 +2311,7 @@ fun ColorScopesPanelOverlay(
 @Composable
 fun BgRemoverPanelOverlay(
     state: EditorState,
-    vm: EditorViewModel,
-    onPickCustomBackground: () -> Unit
+    vm: EditorViewModel
 ) {
     if (!state.bgRemoverPanelOpen) return
     Box(
@@ -2268,10 +2322,15 @@ fun BgRemoverPanelOverlay(
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
-            BgRemoverPanel(
-                chromaKeySettings = state.chromaKeySettings,
-                onUpdateChromaKey = { vm.updateChromaKeySettings(it) },
-                onPickCustomBackground = onPickCustomBackground,
+            BackgroundToolsLauncherPanel(
+                onOpenAiBackground = {
+                    vm.closeBgRemoverPanel()
+                    vm.openBackgroundPanel()
+                },
+                onOpenChromaWallpaper = {
+                    vm.closeBgRemoverPanel()
+                    vm.openChromaKeyPanel()
+                },
                 onClose = { vm.closeBgRemoverPanel() }
             )
         }

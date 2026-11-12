@@ -28,7 +28,7 @@ Nothing heavy is bundled in the APK; packs download on demand, CapCut-style.
       "id": "neon-filters",      // stable, unique; also the install dir name
       "name": "Neon Nights Filter Pack",
       "description": "...",
-      "category": "filters | transitions | effects | models | camera | stickers",
+      "category": "filters | transitions | effects | models | camera | stickers | backgrounds",
       "version": 1,              // integer; higher = update available
       "versionName": "1.0",      // display string
       "sizeBytes": 1796,         // exact byte size of the download
@@ -65,6 +65,14 @@ ranges before making a profile selectable; downloaded content never supplies
 GLSL or executable code. Preview and export use the same app-owned Media3 shader
 renderer. The reproducible profile source and generator are in
 `packs/effects-source/`.
+
+Wallpaper archives use `category: "backgrounds"` and
+`payloadType: "wallpaper_images_v1"`. Their small serializable catalog is bundled
+with the app; the images stay on demand. Installation checks the archive hash,
+catalog-entry hash and catalog identity, then checks every image's safe relative
+path, exact byte count, SHA-256 and declared dimensions. The editor repeats each
+image check before showing it as selectable and before processing, so missing or
+altered files fail closed.
 
 ## Publishing / updating packs
 

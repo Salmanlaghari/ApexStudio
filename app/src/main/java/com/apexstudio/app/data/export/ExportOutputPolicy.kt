@@ -38,9 +38,9 @@ internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
 
 /**
  * Media3 1.11.x can stall muxing when continuous audio crosses a long video-sample gap.
- * Below 60 fps keep the existing long-gap fill. At 60 fps and above, request repeats at
- * the target frame interval so lower-rate input can produce output samples between source
- * frames. The encoder request is best effort; the final muxed sample cadence is validated.
+ * Below 60 fps keep the existing long-gap fill. At 60 fps and above, ask the codec to
+ * repeat at the target interval. This is best-effort only; a strict final audit and explicit
+ * CFR fallback, when eligible, establish the encoded cadence contract.
  */
 internal const val EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US = 100_000L
 

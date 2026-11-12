@@ -268,6 +268,11 @@ class ExportTimestampParityInstrumentedTest {
                 requestedFps = 60
             )
             assertActual60FpsCadence("selected export", selectedTrack, clipDurationMs * 1_000L)
+            assertTrue("Selected 60 fps export must retain its audio track", selectedTrack.audioDurationUs != null)
+            assertTrue(
+                "Selected 60 fps audio must remain duration-synchronized",
+                abs(requireNotNull(selectedTrack.audioDurationUs) - clipDurationMs * 1_000L) <= 150_000L
+            )
 
             val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
             val clips = (0..1).map { index ->
@@ -299,6 +304,11 @@ class ExportTimestampParityInstrumentedTest {
                 requestedFps = 60
             )
             assertActual60FpsCadence("whole-project export", projectTrack, plan.durationMs * 1_000L)
+            assertTrue("Whole-project 60 fps export must retain its audio track", projectTrack.audioDurationUs != null)
+            assertTrue(
+                "Whole-project 60 fps audio must remain duration-synchronized",
+                abs(requireNotNull(projectTrack.audioDurationUs) - plan.durationMs * 1_000L) <= 150_000L
+            )
         } finally {
             instrumentation.runOnMainSync { engine.release() }
             source.delete()

@@ -53,6 +53,9 @@ class LocalCreatorProfileTest {
         }
 
         compose.onNodeWithTag("dashboard-profile").assertIsDisplayed().performClick()
+        // The dialog focuses its text field; freeze the test clock after the click so
+        // its cursor animation cannot keep Robolectric's Espresso idler busy.
+        compose.mainClock.autoAdvance = false
         compose.mainClock.advanceTimeBy(1_000L)
         compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
         compose.onNodeWithText(

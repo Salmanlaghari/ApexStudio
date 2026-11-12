@@ -130,9 +130,16 @@ internal fun EffectWorkspacePanel(
         }
     }
 
-    fun visualPreview(): MediaClip = visualId?.let { id ->
+    fun visualPreview(
+        id: String? = visualId,
+        previewRange: WorkspaceRange = range,
+        previewIntensity: Float = intensity
+    ): MediaClip = id?.let { selectedId ->
         originalClip.copy(workspaceEffects = originalClip.workspaceEffects + WorkspaceEffect(
-            id = id, startMs = range.startMs, endMs = range.endMs, intensity = intensity
+            id = selectedId,
+            startMs = previewRange.startMs,
+            endMs = previewRange.endMs,
+            intensity = previewIntensity
         ))
     } ?: originalClip
 
@@ -157,7 +164,7 @@ internal fun EffectWorkspacePanel(
         rendered = null
         timeOperation = null
         message = "Preview only · Apply saves this range effect"
-        onPreviewClip(visualPreview())
+        onPreviewClip(visualPreview(id = id))
         onSeekSource(range.startMs)
     }
 
@@ -178,8 +185,9 @@ internal fun EffectWorkspacePanel(
         heldEffectStart = start
         visualId = id
         playbackRangeStart = null
-        range = WorkspaceRange(start, originalClip.trimEndMs)
-        onPreviewClip(visualPreview())
+        val heldRange = WorkspaceRange(start, originalClip.trimEndMs)
+        range = heldRange
+        onPreviewClip(visualPreview(id = id, previewRange = heldRange))
         onSeekSource(start)
         vm.setPlaying(true)
         message = "Recording effect range · release to finish; Apply saves it"
@@ -190,16 +198,23 @@ internal fun EffectWorkspacePanel(
         val end = sourceTimeAtPlayhead()
         heldEffectStart = null
         vm.setPlaying(false)
+        val previous = beforeHold
+        val nextRange: WorkspaceRange
+        val nextVisualId: String?
         if (released) {
-            range = WorkspaceRange.fromPlaybackMarks(originalClip, start, end)
-            message = "Held range ${range.startMs}–${range.endMs}ms · Apply saves it"
+            nextRange = WorkspaceRange.fromPlaybackMarks(originalClip, start, end)
+            nextVisualId = visualId
+            message = "Held range ${nextRange.startMs}–${nextRange.endMs}ms · Apply saves it"
         } else {
-            beforeHold?.let { (previousId, previousRange) -> visualId = previousId; range = previousRange }
+            nextVisualId = previous?.first ?: visualId
+            nextRange = previous?.second ?: range
             message = "Hold cancelled · previous draft restored"
         }
+        visualId = nextVisualId
+        range = nextRange
         beforeHold = null
-        onPreviewClip(visualPreview())
-        onSeekSource(range.startMs)
+        onPreviewClip(visualPreview(id = nextVisualId, previewRange = nextRange))
+        onSeekSource(nextRange.startMs)
     }
 
     fun markPlaybackRange() {
@@ -209,14 +224,15 @@ internal fun EffectWorkspacePanel(
             playbackRangeStart = markedAt
             message = "Range start marked at ${markedAt}ms · play, then hold Play again to mark the end"
         } else {
-            range = WorkspaceRange.fromPlaybackMarks(originalClip, start, markedAt)
+            val selectedRange = WorkspaceRange.fromPlaybackMarks(originalClip, start, markedAt)
+            range = selectedRange
             playbackRangeStart = null
             vm.setPlaying(false)
             rendered = null
             timeOperation = null
-            if (visualId != null) onPreviewClip(visualPreview())
-            message = "Playback range selected: ${range.startMs}–${range.endMs}ms"
-            onSeekSource(range.startMs)
+            if (visualId != null) onPreviewClip(visualPreview(previewRange = selectedRange))
+            message = "Playback range selected: ${selectedRange.startMs}–${selectedRange.endMs}ms"
+            onSeekSource(selectedRange.startMs)
         }
     }
 
@@ -347,13 +363,16 @@ internal fun EffectWorkspacePanel(
                             onValueChange = { fractions ->
                                 vm.setPlaying(false)
                                 playbackRangeStart = null
-                                range = WorkspaceRange.fromFractions(originalClip, fractions.start, fractions.endInclusive)
+                                val selectedRange = WorkspaceRange.fromFractions(originalClip, fractions.start, fractions.endInclusive)
+                                range = selectedRange
                                 if (rendered != null) {
                                     rendered = null
                                     timeOperation = null
                                     onPreviewClip(originalClip)
                                     message = "Range changed · tap a time preset to render again"
-                                } else if (visualId != null) onPreviewClip(visualPreview())
+                                } else if (visualId != null) {
+                                    onPreviewClip(visualPreview(previewRange = selectedRange))
+                                }
                             },
                             onValueChangeFinished = { onSeekSource(range.startMs) },
                             enabled = !busy,
@@ -459,7 +478,7 @@ internal fun EffectWorkspacePanel(
                                 value = intensity,
                                 onValueChange = { changed ->
                                     intensity = changed
-                                    if (visualId != null) onPreviewClip(visualPreview())
+                                    if (visualId != null) onPreviewClip(visualPreview(previewIntensity = changed))
                                 },
                                 valueRange = 0f..1f,
                                 enabled = !busy && visualId != null && rendered == null,

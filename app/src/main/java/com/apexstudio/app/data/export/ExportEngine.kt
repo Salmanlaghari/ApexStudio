@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Composition
@@ -232,6 +233,12 @@ class ExportEngine(private val context: Context) {
         val videoFitMode: com.apexstudio.app.domain.model.VideoFitMode =
             com.apexstudio.app.domain.model.VideoFitMode.COVER,
         val bitrateMbps: Int = 0, // 0 = auto (resolution-based default)
+        /** Output MIME selected by the device capability gate; defaults to AVC for legacy exports. */
+        val videoMimeType: String = MimeTypes.VIDEO_H264,
+        /** Exact hardware encoder name validated for an 8K request; null keeps Media3's normal selection. */
+        val videoEncoderName: String? = null,
+        /** True only for the still-image-to-video export route, which is capped at 4K. */
+        val isPhotoExport: Boolean = false,
         val filterPreset: FilterPreset? = null,
         val filterIntensity: Float = 1f,
         /** Per-clip GPU filter recipe; currently Viral HDR is export-supported. */
@@ -415,6 +422,11 @@ class ExportEngine(private val context: Context) {
                 overlayAudioTransformer != null || postMixJob?.isActive == true
             ) {
                 Log.w(TAG, "Project export refused because another export is active")
+                return
+            }
+            val capabilityFailure = Export8kCapability.configFailure(context, config)
+            if (capabilityFailure != null) {
+                _exportState.value = ExportProgressState(error = capabilityFailure)
                 return
             }
             val reason = projectCompositionUnsupportedReason(clips, config)
@@ -798,16 +810,16 @@ class ExportEngine(private val context: Context) {
                         "Project export duration correction did not match the planned ${plan.durationMs}ms " +
                             "timeline (movie duration ${movieDurationAfterCorrectionMs}ms)"
                     }
+                    val validationWarning = validateEncodedOutput(
+                        finishedFile, config.fps, renderResult.videoFrameCount,
+                        renderResult.durationMs, diagnostics, config
+                    )
                     if (destination.exists() && !destination.delete()) {
                         throw IllegalStateException("Cannot replace existing project export")
                     }
                     if (!finishedFile.renameTo(destination)) {
                         throw IllegalStateException("Could not finalize project export file")
                     }
-                    val validationWarning = validateEncodedOutput(
-                        destination, config.fps, renderResult.videoFrameCount,
-                        renderResult.durationMs, diagnostics
-                    )
                     publishProjectStage(run, ExportProgressStage.COMPLETE, diagnostics)
                     diagnostics.stage(
                         "project_export_completed",
@@ -925,10 +937,15 @@ class ExportEngine(private val context: Context) {
             if (!continuation.isActive || !isCurrentProjectRun(run)) return@suspendCancellableCoroutine
             try {
                 val encoderSettings = exportVideoEncoderSettings(config)
-                val encoderFactory = DefaultEncoderFactory.Builder(context)
+                val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
                     .setRequestedVideoEncoderSettings(encoderSettings)
                     .setEnableFallback(false) // Never silently change the owner's requested output settings.
-                    .build()
+                config.videoEncoderName?.let { codecName ->
+                    encoderFactoryBuilder.setVideoEncoderSelector(
+                        encoderSelectorForPlan(ExportVideoEncoderPlan(config.videoMimeType, codecName))
+                    )
+                }
+                val encoderFactory = encoderFactoryBuilder.build()
                 val listener = object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         if (!isCurrentProjectRun(run) || !finishTransformerRun(active)) return
@@ -959,7 +976,7 @@ class ExportEngine(private val context: Context) {
                 }
                 active = Transformer.Builder(context)
                     .setLooper(Looper.getMainLooper())
-                    .setVideoMimeType(androidx.media3.common.MimeTypes.VIDEO_H264)
+                    .setVideoMimeType(config.videoMimeType)
                     .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
                     .setEncoderFactory(encoderFactory)
                     .addListener(listener)
@@ -1003,6 +1020,16 @@ class ExportEngine(private val context: Context) {
         outputFileName: String = "apex_studio_export.mp4"
     ) {
         val run = reserveNonProjectExport() ?: return
+        val capabilityFailure = Export8kCapability.configFailure(context, config)
+        if (capabilityFailure != null) {
+            synchronized(projectRunLock) {
+                if (nonProjectRun === run) {
+                    nonProjectRun = null
+                    _exportState.value = ExportProgressState(error = capabilityFailure)
+                }
+            }
+            return
+        }
         exportPreparationJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
@@ -1833,7 +1860,8 @@ class ExportEngine(private val context: Context) {
         requestedFps: Int,
         transformerFrameCount: Int?,
         transformerDurationMs: Long?,
-        diagnostics: ExportDiagnosticTrace?
+        diagnostics: ExportDiagnosticTrace?,
+        config: ExportConfig
     ): String? = try {
         val audit = inspectEncodedVideo(
             context = context,
@@ -1842,10 +1870,33 @@ class ExportEngine(private val context: Context) {
             transformerFrameCount = transformerFrameCount,
             transformerDurationMs = transformerDurationMs
         )
+        if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
+            check(config.videoMimeType in setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265)) {
+                "8K output must use a supported H.264 or HEVC video MIME."
+            }
+            check(!config.videoEncoderName.isNullOrBlank()) {
+                "8K output must carry a capability-verified hardware encoder plan."
+            }
+            val (expectedWidth, expectedHeight) = AspectCropTransformation.targetSizeFor(
+                "8K", config.aspectRatio
+            )
+            val mismatch = eightKOutputFormatMismatch(
+                expectedMimeType = config.videoMimeType,
+                expectedWidth = expectedWidth,
+                expectedHeight = expectedHeight,
+                actualMimeType = audit.videoMimeType,
+                actualWidth = audit.videoWidth,
+                actualHeight = audit.videoHeight
+            )
+            if (mismatch != null) throw IllegalStateException(mismatch)
+        }
         diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
         audit.warning
     } catch (failure: Exception) {
         diagnostics?.stage("encoded_output_validation_failed", "failure=${failure.javaClass.simpleName}")
+        if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
+            throw IllegalStateException("8K export was blocked because its final video format could not be verified.", failure)
+        }
         Log.w(TAG, "Could not validate encoded export output", failure)
         "Export finished, but its encoded video stream could not be validated."
     }
@@ -1858,14 +1909,19 @@ class ExportEngine(private val context: Context) {
         overlayAudioSources: List<AudioExportSource> = emptyList(),
         diagnostics: ExportDiagnosticTrace? = null
     ): Transformer {
-        // Let Media3 negotiate a supported H.264 profile/level instead of forcing
-        // AVC High Level 5.1 even for 720p or an HEVC input container.
+        // Let Media3 negotiate the normal profile/level for standard exports.
+        // 8K passes the exact hardware encoder verified by Export8kCapability.
         val encoderSettings = exportVideoEncoderSettings(config)
 
-        val encoderFactory = DefaultEncoderFactory.Builder(context)
+        val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(encoderSettings)
             .setEnableFallback(false) // Never silently change the owner's requested output settings.
-            .build()
+        config.videoEncoderName?.let { codecName ->
+            encoderFactoryBuilder.setVideoEncoderSelector(
+                encoderSelectorForPlan(ExportVideoEncoderPlan(config.videoMimeType, codecName))
+            )
+        }
+        val encoderFactory = encoderFactoryBuilder.build()
 
         var active: Transformer? = null
         val transformerListener = object : Transformer.Listener {
@@ -1895,7 +1951,7 @@ class ExportEngine(private val context: Context) {
                     )
                     validateEncodedOutput(
                         outputFile, config.fps, exportResult.videoFrameCount,
-                        exportResult.durationMs, diagnostics
+                        exportResult.durationMs, diagnostics, config
                     )
                 }
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
@@ -2046,7 +2102,7 @@ class ExportEngine(private val context: Context) {
                         )
                         val mixedOutputWarning = validateEncodedOutput(
                             mixedFile, config.fps, exportResult.videoFrameCount,
-                            exportResult.durationMs, diagnostics
+                            exportResult.durationMs, diagnostics, config
                         )
                         videoValidationWarning = listOfNotNull(videoValidationWarning, mixedOutputWarning)
                             .distinct().joinToString(" ").ifBlank { null }
@@ -2109,7 +2165,7 @@ class ExportEngine(private val context: Context) {
 
         return Transformer.Builder(context)
             .setLooper(Looper.getMainLooper())
-            .setVideoMimeType(androidx.media3.common.MimeTypes.VIDEO_H264)
+            .setVideoMimeType(config.videoMimeType)
             .setAudioMimeType(androidx.media3.common.MimeTypes.AUDIO_AAC)
             .setEncoderFactory(encoderFactory)
             .addListener(transformerListener)

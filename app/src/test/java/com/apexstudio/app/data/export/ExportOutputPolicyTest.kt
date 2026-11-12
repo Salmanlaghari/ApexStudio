@@ -3,6 +3,7 @@ package com.apexstudio.app.data.export
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.GlMatrixTransformation
+import com.apexstudio.app.data.effect.AspectCropTransformation
 import com.apexstudio.app.domain.model.VideoFitMode
 import org.junit.Assert.*
 import org.junit.Test
@@ -15,6 +16,17 @@ class ExportOutputPolicyTest {
         assertEquals(1280, size.width)
         assertEquals(720, size.height)
         assertTrue(effects.last() is FrameDropEffect)
+    }
+
+    @Test fun `8K request uses exact landscape and portrait UHD output dimensions`() {
+        assertEquals(7680 to 4320, AspectCropTransformation.targetSizeFor("8K", "16:9"))
+        assertEquals(4320 to 7680, AspectCropTransformation.targetSizeFor("8K", "9:16"))
+        val effect = selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "8K", aspectRatio = "9:16")
+        ).first() as GlMatrixTransformation
+        val actual = effect.configure(1080, 1920)
+        assertEquals(4320, actual.width)
+        assertEquals(7680, actual.height)
     }
 
     @Test fun `portrait and square output use selected resolution not original pixel count`() {

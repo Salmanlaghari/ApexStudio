@@ -43,7 +43,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.domain.model.ExportResolution
 import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.Export8kCapability
 import com.apexstudio.app.data.export.exportTargetBitrate
+import com.apexstudio.app.data.export.eightKCapabilityRequestForSettings
+import androidx.media3.common.MimeTypes
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -112,13 +116,8 @@ fun ExportScreen(
                 .firstOrNull { it.id == filterId }
         }.getOrNull()
     }
-    val projectBlockReason = wholeProjectExportUnsupportedReason(editorState, audioState, export.settings, projectFilterPreset)
     val projectTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(projectMainExportClips(editorState))
     val selectedQuality = export.settings.quality.label.lowercase()
-    val selectedSettingsBlockReason = videoExportSettingsUnsupportedReason(
-        selectedResolution, export.settings.frameRate, selectedQuality, selectedAspect, selectedBitrateMbps
-    )
-    val selectedBlockReason = selectedScopeBlockReason ?: selectedSettingsBlockReason
     val renderedDurationMs = if (wholeProject) projectTimeline.durationMs else videoScope.durationMs
     val outputBitrateBps = remember(selectedResolution, selectedFps, selectedQuality, selectedBitrateMbps) {
         exportTargetBitrate(ExportEngine.ExportConfig(
@@ -127,6 +126,49 @@ fun ExportScreen(
             quality = selectedQuality,
             bitrateMbps = selectedBitrateMbps
         ))
+    }
+    val eightKRequest = remember(selectedAspect, export.settings.frameRate, selectedQuality, selectedBitrateMbps) {
+        eightKCapabilityRequestForSettings(
+            selectedAspect, export.settings.frameRate, selectedQuality, selectedBitrateMbps
+        )
+    }
+    val eightKAvailability by produceState<EightKExportAvailability>(
+        initialValue = EightKExportAvailability.Checking,
+        key1 = context.applicationContext,
+        key2 = eightKRequest
+    ) {
+        value = EightKExportAvailability.Checking
+        value = Export8kCapability.probeAndCache(context, eightKRequest)
+    }
+    val checkedEightKAvailability = eightKAvailability
+    val isPhotoExport = videoScope.baseClip?.type == com.apexstudio.app.domain.model.ClipType.IMAGE
+    val photo8kUnavailableReason =
+        "8K still-photo export is not available yet; the photo renderer is memory-limited to 4K. Choose 4K or lower."
+    val eightKResolutionUnavailableReason = when {
+        isPhotoExport -> photo8kUnavailableReason
+        checkedEightKAvailability is EightKExportAvailability.Unsupported -> checkedEightKAvailability.reason
+        checkedEightKAvailability == EightKExportAvailability.Checking -> "Checking device hardware, GPU, and memory support for 8K…"
+        else -> null
+    }
+    val selectedEightKAvailability = if (isPhotoExport) {
+        EightKExportAvailability.Unsupported(photo8kUnavailableReason)
+    } else checkedEightKAvailability
+    val projectBlockReason = wholeProjectExportUnsupportedReason(
+        editorState, audioState, export.settings, projectFilterPreset, checkedEightKAvailability
+    )
+    val selectedSettingsBlockReason = videoExportSettingsUnsupportedReason(
+        selectedResolution, export.settings.frameRate, selectedQuality, selectedAspect, selectedBitrateMbps,
+        eightKAvailability = selectedEightKAvailability,
+        isPhotoExport = isPhotoExport
+    )
+    val selectedBlockReason = selectedScopeBlockReason ?: selectedSettingsBlockReason
+    val outputCodecLabel = when {
+        selectedResolution != "8K" -> "H.264/AVC"
+        isPhotoExport -> "8K photo unavailable"
+        checkedEightKAvailability is EightKExportAvailability.Supported &&
+            checkedEightKAvailability.plan.mimeType == MimeTypes.VIDEO_H265 -> "H.265/HEVC"
+        checkedEightKAvailability is EightKExportAvailability.Supported -> "H.264/AVC"
+        else -> "8K encoder not verified"
     }
     val scopeAudioSources = if (wholeProject) projectMainExportClips(editorState) else listOfNotNull(videoScope.baseClip)
     val projectAudioTracks = editorState.project?.audioTracks.orEmpty()
@@ -219,9 +261,17 @@ fun ExportScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("VIDEO OUTPUT", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for ((label, sub) in listOf("720P" to "1280×720", "1080P" to "1920×1080", "1440P" to "2560×1440", "4K" to "3840×2160")) {
-                                CompactResolutionPill(label, sub, selectedResolution == label, !export.isExporting, { vm.updateExport { it.copy(resolution = label) } }, Modifier.weight(1f))
+                            for ((label, sub) in listOf("720P" to "1280×720", "1080P" to "1920×1080", "1440P" to "2560×1440", "4K" to "3840×2160", "8K" to "UHD")) {
+                                val optionEnabled = !export.isExporting &&
+                                    (label != "8K" || eightKResolutionUnavailableReason == null)
+                                CompactResolutionPill(label, sub, selectedResolution == label, optionEnabled, { vm.updateExport { it.copy(resolution = label) } }, Modifier.weight(1f))
                             }
+                        }
+                        eightKResolutionUnavailableReason?.let {
+                            Text("8K unavailable: $it", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 2)
+                        }
+                        if (selectedResolution == "8K" && eightKResolutionUnavailableReason == null) {
+                            Text("Verified $outputCodecLabel • final 8K dimensions are checked before sharing; photos remain capped at 4K.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 2)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             for ((label, sub) in listOf("16:9" to "Landscape", "9:16" to "Portrait", "1:1" to "Square")) {
@@ -259,7 +309,7 @@ fun ExportScreen(
                             }
                         }
                         Text("Fixed bitrate takes precedence over quality.", color = ApexPalette.TextTertiary, fontSize = 9.sp, maxLines = 2)
-                        Text("Format: MP4 (H.264). MOV and GIF export are not supported.", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 2)
+                        Text("Format: MP4 ($outputCodecLabel). MOV and GIF export are not supported.", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 2)
                     }
                 }
 
@@ -279,7 +329,7 @@ fun ExportScreen(
                                     color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                             }
                         }
-                        Text("${selectedResolution} • $selectedAspect • ${selectedFps.toInt()} fps • ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • H.264 / MP4", color = ApexPalette.NeonCyan, fontSize = 9.sp, maxLines = 2)
+                        Text("${selectedResolution} • $selectedAspect • ${selectedFps.toInt()} fps • ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • $outputCodecLabel / MP4", color = ApexPalette.NeonCyan, fontSize = 9.sp, maxLines = 2)
                         Text("Scope: ${if (wholeProject) "whole project" else "selected clip"} • ${com.apexstudio.app.util.TimeFormat.formatMs(renderedDurationMs)}. Estimate excludes audio/container overhead; completed bytes are measured.", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 3)
                         export.error?.let { Text("Error: $it", color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 2) }
                     }
@@ -323,7 +373,7 @@ fun ExportScreen(
                                 Text("Share completed export", maxLines = 1)
                             }
                         } else {
-                            Text("On-device video export • H.264 / MP4", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1)
+                            Text("On-device video export • $outputCodecLabel / MP4", color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1)
                         }
                         shareError?.let { Text(it, color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 2) }
                     }
@@ -372,8 +422,16 @@ fun ExportScreen(
                 frameRate = selectedFps.toInt(),
                 enabled = !export.isExporting,
                 onResolutionSelected = { value -> vm.updateExport { it.copy(resolution = value) } },
-                onFrameRateSelected = { value -> vm.updateExport { it.copy(frameRate = value) } }
+                onFrameRateSelected = { value -> vm.updateExport { it.copy(frameRate = value) } },
+                resolutionUnavailableReason = eightKResolutionUnavailableReason
             )
+            if (selectedResolution == "8K" && eightKResolutionUnavailableReason == null) {
+                Text(
+                    "Device-verified $outputCodecLabel. The final MP4 must match 7680×4320 or 4320×7680 before it is published; still-photo export remains limited to 4K.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 10.sp
+                )
+            }
             TextButton(
                 onClick = { advancedExpanded = !advancedExpanded },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp).testTag("export-advanced-settings")
@@ -650,7 +708,7 @@ fun ExportScreen(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                "Requested ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • ${com.apexstudio.app.util.TimeFormat.formatMs(renderedDurationMs)} • $selectedAspect • H.264 / MP4",
+                                "Requested ${String.format(java.util.Locale.US, "%.1f", outputBitrateBps / 1_000_000.0)} Mbps • ${com.apexstudio.app.util.TimeFormat.formatMs(renderedDurationMs)} • $selectedAspect • $outputCodecLabel / MP4",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold

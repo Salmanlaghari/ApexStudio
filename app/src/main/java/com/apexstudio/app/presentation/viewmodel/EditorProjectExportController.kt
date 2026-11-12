@@ -2,7 +2,11 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.Export8kCapability
+import com.apexstudio.app.data.export.ExportVideoEncoderPlan
 import com.apexstudio.app.data.export.ExportProgressStage
+import com.apexstudio.app.data.export.eightKCapabilityRequestForSettings
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.OneTapLooks
@@ -26,13 +30,16 @@ internal fun buildProjectExportConfig(
     audio: AudioStudioState,
     settings: ExportSettings,
     filterPreset: FilterPreset? = null,
-    includeSharedVideoClips: Boolean = true
+    includeSharedVideoClips: Boolean = true,
+    encoderPlan: ExportVideoEncoderPlan? = null
 ): ExportEngine.ExportConfig = ExportEngine.ExportConfig(
     resolution = ExportResolution.canonical(settings.resolution),
     fps = settings.frameRate,
     quality = settings.quality.label.lowercase(),
     aspectRatio = settings.aspectRatio,
     bitrateMbps = settings.bitrateMbps,
+    videoMimeType = encoderPlan?.mimeType ?: androidx.media3.common.MimeTypes.VIDEO_H264,
+    videoEncoderName = encoderPlan?.codecName,
     filterPreset = filterPreset,
     filterIntensity = state.filterIntensity,
     signature = state.project?.signature,
@@ -67,8 +74,16 @@ internal fun wholeProjectExportUnsupportedReason(
     state: EditorState,
     audio: AudioStudioState,
     settings: ExportSettings,
-    filterPreset: FilterPreset? = null
+    filterPreset: FilterPreset? = null,
+    eightKAvailability: EightKExportAvailability? = null
 ): String? {
+    if (ExportResolution.canonical(settings.resolution) == "8K") {
+        val settingsReason = videoExportSettingsUnsupportedReason(
+            "8K", settings.frameRate, settings.quality.label.lowercase(),
+            settings.aspectRatio, settings.bitrateMbps, eightKAvailability
+        )
+        if (settingsReason != null) return settingsReason
+    }
     val activeFilterMirrorsViralHdr =
         OneTapLooks.isValidRenderConfig(state.activeGpuFilterConfig) &&
             state.activeFilterId == state.activeGpuFilterConfig.filterPresetId
@@ -82,7 +97,10 @@ internal fun wholeProjectExportUnsupportedReason(
     } else {
         projectCompositionUnsupportedReason(
             projectMainExportClips(state),
-            buildProjectExportConfig(state, audio, settings, filterPreset, includeSharedVideoClips = false)
+            buildProjectExportConfig(
+                state, audio, settings, filterPreset, includeSharedVideoClips = false,
+                encoderPlan = (eightKAvailability as? EightKExportAvailability.Supported)?.plan
+            )
         )
     }
 }
@@ -93,6 +111,12 @@ fun EditorViewModel.startWholeProjectExport() {
     val snapshot = _state.value
     val audioSnapshot = _audio.value
     val settings = _export.value.settings
+    val eightKRequest = eightKCapabilityRequestForSettings(
+        settings.aspectRatio, settings.frameRate, settings.quality.label.lowercase(), settings.bitrateMbps
+    )
+    val eightKAvailability = if (ExportResolution.canonical(settings.resolution) == "8K") {
+        Export8kCapability.cached(eightKRequest)
+    } else null
     val activeFilterMirrorsViralHdr =
         OneTapLooks.isValidRenderConfig(snapshot.activeGpuFilterConfig) &&
             snapshot.activeFilterId == snapshot.activeGpuFilterConfig.filterPresetId
@@ -104,17 +128,31 @@ fun EditorViewModel.startWholeProjectExport() {
             null
         }
     } else null
-    val reason = wholeProjectExportUnsupportedReason(snapshot, audioSnapshot, settings, filterPreset)
+    val reason = wholeProjectExportUnsupportedReason(
+        snapshot, audioSnapshot, settings, filterPreset, eightKAvailability
+    )
     if (reason != null) {
         _export.update { it.copy(error = reason, outputUri = null, warning = null) }
         return
+    }
+    val encoderPlan = (eightKAvailability as? EightKExportAvailability.Supported)?.plan
+    if (ExportResolution.canonical(settings.resolution) == "8K") {
+        val memoryFailure = if (context == null) {
+            "Device memory status could not be verified for 8K export."
+        } else {
+            Export8kCapability.currentMemoryFailure(context)
+        }
+        if (memoryFailure != null) {
+            _export.update { it.copy(error = memoryFailure, outputUri = null, warning = null) }
+            return
+        }
     }
     val engine = exportEngine ?: run {
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
     val clips = projectMainExportClips(snapshot)
-    val config = buildProjectExportConfig(snapshot, audioSnapshot, settings, filterPreset)
+    val config = buildProjectExportConfig(snapshot, audioSnapshot, settings, filterPreset, encoderPlan = encoderPlan)
     _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.PREPARING, error = null, outputUri = null, warning = null) }
     engine.startProjectExport(clips, config)
 }

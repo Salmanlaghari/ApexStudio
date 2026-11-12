@@ -28,6 +28,7 @@ class PhotoExportConfigTest {
         assertEquals("1440p", result.resolution)
         assertEquals(30, result.fps)
         assertEquals("high", result.quality)
+        assertTrue(result.isPhotoExport)
     }
 
     @Test fun `explicit photo canvas is not cropped again by video export settings`() {

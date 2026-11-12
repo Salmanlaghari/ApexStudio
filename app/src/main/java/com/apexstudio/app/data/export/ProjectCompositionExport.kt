@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.export
 
 import androidx.media3.common.util.Size
+import androidx.media3.common.MimeTypes
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.GpuFilterConfig
@@ -148,7 +149,10 @@ internal fun projectCompositionUnsupportedReason(
     }
 
     val supportedResolutions = setOf("720p", "1080p", "1440p", "4k", "2160p")
-    if (config.resolution.lowercase() !in supportedResolutions) {
+    val verified8k = config.resolution.equals("8K", ignoreCase = true) &&
+        !config.videoEncoderName.isNullOrBlank() &&
+        config.videoMimeType in setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265)
+    if (config.resolution.lowercase() !in supportedResolutions && !verified8k) {
         return "Project export does not support resolution '${config.resolution}'."
     }
     if (config.aspectRatio !in setOf("16:9", "9:16", "1:1")) {

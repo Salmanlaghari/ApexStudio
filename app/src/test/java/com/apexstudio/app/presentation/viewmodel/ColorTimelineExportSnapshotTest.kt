@@ -1,6 +1,9 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import androidx.media3.common.MimeTypes
 import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.ExportVideoEncoderPlan
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.state.EditorState
@@ -47,6 +50,27 @@ class ColorTimelineExportSnapshotTest {
         val edited = state.copy(project = state.project!!.copy(clips = listOf(first, second.copy(trimEndMs = 4000))))
         assertNotEquals(original, buildColorTimelineExportSnapshot(edited, AudioStudioState(), settings, grade))
         assertEquals(5000L, original.clips[1].trimEndMs)
+    }
+
+    @Test fun `Color Studio 8K snapshot waits for and carries the verified encoder plan`() {
+        val settings8k = settings.copy(resolution = "8K", bitrateMbps = 0)
+        val checking = runCatching {
+            buildColorTimelineExportSnapshot(
+                state, AudioStudioState(), settings8k, grade,
+                eightKAvailability = EightKExportAvailability.Checking
+            )
+        }.exceptionOrNull()
+        assertTrue(checking is IllegalArgumentException)
+        assertTrue(checking?.message.orEmpty().contains("Checking device support"))
+
+        val plan = ExportVideoEncoderPlan(MimeTypes.VIDEO_H265, "vendor.colorstudio.hevc")
+        val snapshot = buildColorTimelineExportSnapshot(
+            state, AudioStudioState(), settings8k, grade,
+            eightKAvailability = EightKExportAvailability.Supported(plan)
+        )
+        assertEquals("8K", snapshot.config.resolution)
+        assertEquals(MimeTypes.VIDEO_H265, snapshot.config.videoMimeType)
+        assertEquals("vendor.colorstudio.hevc", snapshot.config.videoEncoderName)
     }
 
     @Test fun `unsupported project layer cannot disappear from either comparison side`() {

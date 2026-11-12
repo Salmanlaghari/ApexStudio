@@ -427,12 +427,20 @@ class ExportTimestampParityInstrumentedTest {
 
     private fun assertActual60FpsCadence(label: String, output: VideoTrack, expectedDurationUs: Long) {
         val timestamps = output.presentationTimesUs
-        val expectedSamples = (expectedDurationUs * 60L + 999_999L) / 1_000_000L
+        assertTrue("$label must expose positive video track duration", output.videoTrackDurationUs > 0L)
         assertTrue(
-            "$label must contain approximately $expectedSamples samples at 60 fps; got ${timestamps.size}",
+            "$label video track duration ${output.videoTrackDurationUs}us must stay within 150000us of planned " +
+                "$expectedDurationUs us",
+            abs(output.videoTrackDurationUs - expectedDurationUs) <= 150_000L
+        )
+        // Count samples against the actual encoded video track duration. The separately checked planned
+        // duration prevents audio/container duration from hiding a truncated video track.
+        val expectedSamples = (output.videoTrackDurationUs * 60L + 999_999L) / 1_000_000L
+        assertTrue(
+            "$label must contain approximately $expectedSamples samples for its encoded track duration " +
+                "${output.videoTrackDurationUs}us at 60 fps; got ${timestamps.size}",
             timestamps.size.toLong() in (expectedSamples - 1L)..(expectedSamples + 1L)
         )
-        assertTrue("$label must expose positive video track duration", output.videoTrackDurationUs > 0L)
         val averageFps = timestamps.size * 1_000_000.0 / output.videoTrackDurationUs
         assertTrue("$label encoded average must be 60 fps, got $averageFps", averageFps in 59.5..60.5)
         val intervals = timestamps.zipWithNext { first, second -> second - first }

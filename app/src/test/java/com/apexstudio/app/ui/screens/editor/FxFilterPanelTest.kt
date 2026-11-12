@@ -14,8 +14,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.fx.DownloadedFxEffect
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.filter.FilterCategory
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
@@ -61,6 +63,36 @@ class FxFilterPanelTest {
         compose.runOnIdle { assertEquals("hue_cycle", selectedFx) }
         compose.onNodeWithContentDescription("Close FX").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(closed) }
+    }
+
+    @Test
+    fun `intensity and animated speed sliders commit when gestures finish`() {
+        val intensity = mutableStateOf(0.5f)
+        val speed = mutableStateOf(1f)
+        var intensityCommits = 0
+        var speedCommits = 0
+        compose.setContent {
+            Box(Modifier.width(375.dp).height(240.dp)) {
+                FxPanel(
+                    activeFxId = FxPreset.HUE_CYCLE.id,
+                    intensity = intensity.value,
+                    onFxSelected = {},
+                    onIntensityChange = { intensity.value = it },
+                    onIntensityChangeFinished = { intensityCommits++ },
+                    speed = speed.value,
+                    onSpeedChange = { speed.value = it },
+                    onSpeedChangeFinished = { speedCommits++ },
+                    onClose = {}
+                )
+            }
+        }
+
+        compose.onNodeWithTag("fx-intensity-slider").performScrollTo().performTouchInput { swipeRight() }
+        compose.onNodeWithTag("fx-speed-slider").performScrollTo().performTouchInput { swipeRight() }
+        compose.runOnIdle {
+            assertEquals(1, intensityCommits)
+            assertEquals(1, speedCommits)
+        }
     }
 
     @Test

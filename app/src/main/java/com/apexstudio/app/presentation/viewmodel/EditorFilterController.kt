@@ -330,30 +330,50 @@ fun EditorViewModel.openLensesPanel() = _state.update { it.copy(lensesPanelOpen 
 
 fun EditorViewModel.closeLensesPanel() = _state.update { it.copy(lensesPanelOpen = false) }
 
-fun EditorViewModel.setActiveFx(id: String?) = _state.update { state ->
+private fun EditorState.withManualFxOverride(): EditorState = copy(
+    project = project?.copy(
+        manualFxOverride = ProjectFxSettings(
+            effectId = activeFxId,
+            intensity = fxIntensity.coerceIn(0f, 1f),
+            speed = fxSpeed.coerceIn(0.1f, 4f)
+        )
+    )
+)
+
+fun EditorViewModel.setActiveFx(id: String?) {
     val preset = FxPreset.byId(id)
     val downloaded = if (id != null && preset == null)
         com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
-    if (id != null && preset == null && downloaded == null) state
-    else state.copy(activeFxId = id, fxSpeed = preset?.defaultSpeed ?: downloaded?.defaultSpeed ?: state.fxSpeed)
+    if (id != null && preset == null && downloaded == null) return
+    _state.update { state ->
+        state.copy(activeFxId = id, fxSpeed = preset?.defaultSpeed ?: downloaded?.defaultSpeed ?: state.fxSpeed)
+            .withManualFxOverride()
+    }
+    persistProject()
 }
 
-fun EditorViewModel.setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
+fun EditorViewModel.setFxIntensity(v: Float) = _state.update {
+    it.copy(fxIntensity = v.coerceIn(0f, 1f)).withManualFxOverride()
+}
 
-fun EditorViewModel.setFxSpeed(v: Float) = _state.update { it.copy(fxSpeed = v.coerceIn(0.1f, 4f)) }
+fun EditorViewModel.setFxSpeed(v: Float) = _state.update {
+    it.copy(fxSpeed = v.coerceIn(0.1f, 4f)).withManualFxOverride()
+}
 
-fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) = _state.update {
+fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) {
     val preset = FxPreset.byId(id)
     val downloaded = if (id != null && preset == null)
         com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
-    if (id != null && preset == null && downloaded == null) it else {
+    if (id != null && preset == null && downloaded == null) return
+    _state.update { state ->
         val presetSpeed = (preset?.defaultSpeed ?: downloaded?.defaultSpeed)?.coerceIn(0.1f, 4f)
-        it.copy(
+        state.copy(
             activeFxId = id,
             fxIntensity = intensity.coerceIn(0f, 1f),
-            fxSpeed = presetSpeed ?: it.fxSpeed
-        )
+            fxSpeed = presetSpeed ?: state.fxSpeed
+        ).withManualFxOverride()
     }
+    persistProject()
 }
 
 fun EditorViewModel.selectFilter(id: String?, intensity: Float = 0.85f) = _state.update {

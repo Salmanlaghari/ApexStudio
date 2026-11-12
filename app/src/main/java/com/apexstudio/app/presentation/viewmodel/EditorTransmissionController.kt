@@ -1,13 +1,11 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import android.util.Log
-import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.template.TransmissionTemplate
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 
 
 // ---- Transmission templates ----
@@ -41,13 +39,15 @@ fun EditorViewModel.applyTransmissionTemplate(id: String?) {
                 fxIntensity = 0f,
                 lastTransitionType = null,
                 lastTransitionDurationMs = 500L,
-                playbackSpeed = 1.0f
+                playbackSpeed = 1.0f,
+                project = it.project?.copy(manualFxOverride = null)
             )
         }
         persistTransmissionTemplate(
             id = null,
             transitionType = null,
-            transitionDurationMs = 500L
+            transitionDurationMs = 500L,
+            force = true
         )
         return
     }
@@ -56,7 +56,7 @@ fun EditorViewModel.applyTransmissionTemplate(id: String?) {
         Log.w("EditorViewModel", "applyTransmissionTemplate: unknown id '$id' — ignoring")
         return
     }
-    applyTransmissionTemplateInternal(template, persistProjectId = projectId)
+    applyTransmissionTemplateInternal(template, persistTemplateMetadata = true)
 }
 
 
@@ -69,10 +69,14 @@ fun EditorViewModel.applyTransmissionTemplate(id: String?) {
  * also applied as a project-level hint (see
  * `Project.lastTransitionType`).
  */
-internal fun EditorViewModel.applyTransmissionTemplateInternal(template: TransmissionTemplate, persistProjectId: String?) {
+internal fun EditorViewModel.applyTransmissionTemplateInternal(
+    template: TransmissionTemplate,
+    persistTemplateMetadata: Boolean = true
+) {
     val targetSpeed = if (template.isSlowMotion && template.playbackSpeed > 0f) template.playbackSpeed else 1.0f
     _state.update {
         it.copy(
+            project = if (persistTemplateMetadata) it.project?.copy(manualFxOverride = null) else it.project,
             activeFilterId = template.filterId,
             filterIntensity = template.filterIntensity.coerceIn(0f, 1f),
             activeFxId = template.fxPresetId,
@@ -97,37 +101,43 @@ internal fun EditorViewModel.applyTransmissionTemplateInternal(template: Transmi
             addRoyaltyTrack(track.title, file.absolutePath, track.durationMs)
         }
     }
-    persistTransmissionTemplate(id = template.id, transitionType = template.transitionType,
-        transitionDurationMs = template.transitionDurationMs)
+    if (persistTemplateMetadata) {
+        persistTransmissionTemplate(
+            id = template.id,
+            transitionType = template.transitionType,
+            transitionDurationMs = template.transitionDurationMs,
+            force = true
+        )
+    }
 }
 
 
 /**
  * Save the chosen transmission template id + transition hint on
- * the current project and write the project back to DataStore so
- * the choice survives an app restart. Called from both apply
- * paths (manual + auto).
+ * the current project and write it through the shared autosave path.
+ * Manual template selection clears any previous FX-only override;
+ * project-open auto-apply skips this write to preserve saved overrides.
  */
-internal fun EditorViewModel.persistTransmissionTemplate(id: String?, transitionType: String?, transitionDurationMs: Long) {
+internal fun EditorViewModel.persistTransmissionTemplate(
+    id: String?,
+    transitionType: String?,
+    transitionDurationMs: Long,
+    force: Boolean = false
+) {
     val snapshot = _state.value.project ?: return
-    if (snapshot.lastTransmissionTemplateId == id &&
+    if (!force && snapshot.lastTransmissionTemplateId == id &&
         snapshot.lastTransitionType == transitionType &&
-        snapshot.lastTransitionDurationMs == transitionDurationMs
+        snapshot.lastTransitionDurationMs == transitionDurationMs &&
+        snapshot.manualFxOverride == null
     ) return
     val updated = snapshot.copy(
         lastTransmissionTemplateId = id,
         lastTransitionType = transitionType,
-        lastTransitionDurationMs = transitionDurationMs
+        lastTransitionDurationMs = transitionDurationMs,
+        manualFxOverride = null
     )
     _state.update { it.copy(project = updated) }
-    val repo = projectRepository ?: return
-    viewModelScope.launch {
-        try {
-            repo.saveProject(updated)
-        } catch (e: Exception) {
-            Log.w("EditorViewModel", "Failed to persist transmission template", e)
-        }
-    }
+    persistProject()
 }
 
 

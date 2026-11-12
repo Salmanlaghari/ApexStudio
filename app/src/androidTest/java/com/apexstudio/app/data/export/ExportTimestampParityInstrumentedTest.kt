@@ -470,6 +470,7 @@ class ExportTimestampParityInstrumentedTest {
         val previousRegistry = registryFile.takeIf { it.isFile }?.readText()
         val baselineName = "sticker-baseline-$id.mp4"
         val selectedName = "sticker-selected-$id.mp4"
+        val projectBaselineName = "sticker-project-baseline-$id.mp4"
         val projectName = "sticker-project-$id.mp4"
         val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
         val baselineConfig = ExportEngine.ExportConfig(
@@ -480,6 +481,7 @@ class ExportTimestampParityInstrumentedTest {
         )
         var baselineOutput: File? = null
         var selectedOutput: File? = null
+        var projectBaselineOutput: File? = null
         var projectOutput: File? = null
         val assetPath = StickerAssetResolver.packUri(packId, relativePath)
         val sticker = StickerOverlay(
@@ -774,9 +776,19 @@ class ExportTimestampParityInstrumentedTest {
                 trimEndMs = 1_800L,
                 stickers = listOf(sticker)
             )
+            val projectConfig = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9")
+            engine.startProjectExport(
+                clips = listOf(projectClip.copy(stickers = emptyList())),
+                config = projectConfig,
+                outputFileName = projectBaselineName
+            )
+            val projectBaselineResult = awaitTerminalState(engine)
+            assertNull("Whole-project sticker baseline export must complete: ${projectBaselineResult.error}", projectBaselineResult.error)
+            projectBaselineOutput = File(requireNotNull(Uri.parse(projectBaselineResult.outputUri).path))
+
             engine.startProjectExport(
                 clips = listOf(projectClip),
-                config = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9"),
+                config = projectConfig,
                 outputFileName = projectName
             )
             val projectResult = awaitTerminalState(engine)
@@ -785,7 +797,7 @@ class ExportTimestampParityInstrumentedTest {
 
             val baselineFile = requireNotNull(baselineOutput)
             verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
-            verifyExportFrames("Whole-project export", baselineFile, requireNotNull(projectOutput))
+            verifyExportFrames("Whole-project export", requireNotNull(projectBaselineOutput), requireNotNull(projectOutput))
         } finally {
             instrumentation.runOnMainSync { engine.release() }
             source.delete()
@@ -794,9 +806,11 @@ class ExportTimestampParityInstrumentedTest {
             if (previousRegistry == null) registryFile.delete() else registryFile.writeText(previousRegistry)
             baselineOutput?.delete()
             selectedOutput?.delete()
+            projectBaselineOutput?.delete()
             projectOutput?.delete()
             File(outputDir, baselineName).delete()
             File(outputDir, selectedName).delete()
+            File(outputDir, projectBaselineName).delete()
             File(outputDir, projectName).delete()
         }
     }

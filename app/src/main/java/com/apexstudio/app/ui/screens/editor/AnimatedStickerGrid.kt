@@ -33,6 +33,17 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 private enum class StickerSourceTab { ON_DEMAND, BUNDLED }
 
+/** The original Lottie animations bundled in the APK, as asset file name to display name. */
+private val ORIGINAL_BUNDLED_ANIMATIONS: List<Pair<String, String>> = listOf(
+    "bouncing_ball.json" to "Bouncing Ball",
+    "confetti_burst.json" to "Confetti",
+    "heart_pop.json" to "Heart Pop",
+    "pulse_ring.json" to "Pulse Ring",
+    "rotating_star.json" to "Star Spin",
+    "swipe_arrow.json" to "Swipe Up",
+    "walking_cat.json" to "Walking Cat"
+)
+
 /** On-demand Lottie packs plus the small set of animations already bundled in the APK. */
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
@@ -65,7 +76,9 @@ fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
     var selectedDownloadedCategory by remember(downloadedCategories) {
         mutableStateOf(downloadedCategories.firstOrNull().orEmpty())
     }
-    LaunchedEffect(context) { PackManager.refreshSync(context) }
+    // Refresh the catalog once per entry into this panel; keying on `context`
+    // re-ran the manifest fetch on recomposition (PR #230 Kilo WARNING).
+    LaunchedEffect(Unit) { PackManager.refreshSync(context) }
     LaunchedEffect(installedPacks) {
         downloadedCatalog = AnimatedStickerRepository.loadDownloaded(context, installedPacks)
     }
@@ -101,7 +114,7 @@ fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
                 val selected = sourceTab == tab
                 val title = when (tab) {
                     StickerSourceTab.ON_DEMAND -> "On-demand · ${stickerPacks.sumOf { it.pack.itemCount }}"
-                    StickerSourceTab.BUNDLED -> "Bundled · ${7 + bundled.size}"
+                    StickerSourceTab.BUNDLED -> "Bundled · ${ORIGINAL_BUNDLED_ANIMATIONS.size + bundled.size}"
                 }
                 Box(
                     modifier = Modifier
@@ -213,17 +226,7 @@ fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
                 }
             }
             StickerSourceTab.BUNDLED -> {
-                val originals = remember {
-                    listOf(
-                        "bouncing_ball.json" to "Bouncing Ball",
-                        "confetti_burst.json" to "Confetti",
-                        "heart_pop.json" to "Heart Pop",
-                        "pulse_ring.json" to "Pulse Ring",
-                        "rotating_star.json" to "Star Spin",
-                        "swipe_arrow.json" to "Swipe Up",
-                        "walking_cat.json" to "Walking Cat"
-                    )
-                }
+                val originals = ORIGINAL_BUNDLED_ANIMATIONS
                 Text("Original animations", color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.padding(vertical = 4.dp)) {
                     items(originals, key = { it.first }) { (file, name) ->

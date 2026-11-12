@@ -35,6 +35,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -77,7 +78,9 @@ import com.apexstudio.app.presentation.viewmodel.generateAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.clearAutoCaptions
 import com.apexstudio.app.presentation.viewmodel.resetCaptionUi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
 import com.apexstudio.app.domain.model.timeline.sharedVideoClip
@@ -1397,8 +1400,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
-    val activeDownloadedFx = remember(state.activeFxId, downloadedFxProfiles) {
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+    val activeDownloadedFx by produceState<com.apexstudio.app.data.fx.DownloadedFxEffect?>(
+        initialValue = null,
+        key1 = state.activeFxId,
+        key2 = downloadedFxProfiles
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+        }
     }
     val exportState by vm.export.collectAsStateWithLifecycle()
     val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()

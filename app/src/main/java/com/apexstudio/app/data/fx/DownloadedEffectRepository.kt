@@ -50,7 +50,11 @@ object DownloadedEffectRepository {
     )
     @Volatile private var verifiedSources: Map<String, VerifiedSource> = emptyMap()
 
-    /** Resolve only while the installed entry still matches its pinned digest. */
+    /**
+     * Resolve only while the installed entry still matches its pinned digest.
+     * This reads a file and may invalidate registry state; call from an IO-backed
+     * effect or ViewModel path, never directly during Compose composition.
+     */
     fun find(id: String?): DownloadedFxEffect? {
         val target = id ?: return null
         val effect = _effects.value.firstOrNull { it.id == target } ?: return null
@@ -178,7 +182,7 @@ object DownloadedEffectRepository {
 
     private fun parametersInRange(family: String, a: Float, b: Float, c: Float): Boolean = when (family) {
         "PRISM" -> a in 0.1f..8f && b in 0f..0.5f && c in 0f..1f
-        "SPLIT_TONE" -> a in 0f..1f && b in 0.01f..0.9f && c in 0f..1f
+        "SPLIT_TONE" -> a in 0f..1f && b in 0.01f..0.9f && c in 0f..1f && a + b <= 0.99f
         "RIPPLE" -> a in 0.1f..12f && b in 0f..0.05f && c in 0.1f..12f
         "MOSAIC" -> a in 1f..24f && b in 1f..24f && c in 0f..0.5f
         "CRT" -> a in 1f..360f && b in 0f..2f && c in 0f..1f

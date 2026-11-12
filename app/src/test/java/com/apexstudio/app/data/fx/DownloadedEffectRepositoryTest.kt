@@ -94,6 +94,23 @@ class DownloadedEffectRepositoryTest {
     }
 
     @Test
+    fun `split tone profile with unordered smoothstep edges is rejected`() {
+        val document = JSONObject(payload().toString(Charsets.UTF_8))
+        val items = document.getJSONArray("effects")
+        val splitTone = (0 until items.length()).map { items.getJSONObject(it) }
+            .first { it.optString("family") == "SPLIT_TONE" }
+        splitTone.put("a", 0.8).put("b", 0.5)
+        val bytes = document.toString().toByteArray(Charsets.UTF_8)
+        val root = java.nio.file.Files.createTempDirectory("fx-profile-split-tone-").toFile()
+        try {
+            File(root, "effects.json").writeBytes(bytes)
+            assertTrue(DownloadedEffectRepository.loadPackEffects(root, pack(bytes)).isEmpty())
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun `tampered payload and traversal entry never load as effects`() {
         val bytes = payload()
         val root = java.nio.file.Files.createTempDirectory("fx-profile-tamper-").toFile()

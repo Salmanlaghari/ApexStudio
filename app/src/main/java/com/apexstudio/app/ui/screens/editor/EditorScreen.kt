@@ -636,8 +636,14 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
-    val activeDownloadedFx = remember(state.activeFxId, downloadedFxProfiles) {
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+    val activeDownloadedFx by produceState<com.apexstudio.app.data.fx.DownloadedFxEffect?>(
+        initialValue = null,
+        key1 = state.activeFxId,
+        key2 = downloadedFxProfiles
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+        }
     }
     val previewGpuFilterConfig = mainPreviewClip
         ?.takeIf { it.type == ClipType.VIDEO }
@@ -656,6 +662,7 @@ private fun EditorScreenContent(
     val previewGpuFilterStageConfig = gpuFilterConfigPreviewKey(previewGpuFilterConfig)
     val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
+    val resolvedActiveDownloadedFx = activeDownloadedFx
 
     val currentEffects = remember(
         activePreset,
@@ -664,7 +671,7 @@ private fun EditorScreenContent(
         state.gpuFilterCompareMode,
         state.lutCompareMode,
         activeFx,
-        activeDownloadedFx,
+        resolvedActiveDownloadedFx,
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
@@ -751,10 +758,10 @@ private fun EditorScreenContent(
                         activeFx, state.fxIntensity, state.fxSpeed
                     )
                 )
-            } else if (activeDownloadedFx != null && state.fxIntensity > 0f) {
+            } else if (resolvedActiveDownloadedFx != null && state.fxIntensity > 0f) {
                 add(
                     com.apexstudio.app.data.fx.FxGlEffect(
-                        activeDownloadedFx, state.fxIntensity, state.fxSpeed
+                        resolvedActiveDownloadedFx, state.fxIntensity, state.fxSpeed
                     )
                 )
             }

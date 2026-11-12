@@ -28,9 +28,9 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -49,6 +49,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -66,6 +68,7 @@ import coil.compose.AsyncImage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.ui.screens.settings.LocalCreatorProfile
 import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
 
@@ -87,11 +90,16 @@ internal fun ApexHomeContent(
     onShowAll: () -> Unit,
     onExploreAiTools: () -> Unit = onCreateVideo,
     onExploreShortsTemplates: () -> Unit = {},
-    onExploreTextStyles: () -> Unit = {}
+    onExploreTextStyles: () -> Unit = {},
+    localProfile: LocalCreatorProfile = LocalCreatorProfile(),
+    onSaveLocalProfile: (LocalCreatorProfile) -> Unit = {}
 ) {
     val theme = ApexThemeTokens.current
     val listState = rememberLazyListState()
     var showCreateChoices by remember { mutableStateOf(false) }
+    var showLocalProfile by remember { mutableStateOf(false) }
+    var profileNameDraft by remember { mutableStateOf(localProfile.displayName) }
+    var profileAvatarDraft by remember { mutableStateOf(localProfile.avatarId) }
     val filteredProjects = remember(projects, searchText) {
         val query = searchText.trim()
         if (query.isEmpty()) projects else projects.filter { project ->
@@ -118,7 +126,13 @@ internal fun ApexHomeContent(
         item {
             ApexHomeHeader(
                 onSearch = onSearchOpen,
-                onNotifications = onNotifications
+                onNotifications = onNotifications,
+                profile = localProfile,
+                onProfile = {
+                    profileNameDraft = localProfile.displayName
+                    profileAvatarDraft = localProfile.avatarId
+                    showLocalProfile = true
+                }
             )
         }
         if (searchOpen) {
@@ -194,6 +208,25 @@ internal fun ApexHomeContent(
     }
     }
 
+    if (showLocalProfile) {
+        LocalCreatorProfileDialog(
+            displayName = profileNameDraft,
+            onDisplayNameChange = { profileNameDraft = it.take(24) },
+            avatarId = profileAvatarDraft,
+            onAvatarSelected = { profileAvatarDraft = it },
+            onDismiss = { showLocalProfile = false },
+            onSave = {
+                onSaveLocalProfile(
+                    LocalCreatorProfile(
+                        displayName = profileNameDraft.trim().ifBlank { "Creator" },
+                        avatarId = profileAvatarDraft
+                    )
+                )
+                showLocalProfile = false
+            }
+        )
+    }
+
     if (showCreateChoices) {
         AlertDialog(
             onDismissRequest = { showCreateChoices = false },
@@ -222,7 +255,12 @@ internal fun ApexHomeContent(
 }
 
 @Composable
-private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
+private fun ApexHomeHeader(
+    onSearch: () -> Unit,
+    onNotifications: () -> Unit,
+    profile: LocalCreatorProfile,
+    onProfile: () -> Unit
+) {
     val theme = ApexThemeTokens.current
     Row(
         modifier = Modifier.fillMaxWidth().testTag("dashboard-header"),
@@ -255,6 +293,7 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
         }
         HeaderAction(Icons.Default.Search, "Search projects", onSearch, "dashboard-search")
         HeaderAction(Icons.Default.NotificationsNone, "App notification settings", onNotifications, "dashboard-notifications")
+        ProfileAvatarAction(profile = profile, onClick = onProfile)
     }
 }
 
@@ -590,4 +629,95 @@ private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
                     .clip(RoundedCornerShape(12.dp)).border(1.dp, theme.primary, RoundedCornerShape(12.dp)))
         }
     }
+}
+
+
+@Composable
+private fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
+    val accent = profileAvatarColor(profile.avatarId)
+    Box(
+        modifier = Modifier.size(36.dp)
+            .clip(CircleShape)
+            .background(accent.copy(alpha = 0.18f))
+            .border(1.dp, accent.copy(alpha = 0.8f), CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Open local creator profile" }
+            .testTag("dashboard-profile"),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            profile.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "C",
+            color = accent,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+    }
+}
+
+@Composable
+private fun LocalCreatorProfileDialog(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
+    avatarId: String,
+    onAvatarSelected: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    val theme = ApexThemeTokens.current
+    AlertDialog(
+        modifier = Modifier.testTag("local-profile-dialog"),
+        onDismissRequest = onDismiss,
+        containerColor = theme.bgSurface,
+        title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "This profile stays on this device. It does not create an account or sync online.",
+                    color = theme.textSecondary,
+                    fontSize = 12.sp
+                )
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = onDisplayNameChange,
+                    modifier = Modifier.fillMaxWidth().testTag("local-profile-name"),
+                    singleLine = true,
+                    label = { Text("Display name") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.textPrimary,
+                        unfocusedTextColor = theme.textPrimary,
+                        focusedBorderColor = theme.secondary,
+                        unfocusedBorderColor = theme.border,
+                        focusedLabelColor = theme.primary,
+                        unfocusedLabelColor = theme.textTertiary,
+                        cursorColor = theme.primary,
+                        focusedContainerColor = theme.bgElevated,
+                        unfocusedContainerColor = theme.bgElevated
+                    )
+                )
+                Text("Avatar color", color = theme.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("violet" to "Violet", "cyan" to "Cyan", "amber" to "Amber").forEach { (id, label) ->
+                        FilterChip(
+                            selected = avatarId == id,
+                            onClick = { onAvatarSelected(id) },
+                            modifier = Modifier.testTag("profile-avatar-$id"),
+                            label = { Text(label, fontSize = 10.sp) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSave) { Text("Save profile") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+private fun profileAvatarColor(avatarId: String): Color = when (avatarId) {
+    "cyan" -> Color(0xFF38D9F5)
+    "amber" -> Color(0xFFFFBB55)
+    else -> Color(0xFFB692FF)
 }

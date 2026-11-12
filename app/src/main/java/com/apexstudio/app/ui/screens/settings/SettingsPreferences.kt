@@ -14,10 +14,36 @@ import kotlinx.coroutines.flow.map
 
 private val Context.apexSettingsStore by preferencesDataStore(name = "apex_settings")
 
+data class LocalCreatorProfile(
+    val displayName: String = "Creator",
+    val avatarId: String = "violet"
+)
+
 /** Small persistent settings independent of the project store. */
 object SettingsPreferences {
     private val themeKey = stringPreferencesKey("theme")
     private val captionFillerWordsKey = stringPreferencesKey("caption_filler_words")
+    private val creatorDisplayNameKey = stringPreferencesKey("local_creator_name")
+    private val creatorAvatarKey = stringPreferencesKey("local_creator_avatar")
+
+    fun localCreatorProfile(context: Context): Flow<LocalCreatorProfile> =
+        context.applicationContext.apexSettingsStore.data.catch { error ->
+            if (error is IOException) emit(emptyPreferences()) else throw error
+        }.map { preferences ->
+            LocalCreatorProfile(
+                displayName = preferences[creatorDisplayNameKey]?.trim()?.take(24)?.ifBlank { "Creator" } ?: "Creator",
+                avatarId = preferences[creatorAvatarKey]?.takeIf { it in LOCAL_AVATAR_IDS } ?: "violet"
+            )
+        }
+
+    suspend fun setLocalCreatorProfile(context: Context, profile: LocalCreatorProfile) {
+        val displayName = profile.displayName.replace('\n', ' ').replace('\r', ' ').trim().take(24).ifBlank { "Creator" }
+        val avatarId = profile.avatarId.takeIf { it in LOCAL_AVATAR_IDS } ?: "violet"
+        context.applicationContext.apexSettingsStore.edit { preferences ->
+            preferences[creatorDisplayNameKey] = displayName
+            preferences[creatorAvatarKey] = avatarId
+        }
+    }
 
     fun theme(context: Context): Flow<ApexThemeOption> =
         context.applicationContext.apexSettingsStore.data.catch { error ->
@@ -48,6 +74,8 @@ object SettingsPreferences {
             preferences[captionFillerWordsKey] = stored
         }
     }
+
+    private val LOCAL_AVATAR_IDS = setOf("violet", "cyan", "amber")
 }
 
 /** In-app privacy summary based on the current app source and manifest. */
@@ -65,7 +93,7 @@ object SettingsPolicyCopy {
         ),
         Section(
             "Sharing, backups, and retention",
-            "ApexStudio has no account or project-sync feature. This code inspection found no base-app media-upload or crash-reporting service; sharing media or contacting us is initiated by you through Android or your chosen email app. Android device backup and transfer behavior can depend on your device and system settings. Project records remain until you delete them or clear app data; exports and other files may need to be removed separately using Android."
+            "ApexStudio has no account or project-sync feature. The optional creator name and avatar in the dashboard profile are stored locally and are not synced. This code inspection found no base-app media-upload or crash-reporting service; sharing media or contacting us is initiated by you through Android or your chosen email app. Android device backup and transfer behavior can depend on your device and system settings. Project records remain until you delete them or clear app data; exports and other files may need to be removed separately using Android."
         ),
         Section(
             "AI and third-party components",

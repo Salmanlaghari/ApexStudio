@@ -467,7 +467,9 @@ fun TransitionPickerOverlay(
 @Composable
 fun TextPanelOverlay(
     state: EditorState,
-    vm: EditorViewModel
+    vm: EditorViewModel,
+    initialTab: TextPanelTab = TextPanelTab.EDIT,
+    onCloseWorkspace: () -> Unit = {}
 ) {
     if (!state.textPanelOpen) return
     val activeOverlayId = state.selectedTextOverlayId
@@ -476,8 +478,14 @@ fun TextPanelOverlay(
         ?: state.project?.clips?.firstOrNull { it.id == state.selectedClipId }
         ?: state.project?.clips?.firstOrNull()
     val rangeOwnerClipId = activeOverlayId?.let { vm.textOverlayProjectOwnerClipId(it) }
+    val mainVisualClip = state.project?.clips.orEmpty().firstOrNull {
+        it.id == state.selectedClipId && it.trackIndex == 0 &&
+            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+    } ?: state.project?.clips.orEmpty().firstOrNull {
+        it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+    }
     val textClip = rangeOwnerClipId?.let { ownerId -> state.project?.clips?.firstOrNull { it.id == ownerId } }
-        ?: selectedTextClip
+        ?: if (activeOverlayId != null) selectedTextClip else mainVisualClip ?: selectedTextClip
     val textOverlays = textClip?.textOverlays ?: emptyList()
     val activeRange = activeOverlayId?.let { vm.textOverlayProjectRange(it) }
     val textTimeline = com.apexstudio.app.data.export.ProjectCompositionTimeline.build(state.project?.clips.orEmpty())
@@ -485,19 +493,28 @@ fun TextPanelOverlay(
         if (overlay.id == activeOverlayId && activeRange != null)
             overlay.copy(startMs = activeRange.startMs, endMs = activeRange.endMs) else overlay
     }
+    fun ensureStyleTargetOverlayId(): String? {
+        val clip = textClip ?: return null
+        activeOverlayId?.takeIf { id -> clip.textOverlays.any { it.id == id } }?.let { return it }
+        vm.addTextOverlay(clip.id, "Your title")
+        return vm.state.value.selectedTextOverlayId
+    }
     val captionUiState by vm.captionUi.collectAsState()
     val captionFillerReview by vm.captionFillerReview.collectAsState()
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
-            .clickable { vm.closeTextPanel() },
+            .clickable {
+                vm.closeTextPanel()
+                onCloseWorkspace()
+            },
         contentAlignment = Alignment.BottomCenter
     ) {
         Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
             TextPanel(
                 overlays = panelOverlays,
-                initialTab = if (state.textPanelStartsOnCaptions) TextPanelTab.CAPTIONS else TextPanelTab.EDIT,
+                initialTab = if (state.textPanelStartsOnCaptions) TextPanelTab.CAPTIONS else initialTab,
                 selectedId = activeOverlayId,
                 timelineDurationMs = textTimeline.durationMs,
                 playheadMs = state.playerPositionMs,
@@ -579,13 +596,15 @@ fun TextPanelOverlay(
                     textClip?.let { vm.removeTextOverlay(it.id, overlayId) }
                 },
                 onApplyPreset = { preset ->
-                    if (textClip != null && activeOverlayId != null) {
-                        vm.applyTextPreset(textClip.id, activeOverlayId, preset)
+                    val targetOverlayId = ensureStyleTargetOverlayId()
+                    if (textClip != null && targetOverlayId != null) {
+                        vm.applyTextPreset(textClip.id, targetOverlayId, preset)
                     }
                 },
                 onApplyDesignMotion = { preset ->
-                    if (textClip != null && activeOverlayId != null) {
-                        vm.applyTextDesignMotion(textClip.id, activeOverlayId, preset)
+                    val targetOverlayId = ensureStyleTargetOverlayId()
+                    if (textClip != null && targetOverlayId != null) {
+                        vm.applyTextDesignMotion(textClip.id, targetOverlayId, preset)
                     }
                 },
                 onAnimationChange = { anim ->
@@ -593,7 +612,10 @@ fun TextPanelOverlay(
                         vm.setTextOverlayAnimation(textClip.id, activeOverlayId, anim)
                     }
                 },
-                onClose = { vm.closeTextPanel() },
+                onClose = {
+                    vm.closeTextPanel()
+                    onCloseWorkspace()
+                },
                 // One-tap Text Reveal template: needs a clip to attach
                 // the text to; applies at the playhead, then closes
                 // the panel so the result is visible immediately.

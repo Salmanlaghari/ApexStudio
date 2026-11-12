@@ -137,9 +137,13 @@ private fun EditorScreenContent(
         }
         if (entryWorkspace == "audio") vm.openAudioMixer()
     }
+    val closeEntryWorkspace: () -> Unit = {
+        if (entryWorkspace == "text-styles") vm.closeTextPanel()
+        onCloseWorkspace()
+    }
     BackHandler(enabled = entryWorkspace != "edit" && entryWorkspace != "ai") {
         if (entryWorkspace == "audio") vm.closeAudioMixer()
-        onCloseWorkspace()
+        closeEntryWorkspace()
     }
     val aiContentReportState by vm.aiContentReportState.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
@@ -212,6 +216,12 @@ private fun EditorScreenContent(
         ?.takeIf { it.type == ClipType.VIDEO }
     val isCoverMode = framingVideo?.let { it.videoFitMode == VideoFitMode.COVER } ?: nonVideoCoverMode
     var showAiPanel by remember { mutableStateOf(false) }
+    LaunchedEffect(entryWorkspace, savedState.project?.id) {
+        if (entryWorkspace == "text-styles" && savedState.project != null) {
+            activateLocalEditorPanel(EditorPanelKey.TEXT)
+            vm.openTextPanel()
+        }
+    }
     LaunchedEffect(entryWorkspace) {
         if (entryWorkspace == "ai") {
             showAiPanel = true
@@ -1502,7 +1512,7 @@ private fun EditorScreenContent(
                     activeEditorPanel = null
                     vm.keepOnlyEditorPanel(null)
                     if (workspaceTarget != null) dismissWorkspace()
-                    if (entryWorkspace != "edit" && entryWorkspace != "ai") onCloseWorkspace()
+                    if (entryWorkspace != "edit" && entryWorkspace != "ai") closeEntryWorkspace()
                 },
                 onAi = {
                     showAiPanel = true
@@ -1703,7 +1713,12 @@ private fun EditorScreenContent(
         TransmissionTemplatesOverlay(state = state, vm = vm, templates = transmissionTemplates)
     }
     if (activeEditorPanel == EditorPanelKey.TRANSITION) TransitionPickerOverlay(state = state, vm = vm)
-    if (activeEditorPanel == EditorPanelKey.TEXT) TextPanelOverlay(state = state, vm = vm)
+        if (activeEditorPanel == EditorPanelKey.TEXT) TextPanelOverlay(
+            state = state,
+            vm = vm,
+            initialTab = if (entryWorkspace == "text-styles") TextPanelTab.PRESETS else TextPanelTab.EDIT,
+            onCloseWorkspace = { if (entryWorkspace == "text-styles") onCloseWorkspace() }
+        )
     if (activeEditorPanel == EditorPanelKey.AUDIO_MIXER) AudioMixerPanelOverlay(
         state = state,
         audioState = audioState,

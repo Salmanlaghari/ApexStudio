@@ -70,7 +70,9 @@ fun HomeScreen(
     onOpenSettings: () -> Unit = {},
     onExport: () -> Unit = {},
     shortsTemplateRequestId: String? = null,
-    onShortsTemplateRequestConsumed: () -> Unit = {}
+    onShortsTemplateRequestConsumed: () -> Unit = {},
+    onOpenShortsTemplates: () -> Unit = {},
+    onOpenTextStyles: (String) -> Unit = onProjectOpen
 ) {
     val context = LocalContext.current
     val repo = remember { MediaRepository }
@@ -85,6 +87,7 @@ fun HomeScreen(
     var searchText by remember { mutableStateOf("") }
     var showAllProjects by remember { mutableStateOf(false) }
     var openAiToolsAfterCreate by remember { mutableStateOf(false) }
+    var openTextStylesAfterCreate by remember { mutableStateOf(false) }
     var activeShortsTemplateId by remember { mutableStateOf<String?>(null) }
     var pendingShortsTemplateId by remember { mutableStateOf<String?>(null) }
     var pendingShortsVideo by remember { mutableStateOf<MediaMetadata?>(null) }
@@ -106,6 +109,7 @@ fun HomeScreen(
     val mediaPicker = remember { MediaPickerHelper(context) }
     mediaPicker.registerLaunchers(onCancelled = {
         openAiToolsAfterCreate = false
+        openTextStylesAfterCreate = false
         if (activeShortsTemplateId != null) {
             activeShortsTemplateId = null
             onShortsTemplateRequestConsumed()
@@ -204,6 +208,7 @@ fun HomeScreen(
         mediaPicker.pickedMedia.collect { metadataList ->
             if (metadataList.isEmpty()) {
                 openAiToolsAfterCreate = false
+                openTextStylesAfterCreate = false
                 if (activeShortsTemplateId != null) {
                     activeShortsTemplateId = null
                     onShortsTemplateRequestConsumed()
@@ -254,7 +259,10 @@ fun HomeScreen(
                     PreviewStartupLatency.begin(newProject.id, firstVideoClip.id, selectionTimeMs)
                 }
                 CrashMarker.mark(context, "HomeScreen: opening project ${newProject.id}")
-                if (openAiToolsAfterCreate) {
+                if (openTextStylesAfterCreate) {
+                    openTextStylesAfterCreate = false
+                    onOpenTextStyles(newProject.id)
+                } else if (openAiToolsAfterCreate) {
                     openAiToolsAfterCreate = false
                     onOpenAiTools(newProject.id)
                 } else {
@@ -299,6 +307,17 @@ fun HomeScreen(
                 onOpenAiTools(existingProjectId)
             } else {
                 openAiToolsAfterCreate = true
+                openEditorFor(ClipType.VIDEO)
+            }
+        },
+        onExploreShortsTemplates = onOpenShortsTemplates,
+        onExploreTextStyles = {
+            val existingProjectId = latestSavedVideoProjectId(projects, savedProjectIds)
+            if (existingProjectId != null) {
+                onOpenTextStyles(existingProjectId)
+            } else {
+                openAiToolsAfterCreate = false
+                openTextStylesAfterCreate = true
                 openEditorFor(ClipType.VIDEO)
             }
         },

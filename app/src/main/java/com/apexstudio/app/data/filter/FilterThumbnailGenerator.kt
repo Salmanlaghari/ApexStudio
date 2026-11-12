@@ -192,6 +192,13 @@ object FilterThumbnailGenerator {
                         null
                     }
                     if (texture == null && isDownloadedLut) {
+                        // Intentional gap (documented for PR #231, Kilo
+                        // WARNING 7): a downloaded LUT that fails
+                        // verification gets NO entry in the thumbnail map —
+                        // never a matrix-fallback thumbnail, which would
+                        // misrepresent a broken/tampered file as a working
+                        // filter. The panel renders such a preset without a
+                        // sample image until its pack is reinstalled.
                         Log.w(TAG, "Downloaded LUT ${preset.id} failed verification; omitting its sample thumbnail")
                         return@async null
                     }
@@ -205,6 +212,9 @@ object FilterThumbnailGenerator {
                         }
                     } else null
                     if (bmp == null && isDownloadedLut) {
+                        // Same intentional gap as above (Kilo WARNING 7):
+                        // no thumbnail entry for an unrenderable downloaded
+                        // LUT, rather than a misleading fallback image.
                         Log.w(TAG, "Downloaded LUT ${preset.id} could not be rendered; omitting its sample thumbnail")
                         return@async null
                     }

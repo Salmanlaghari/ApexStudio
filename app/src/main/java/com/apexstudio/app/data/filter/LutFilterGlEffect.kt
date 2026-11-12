@@ -110,10 +110,19 @@ class LutFilterGlEffect(
 
         private fun uploadLut(context: Context, preset: FilterPreset) {
             val lut = loadLut(context, preset) ?: run {
+                // Never throw here: this runs inside GL shader-program
+                // construction, so an exception crashes the whole render
+                // pipeline (preview + export) over a single bad filter.
+                // A missing/tampered downloaded LUT is a data problem, not
+                // a fatal one — log it and fall back to the identity LUT so
+                // the frame passes through ungraded. (Fix-forward for
+                // PR #231, Kilo CRITICAL 1: the previous code threw
+                // IllegalStateException for downloaded LUTs.)
                 if (preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)) {
-                    throw IllegalStateException("Downloaded LUT ${preset.name} is missing or failed integrity validation. Reinstall its filter pack.")
+                    Log.e(TAG, "Downloaded LUT ${preset.name} (${preset.id}) is missing or failed integrity validation; using identity LUT. Reinstall its filter pack.")
+                } else {
+                    Log.w(TAG, "No LUT data for ${preset.id}; using identity")
                 }
-                Log.w(TAG, "No LUT data for ${preset.id}; using identity")
                 uploadIdentityLut()
                 return
             }
@@ -291,8 +300,19 @@ object LutBitmapCache {
     private data class CachedLut(val fingerprint: String, val texture: LutTexture)
     private val cache = ConcurrentHashMap<String, CachedLut>()
 
-    private fun fingerprint(preset: FilterPreset): String =
-        "${preset.asset}|${preset.assetSha256.orEmpty()}|${preset.assetSizeBytes ?: 0L}"
+    private fun fingerprint(preset: FilterPreset): String {
+        // Downloaded and bundled LUTs live in separate cache namespaces so a
+        // downloaded preset can never collide with a bundled entry. Downloaded
+        // presets must carry their pinned integrity metadata: a missing hash
+        // or size is encoded with explicit sentinels ("missing-sha256" / -1)
+        // instead of "" / 0, which could alias a real fingerprint.
+        // (Fix-forward for PR #231, Kilo WARNING 5.)
+        return if (preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)) {
+            "downloaded|${preset.asset}|${preset.assetSha256?.lowercase() ?: "missing-sha256"}|${preset.assetSizeBytes ?: -1L}"
+        } else {
+            "bundled|${preset.asset}|${preset.assetSha256.orEmpty()}|${preset.assetSizeBytes ?: 0L}"
+        }
+    }
 
     /**
      * Return the cached [LutTexture] for [preset], loading + packing
@@ -302,6 +322,14 @@ object LutBitmapCache {
     suspend fun getOrLoad(context: Context, preset: FilterPreset): LutTexture? {
         val fingerprint = fingerprint(preset)
         val downloaded = preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)
+        // Downloaded LUTs are only cacheable/loadable with their pinned
+        // integrity metadata; without it there is nothing trustworthy to
+        // verify the file against, so refuse instead of caching under a
+        // degenerate fingerprint. (PR #231 fix-forward, Kilo WARNING 5.)
+        if (downloaded && (preset.assetSha256.isNullOrBlank() || preset.assetSizeBytes == null)) {
+            Log.w("LutBitmapCache", "Downloaded LUT ${preset.id} lacks pinned sha256/size metadata; refusing to load")
+            return null
+        }
         if (!downloaded) cache[preset.id]?.takeIf { it.fingerprint == fingerprint }?.let { return it.texture }
         return withContext(Dispatchers.Default) {
             // Re-check after dispatch: a concurrent caller may have

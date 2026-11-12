@@ -3,6 +3,7 @@ package com.apexstudio.app.data.filter
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -117,6 +118,56 @@ class FilterManifestTest {
 
             FilterManifest.replaceDownloadedPresets(emptyList())
             assertNull(FilterManifest.presetById(downloaded.id))
+        } finally {
+            FilterManifest.resetForTesting()
+        }
+    }
+
+    @Test
+    fun `lutContentChanged compares asset sha and size explicitly`() {
+        // PR #231 fix-forward (Kilo CRITICAL 3): cache eviction is driven by
+        // this explicit field comparison, not data-class equality.
+        val base = FilterPreset(
+            id = "dl_pack_a", name = "A", category = "Warm",
+            asset = "downloaded-lut://pack/a.cube",
+            assetSha256 = "a".repeat(64), assetSizeBytes = 100L
+        )
+        assertFalse(FilterManifest.lutContentChanged(base, base.copy()))
+        // Display-only changes do not change the cached pixels.
+        assertFalse(FilterManifest.lutContentChanged(base, base.copy(name = "Renamed", category = "Cool")))
+        // Sha case alone is not a content change (hashes are hex).
+        assertFalse(FilterManifest.lutContentChanged(base, base.copy(assetSha256 = "A".repeat(64))))
+        // Any content-field change must evict.
+        assertTrue(FilterManifest.lutContentChanged(base, base.copy(assetSha256 = "b".repeat(64))))
+        assertTrue(FilterManifest.lutContentChanged(base, base.copy(assetSha256 = null)))
+        assertTrue(FilterManifest.lutContentChanged(base, base.copy(assetSizeBytes = 101L)))
+        assertTrue(FilterManifest.lutContentChanged(base, base.copy(assetSizeBytes = null)))
+        assertTrue(FilterManifest.lutContentChanged(base, base.copy(asset = "downloaded-lut://pack/b.cube")))
+        // Added / removed presets count as changed.
+        assertTrue(FilterManifest.lutContentChanged(null, base))
+        assertTrue(FilterManifest.lutContentChanged(base, null))
+        assertFalse(FilterManifest.lutContentChanged(null, null))
+    }
+
+    @Test
+    fun `replacing a downloaded preset with new integrity metadata updates the registry`() {
+        FilterManifest.resetForTesting()
+        val v1 = FilterPreset(
+            id = "dl_pack_a", name = "A", category = "Warm",
+            asset = "downloaded-lut://pack/a.cube",
+            assetSha256 = "a".repeat(64), assetSizeBytes = 100L
+        )
+        val v2 = v1.copy(assetSha256 = "b".repeat(64), assetSizeBytes = 200L)
+        try {
+            FilterManifest.replaceDownloadedPresets(listOf(v1))
+            val versionAfterV1 = FilterManifest.downloadedRegistryVersion.value
+            // Identical replacement is a no-op: no version bump.
+            FilterManifest.replaceDownloadedPresets(listOf(v1.copy()))
+            assertEquals(versionAfterV1, FilterManifest.downloadedRegistryVersion.value)
+
+            FilterManifest.replaceDownloadedPresets(listOf(v2))
+            assertEquals(v2, FilterManifest.presetById(v1.id))
+            assertTrue(FilterManifest.downloadedRegistryVersion.value > versionAfterV1)
         } finally {
             FilterManifest.resetForTesting()
         }

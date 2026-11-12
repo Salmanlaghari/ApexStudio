@@ -147,9 +147,19 @@ def run():
         alpha_results = []
         for shader_name in ["StickerGlEffect", "TextOverlayGlEffect"]:
             overlay_source = (root / f"app/src/main/java/com/apexstudio/app/data/effect/{shader_name}.kt").read_text()
-            overlay_fragment = textwrap.dedent(re.search(r'private val FRAGMENT_SHADER = """(.*?)"""', overlay_source, re.S).group(1)).strip()
+            if shader_name == "TextOverlayGlEffect":
+                vertex_match = re.search(r'\bval vertex\s*=\s*"""(.*?)"""', overlay_source, re.S)
+                fragment_match = re.search(r'\bval fragment\s*=\s*"""(.*?)"""', overlay_source, re.S)
+                assert vertex_match and fragment_match, "TextOverlayGlEffect: production shader pair was not found"
+                overlay_vertex = textwrap.dedent(vertex_match.group(1)).strip()
+                overlay_fragment = textwrap.dedent(fragment_match.group(1)).strip()
+            else:
+                fragment_match = re.search(r'private val FRAGMENT_SHADER = """(.*?)"""', overlay_source, re.S)
+                assert fragment_match, f"{shader_name}: fragment shader was not found"
+                overlay_vertex = vertex
+                overlay_fragment = textwrap.dedent(fragment_match.group(1)).strip()
             overlay_program = gl.glCreateProgram()
-            for kind, text in [(gl.GL_VERTEX_SHADER, vertex), (gl.GL_FRAGMENT_SHADER, overlay_fragment)]:
+            for kind, text in [(gl.GL_VERTEX_SHADER, overlay_vertex), (gl.GL_FRAGMENT_SHADER, overlay_fragment)]:
                 gl.glAttachShader(overlay_program, compile_shader(kind, text))
             gl.glLinkProgram(overlay_program)
             assert gl.glGetProgramiv(overlay_program, gl.GL_LINK_STATUS), gl.glGetProgramInfoLog(overlay_program)
@@ -179,7 +189,26 @@ def run():
                 assert error.max() <= 1., f"{shader_name}: premultiplied-alpha mismatch {error.max()}"
                 assert np.array_equal(output[:, :, 3], pixels[:, :, 3])
                 assert gl.glGetError() == gl.GL_NO_ERROR
-            alpha_results.append({"shader": shader_name, "transparent_partial_opaque_alpha": "pass"})
+            orientation = "not applicable"
+            if shader_name == "TextOverlayGlEffect":
+                # Treat row 0 as the visual top of an Android Canvas bitmap. The
+                # production vertex shader must invert only the caption's V
+                # coordinate so the rendered video remains upright.
+                orientation_pixels = np.empty_like(pixels)
+                orientation_pixels[:height // 2] = (255, 0, 0, 255)
+                orientation_pixels[height // 2:] = (0, 255, 0, 255)
+                gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, width, height, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, orientation_pixels)
+                gl.glDrawArrays(gl.GL_TRIANGLE_STRIP, 0, 4)
+                gl.glFinish()
+                orientation_output = np.empty_like(pixels)
+                gl.glReadPixels(0, 0, width, height, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, orientation_output)
+                bottom_caption = orientation_output[height // 4, width // 2, :3]
+                top_caption = orientation_output[(height * 3) // 4, width // 2, :3]
+                assert np.array_equal(bottom_caption, [0, 255, 0]), f"{shader_name}: bottom caption half was not kept at the bottom: {bottom_caption}"
+                assert np.array_equal(top_caption, [255, 0, 0]), f"{shader_name}: top caption half was not kept at the top: {top_caption}"
+                assert gl.glGetError() == gl.GL_NO_ERROR
+                orientation = "upright top/bottom caption pixels pass"
+            alpha_results.append({"shader": shader_name, "transparent_partial_opaque_alpha": "pass", "orientation": orientation})
             gl.glDeleteTextures(1, [overlay_texture])
             gl.glDeleteProgram(overlay_program)
         gl_info = {key: ctypes.cast(gl.glGetString(value), ctypes.c_char_p).value.decode("utf-8", "replace") for key, value in [("vendor", gl.GL_VENDOR), ("renderer", gl.GL_RENDERER), ("version", gl.GL_VERSION)]}

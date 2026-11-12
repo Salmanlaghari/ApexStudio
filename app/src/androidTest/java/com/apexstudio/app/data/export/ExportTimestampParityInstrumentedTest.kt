@@ -1,5 +1,7 @@
 package com.apexstudio.app.data.export
 
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
@@ -7,9 +9,11 @@ import android.net.Uri
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.GLES20
+import android.opengl.GLUtils
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.domain.model.MediaClip
@@ -22,6 +26,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.io.File
 import java.util.UUID
 import kotlin.math.abs
@@ -109,6 +115,175 @@ class ExportTimestampParityInstrumentedTest {
             )
             EGL14.eglDestroySurface(display, surface)
             EGL14.eglDestroyContext(display, context)
+            EGL14.eglTerminate(display)
+        }
+    }
+
+    @Test
+    fun captionBitmapUvIsCorrectedWithoutFlippingMedia3VideoUv() {
+        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        assertTrue("EGL display must be available", display !== EGL14.EGL_NO_DISPLAY)
+        val version = IntArray(2)
+        assertTrue("EGL must initialize", EGL14.eglInitialize(display, version, 0, version, 1))
+        val configs = arrayOfNulls<EGLConfig>(1)
+        val configCount = IntArray(1)
+        val configAttrs = intArrayOf(
+            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+            EGL14.EGL_RED_SIZE, 8,
+            EGL14.EGL_GREEN_SIZE, 8,
+            EGL14.EGL_BLUE_SIZE, 8,
+            EGL14.EGL_ALPHA_SIZE, 8,
+            EGL14.EGL_NONE
+        )
+        assertTrue("EGL must provide an ES2 pbuffer config", EGL14.eglChooseConfig(
+            display, configAttrs, 0, configs, 0, configs.size, configCount, 0
+        ))
+        assertTrue("At least one EGL config is required", configCount[0] > 0)
+        val config = requireNotNull(configs[0])
+        val eglContext = EGL14.eglCreateContext(
+            display, config, EGL14.EGL_NO_CONTEXT,
+            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0
+        )
+        assertTrue("An ES2 context must be created", eglContext !== EGL14.EGL_NO_CONTEXT)
+        val surface = EGL14.eglCreatePbufferSurface(
+            display, config,
+            intArrayOf(EGL14.EGL_WIDTH, 2, EGL14.EGL_HEIGHT, 2, EGL14.EGL_NONE), 0
+        )
+        assertTrue("An ES2 pbuffer surface must be created", surface !== EGL14.EGL_NO_SURFACE)
+
+        val textureIds = mutableListOf<Int>()
+        val bitmaps = mutableListOf<Bitmap>()
+        val shaderIds = mutableListOf<Int>()
+        var program = 0
+        try {
+            assertTrue("The ES2 context must become current", EGL14.eglMakeCurrent(display, surface, surface, eglContext))
+
+            fun compileShader(type: Int, source: String): Int {
+                val shader = GLES20.glCreateShader(type)
+                assertTrue("Shader object must be created", shader != 0)
+                shaderIds += shader
+                GLES20.glShaderSource(shader, source)
+                GLES20.glCompileShader(shader)
+                val compiled = IntArray(1)
+                GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
+                assertTrue("Production text overlay shader must compile: ${GLES20.glGetShaderInfoLog(shader)}",
+                    compiled[0] == GLES20.GL_TRUE)
+                return shader
+            }
+
+            fun uploadBitmap(bitmap: Bitmap): Int {
+                val texture = IntArray(1)
+                GLES20.glGenTextures(1, texture, 0)
+                assertTrue("Bitmap texture must be created", texture[0] != 0)
+                textureIds += texture[0]
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture[0])
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+                return texture[0]
+            }
+
+            fun stripedBitmap(topColor: Int, bottomColor: Int): Bitmap =
+                Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { bitmap ->
+                    bitmaps += bitmap
+                    for (x in 0..1) {
+                        bitmap.setPixel(x, 0, topColor)
+                        bitmap.setPixel(x, 1, bottomColor)
+                    }
+                }
+
+            // Media3's input texture convention is the one already consumed by vTextureCoord:
+            // its bottom storage row should appear at the top of the drawn video. The Canvas
+            // caption texture uses normal top-first bitmap rows and therefore needs its own V flip.
+            val videoTexture = uploadBitmap(stripedBitmap(topColor = Color.BLUE, bottomColor = Color.RED))
+            val captionTexture = uploadBitmap(stripedBitmap(topColor = Color.GREEN, bottomColor = Color.MAGENTA))
+            val vertexShader = compileShader(GLES20.GL_VERTEX_SHADER, TextOverlayGlShaders.vertex)
+            val fragmentShader = compileShader(GLES20.GL_FRAGMENT_SHADER, TextOverlayGlShaders.fragment)
+            program = GLES20.glCreateProgram()
+            assertTrue("Production text overlay program must be created", program != 0)
+            GLES20.glAttachShader(program, vertexShader)
+            GLES20.glAttachShader(program, fragmentShader)
+            GLES20.glLinkProgram(program)
+            val linked = IntArray(1)
+            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0)
+            assertTrue("Production text overlay program must link: ${GLES20.glGetProgramInfoLog(program)}",
+                linked[0] == GLES20.GL_TRUE)
+
+            GLES20.glViewport(0, 0, 2, 2)
+            GLES20.glUseProgram(program)
+            val framePosition = GLES20.glGetAttribLocation(program, "aFramePosition")
+            val vertexBuffer = ByteBuffer.allocateDirect(16 * Float.SIZE_BYTES)
+                .order(ByteOrder.nativeOrder())
+                .asFloatBuffer()
+                .apply {
+                    put(floatArrayOf(
+                        -1f, -1f, 0f, 1f,
+                        1f, -1f, 0f, 1f,
+                        -1f, 1f, 0f, 1f,
+                        1f, 1f, 0f, 1f
+                    ))
+                    position(0)
+                }
+            GLES20.glEnableVertexAttribArray(framePosition)
+            GLES20.glVertexAttribPointer(framePosition, 4, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+
+            val identity = floatArrayOf(
+                1f, 0f, 0f, 0f,
+                0f, 1f, 0f, 0f,
+                0f, 0f, 1f, 0f,
+                0f, 0f, 0f, 1f
+            )
+            val videoTextureMatrix = floatArrayOf(
+                0.5f, 0f, 0f, 0f,
+                0f, 0.5f, 0f, 0f,
+                0f, 0f, 1f, 0f,
+                0.5f, 0.5f, 0f, 1f
+            )
+            GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program, "uTransformationMatrix"), 1, false, identity, 0)
+            GLES20.glUniformMatrix4fv(
+                GLES20.glGetUniformLocation(program, "uTexTransformationMatrix"), 1, false, videoTextureMatrix, 0
+            )
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uTexSampler"), 0)
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(program, "uOverlaySampler"), 1)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, videoTexture)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, captionTexture)
+
+            fun render(overlayEnabled: Float): ByteArray {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uOverlayEnabled"), overlayEnabled)
+                GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+                GLES20.glFinish()
+                val pixels = ByteBuffer.allocateDirect(2 * 2 * 4).order(ByteOrder.nativeOrder())
+                GLES20.glReadPixels(0, 0, 2, 2, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+                return ByteArray(2 * 2 * 4).also { pixels.get(it) }
+            }
+
+            fun assertRgb(pixels: ByteArray, x: Int, y: Int, red: Int, green: Int, blue: Int, label: String) {
+                val offset = (y * 2 + x) * 4
+                assertEquals("$label red", red, pixels[offset].toInt() and 0xff)
+                assertEquals("$label green", green, pixels[offset + 1].toInt() and 0xff)
+                assertEquals("$label blue", blue, pixels[offset + 2].toInt() and 0xff)
+            }
+
+            val videoOnly = render(overlayEnabled = 0f)
+            assertRgb(videoOnly, 0, 1, 255, 0, 0, "Media3 video top remains upright")
+            assertRgb(videoOnly, 0, 0, 0, 0, 255, "Media3 video bottom remains upright")
+
+            val withCaption = render(overlayEnabled = 1f)
+            assertRgb(withCaption, 0, 1, 0, 255, 0, "Android Canvas caption top remains upright")
+            assertRgb(withCaption, 0, 0, 255, 0, 255, "Android Canvas caption bottom remains upright")
+        } finally {
+            if (program != 0) GLES20.glDeleteProgram(program)
+            shaderIds.forEach(GLES20::glDeleteShader)
+            if (textureIds.isNotEmpty()) GLES20.glDeleteTextures(textureIds.size, textureIds.toIntArray(), 0)
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            EGL14.eglDestroySurface(display, surface)
+            EGL14.eglDestroyContext(display, eglContext)
             EGL14.eglTerminate(display)
         }
     }

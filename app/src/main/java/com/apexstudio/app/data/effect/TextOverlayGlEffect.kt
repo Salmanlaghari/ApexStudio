@@ -18,6 +18,45 @@ import com.apexstudio.app.data.text.TextFontRegistry
 import com.apexstudio.app.data.text.TextSpriteRenderer
 import com.apexstudio.app.domain.model.TextOverlay
 
+/** Shared shader source for the export effect and its GLES orientation regression. */
+internal object TextOverlayGlShaders {
+    val vertex = """
+        attribute vec4 aFramePosition;
+        uniform mat4 uTransformationMatrix;
+        uniform mat4 uTexTransformationMatrix;
+        varying vec2 vTextureCoord;
+        varying vec2 vOverlayTextureCoord;
+        void main() {
+            gl_Position = uTransformationMatrix * aFramePosition;
+            vTextureCoord = (uTexTransformationMatrix * aFramePosition).xy;
+            // Video keeps Media3's texture origin. Android Canvas bitmap rows start at its visual top,
+            // so invert V only for the uploaded caption sprite.
+            vOverlayTextureCoord = vec2(vTextureCoord.x, 1.0 - vTextureCoord.y);
+        }
+    """.trimIndent()
+
+    val fragment = """
+        precision highp float;
+        varying vec2 vTextureCoord;
+        varying vec2 vOverlayTextureCoord;
+        uniform sampler2D uTexSampler;
+        uniform sampler2D uOverlaySampler;
+        uniform float uOverlayEnabled;
+        void main() {
+            vec4 video = texture2D(uTexSampler, vTextureCoord);
+            if (uOverlayEnabled > 0.5) {
+                vec4 caption = texture2D(uOverlaySampler, vOverlayTextureCoord);
+                // Android Canvas/ARGB_8888 sprites upload premultiplied RGB.
+                // Multiplying by alpha again darkens translucent text/masks.
+                vec3 outRgb = caption.rgb + video.rgb * (1.0 - caption.a);
+                gl_FragColor = vec4(outRgb, video.a);
+            } else {
+                gl_FragColor = video;
+            }
+        }
+    """.trimIndent()
+}
+
 /**
  * Bakes timed text overlays into the exported video. All captions active on a
  * frame are rendered, in list order, into one full-frame transparent sprite;
@@ -58,7 +97,7 @@ class TextOverlayGlEffect(
 
         init {
             glProgram = try {
-                GlProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+                GlProgram(TextOverlayGlShaders.vertex, TextOverlayGlShaders.fragment)
             } catch (e: Exception) {
                 throw VideoFrameProcessingException("Failed to compile text overlay shader", e)
             }
@@ -174,36 +213,5 @@ class TextOverlayGlEffect(
     companion object {
         private const val TAG = "TextOverlayGlEffect"
         private const val TEXTURE_POOL_CAPACITY = 4
-
-        private val VERTEX_SHADER = """
-            attribute vec4 aFramePosition;
-            uniform mat4 uTransformationMatrix;
-            uniform mat4 uTexTransformationMatrix;
-            varying vec2 vTextureCoord;
-            void main() {
-                gl_Position = uTransformationMatrix * aFramePosition;
-                vTextureCoord = (uTexTransformationMatrix * aFramePosition).xy;
-            }
-        """.trimIndent()
-
-        private val FRAGMENT_SHADER = """
-            precision highp float;
-            varying vec2 vTextureCoord;
-            uniform sampler2D uTexSampler;
-            uniform sampler2D uOverlaySampler;
-            uniform float uOverlayEnabled;
-            void main() {
-                vec4 video = texture2D(uTexSampler, vTextureCoord);
-                if (uOverlayEnabled > 0.5) {
-                    vec4 caption = texture2D(uOverlaySampler, vTextureCoord);
-                    // Android Canvas/ARGB_8888 sprites upload premultiplied RGB.
-                    // Multiplying by alpha again darkens translucent text/masks.
-                    vec3 outRgb = caption.rgb + video.rgb * (1.0 - caption.a);
-                    gl_FragColor = vec4(outRgb, video.a);
-                } else {
-                    gl_FragColor = video;
-                }
-            }
-        """.trimIndent()
     }
 }

@@ -41,15 +41,15 @@ class ColorStudioVisualRenderTest {
             .assertIsDisplayed()
     }
 
-    @Test fun compactPhoneStripExposesBrightnessHdrStyleAndSharpnessControls() {
+    @Test fun compactPhoneStripExposesBrightnessSdrToneMapAndSharpnessControls() {
         val vm = EditorViewModel()
         val clip = MediaClip("fixture", "Host layout fixture", "file:///test-only.mp4", 5_000L, trimEndMs = 5_000L)
         vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
         compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
 
         compose.onNodeWithText("Brightness").assertIsDisplayed()
-        compose.onNodeWithTag("color_adjustment_controls").performScrollToNode(hasText("HDR Style"))
-        compose.onNodeWithText("HDR Style").assertIsDisplayed()
+        compose.onNodeWithTag("color_adjustment_controls").performScrollToNode(hasText("Tone Map (SDR)"))
+        compose.onNodeWithText("Tone Map (SDR)").assertIsDisplayed()
         compose.onNodeWithText("Sharpness").assertIsDisplayed()
     }
 

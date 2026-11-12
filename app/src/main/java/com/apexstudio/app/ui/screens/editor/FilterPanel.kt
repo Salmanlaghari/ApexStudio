@@ -410,7 +410,7 @@ fun filterPreviewColors(filterId: String?): List<Color> {
         "indie_disposable" -> listOf(Color(0xFFBF360C), Color(0xFFFFCC80))
         "lomography_red" -> listOf(Color(0xFF880E4F), Color(0xFFFF1744))
         "expired_film" -> listOf(Color(0xFF4E342E), Color(0xFF80CBC4))
-        // Dramatic & HDR Punch
+        // Dramatic & SDR Punch
         "hdr_punch" -> listOf(Color(0xFF212121), Color(0xFFFF3D00))
         "hyper_clarity" -> listOf(Color(0xFF37474F), Color(0xFF00E5FF))
         "shadow_crush" -> listOf(Color(0xFF000000), Color(0xFF616161))

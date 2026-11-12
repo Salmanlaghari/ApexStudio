@@ -482,7 +482,7 @@ object FilterColorMatrix {
             matrix[9] += tint
         }
 
-        // 6. HDR+ Dynamic Tone Boost
+        // 6. SDR tone-map/highlight grade (not HDR mastering/output)
         if (adjustments.hdr > 0f) {
             val hdrGain = adjustments.hdr * 22f
             matrix[4] += hdrGain

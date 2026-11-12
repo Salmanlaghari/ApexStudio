@@ -1597,6 +1597,7 @@ enum class ExportQuality(val label: String) {
 
 @Serializable
 data class VideoAdjustments(
+    /** SDR tone-map/color grade only; this field does not signal or produce HDR output. Kept as `hdr` for saved-project compatibility. */
     val hdr: Float = 0f,
     val brilliance: Float = 0f,
     val brightness: Float = 0f,

@@ -159,7 +159,7 @@
     },
     {
       "id": "dramatic_hdr_punch",
-      "name": "Dramatic & HDR Punch",
+      "name": "Dramatic & SDR Punch",
       "filters": [
         "hdr_punch"
       ]
@@ -822,8 +822,8 @@
     },
     {
       "id": "hdr_punch",
-      "name": "HDR Punch",
-      "category": "Dramatic & HDR Punch",
+      "name": "SDR Highlight Punch",
+      "category": "Dramatic & SDR Punch",
       "asset": "luts/hdr_punch.cube"
     }
   ]

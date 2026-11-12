@@ -55,7 +55,7 @@ private enum class AdjustTab(val title: String) {
 
 private val ADJUST_ITEMS = listOf(
     // ---- Tone ----
-    AdjustItem("hdr", "HDR+", "✨", 0f..1f, 0.05f, { it.hdr }, { a, v -> a.copy(hdr = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
+    AdjustItem("hdr", "SDR Tone Map", "✨", 0f..1f, 0.05f, { it.hdr }, { a, v -> a.copy(hdr = v.coerceIn(0f, 1f)) }, { "%.0f%%".format(it * 100) }),
     AdjustItem("brilliance", "Brilliance", "🌟", -1f..1f, 0.05f, { it.brilliance }, { a, v -> a.copy(brilliance = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("exposure", "Exposure", "📸", -1f..1f, 0.05f, { it.exposure }, { a, v -> a.copy(exposure = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
     AdjustItem("brightness", "Brightness", "☀️", -1f..1f, 0.05f, { it.brightness }, { a, v -> a.copy(brightness = v.coerceIn(-1f, 1f)) }, { "%+.0f".format(it * 100) }),
@@ -400,6 +400,14 @@ fun AdjustPanel(
                 }
             }
 
+            if (activeItem.id == "hdr") {
+                Text(
+                    "SDR-style tone-map only; it does not create HDR video.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 9.sp
+                )
+            }
+
             Spacer(Modifier.height(4.dp))
 
             // Slider with Minus & Plus buttons for precision
@@ -464,7 +472,7 @@ fun AdjustPanel(
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             val presets = listOf(
-                "✨ Auto HDR" to {
+                "✨ Auto SDR" to {
                     onUpdate {
                         it.copy(hdr = 0.65f, contrast = 1.15f, saturation = 1.12f, highlights = -0.1f, shadows = 0.15f)
                     }

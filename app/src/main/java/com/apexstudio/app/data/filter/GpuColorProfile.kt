@@ -60,9 +60,9 @@ object OneTapLooks {
 
     val VIRAL_HDR = GpuColorProfile(
         id = VIRAL_HDR_ID,
-        name = "Viral HDR",
+        name = "Viral Punch (SDR Look)",
         category = "One-Tap Looks",
-        description = "Punchy HDR color with deep saturation, local clarity, and mild sharpening",
+        description = "Punchy SDR-style color grade with deep saturation, clarity, and mild sharpening; it does not create HDR video.",
         iconEmoji = "V",
         gradientColors = listOf(0xFF212121, 0xFFFF3D00),
         config = GpuFilterConfig(

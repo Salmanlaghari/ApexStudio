@@ -304,7 +304,7 @@ fun ColorStudioScreen(
                             .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
                             verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            AdjustmentSlider("HDR Style", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
+                            AdjustmentSlider("Tone Map (SDR)", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
                             AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
                             Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
                         }

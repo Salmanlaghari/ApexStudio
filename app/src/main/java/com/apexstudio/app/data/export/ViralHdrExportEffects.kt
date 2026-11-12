@@ -9,7 +9,7 @@ import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.data.filter.OneTapLooks
 import com.apexstudio.app.data.filter.toVideoAdjustments
 
-/** Append the Viral HDR recipe's existing LUT and shared adjustment shader effects. */
+/** Append the Viral Punch SDR-look recipe's existing LUT and shared adjustment shader effects. */
 @UnstableApi
 internal fun addViralHdrEffects(
     context: Context,
@@ -18,11 +18,11 @@ internal fun addViralHdrEffects(
 ) {
     if (config.activeProfileId != OneTapLooks.VIRAL_HDR_ID) return
     require(OneTapLooks.isValidRenderConfig(config)) {
-        "Viral HDR settings are invalid or contain unsupported edits."
+        "Viral Punch SDR-look settings are invalid or contain unsupported edits."
     }
 
     val preset = LutFilterEngine(context).manifest.filters.firstOrNull { it.id == config.filterPresetId }
-        ?: throw IllegalArgumentException("The Viral HDR hdr_punch LUT is unavailable.")
+        ?: throw IllegalArgumentException("The SDR Highlight Punch LUT is unavailable.")
     if (config.filterIntensity > 0f) {
         effects.add(LutFilterGlEffect(context, preset, config.filterIntensity))
     }

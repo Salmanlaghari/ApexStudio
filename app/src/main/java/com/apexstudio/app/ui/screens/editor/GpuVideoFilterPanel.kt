@@ -1099,14 +1099,14 @@ private fun OneTapLookCard(
                 .background(Brush.linearGradient(gradient)),
             contentAlignment = Alignment.Center
         ) {
-            Text("HDR", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            Text("SDR", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(profile.name, color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(profile.description, color = ApexPalette.TextSecondary, fontSize = 10.sp, maxLines = 2)
         }
         if (selected) {
-            Icon(Icons.Default.Check, contentDescription = "Viral HDR selected", tint = ApexPalette.NeonCyan)
+            Icon(Icons.Default.Check, contentDescription = "${profile.name} selected", tint = ApexPalette.NeonCyan)
         }
     }
 }

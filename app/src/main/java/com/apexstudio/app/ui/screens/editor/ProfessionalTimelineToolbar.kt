@@ -26,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.ui.theme.EditorPalette
 import java.util.Locale
 
 /** Compact, project-backed controls for the editor's real timeline. */
@@ -56,7 +56,7 @@ internal fun ProfessionalTimelineToolbar(
         modifier = modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.TimelineToolbarHeight)
-            .background(Color(0xFF111820))
+            .background(EditorPalette.BgBase)
             .padding(horizontal = 7.dp)
             .testTag("professional-timeline-toolbar"),
         verticalAlignment = Alignment.CenterVertically,
@@ -70,7 +70,7 @@ internal fun ProfessionalTimelineToolbar(
         ) {
             Text(
                 text = "TIMELINE",
-                color = Color(0xFF81909D),
+                color = EditorPalette.TextTertiary,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.8.sp,
@@ -78,7 +78,7 @@ internal fun ProfessionalTimelineToolbar(
             )
             Text(
                 text = timecode,
-                color = Color(0xFFCBD4DC),
+                color = EditorPalette.TextPrimary,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,
@@ -93,10 +93,10 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .height(38.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .background(if (state.magneticSnapping) Color(0xFF243640) else Color(0xFF18212A))
+                .background(if (state.magneticSnapping) EditorPalette.BgElevated else EditorPalette.BgSurface)
                 .border(
                     1.dp,
-                    if (state.magneticSnapping) Color(0xFF4B6573) else Color(0xFF33414D),
+                    if (state.magneticSnapping) EditorPalette.TrackBlue.copy(alpha = 0.65f) else EditorPalette.BorderGlass,
                     RoundedCornerShape(9.dp),
                 )
                 .clickable(onClick = onToggleSnapping)
@@ -109,11 +109,11 @@ internal fun ProfessionalTimelineToolbar(
                 Modifier
                     .size(6.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(if (state.magneticSnapping) Color(0xFF94B5C2) else Color(0xFF73818C)),
+                    .background(if (state.magneticSnapping) EditorPalette.TrackBlue else EditorPalette.TextMuted),
             )
             Text(
                 text = "Snap",
-                color = if (state.magneticSnapping) Color(0xFFD0DDE3) else Color(0xFF9CA9B3),
+                color = if (state.magneticSnapping) EditorPalette.TextPrimary else EditorPalette.TextSecondary,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -124,14 +124,14 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .height(38.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .background(Color(0xFF18212A))
-                .border(1.dp, Color(0xFF33414D), RoundedCornerShape(9.dp)),
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(9.dp)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TimelineToolbarIconButton(Icons.Default.ZoomOut, "Zoom timeline out", onZoomOut)
             Text(
                 text = zoomLabel,
-                color = Color(0xFFCDD6DE),
+                color = EditorPalette.TextPrimary,
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
@@ -145,10 +145,10 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .then(if (focused) Modifier.background(Color(0xFF26343E)) else Modifier)
+                .then(if (focused) Modifier.background(EditorPalette.BgElevated) else Modifier)
                 .border(
                     1.dp,
-                    if (focused) Color(0xFF607383) else Color(0xFF33414D),
+                    if (focused) EditorPalette.TrackBlue.copy(alpha = 0.65f) else EditorPalette.BorderGlass,
                     RoundedCornerShape(9.dp),
                 )
                 .clickable(onClick = onToggleFocus)
@@ -165,7 +165,7 @@ internal fun ProfessionalTimelineToolbar(
             Icon(
                 imageVector = if (focused) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                tint = if (focused) Color(0xFFD2DCE3) else Color(0xFFA4B0BA),
+                tint = if (focused) EditorPalette.TextPrimary else EditorPalette.TextSecondary,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -185,6 +185,6 @@ private fun TimelineToolbarIconButton(
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = Color(0xFFB0BDC7), modifier = Modifier.size(16.dp))
+        Icon(icon, contentDescription = null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(16.dp))
     }
 }

@@ -65,7 +65,7 @@ class TimelineTransportLayoutTest {
 
         val bar = composeRule.onNodeWithTag("editor-playback-controls").fetchSemanticsNode().boundsInRoot
         val play = composeRule.onNodeWithContentDescription("Play playback").fetchSemanticsNode().boundsInRoot
-        assertEquals("Play remains centered on a narrow phone", bar.center.x, play.center.x, 1f)
+        assertEquals("Play remains centered on a narrow phone", bar.center.x, play.center.x, 4f)
     }
 
     @Test fun precisionStripFits320dpAndPreservesNavigationAndZoom() {

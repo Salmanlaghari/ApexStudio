@@ -24,9 +24,11 @@ import com.apexstudio.app.data.stickers.StickerAssetResolver
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -470,6 +472,7 @@ class ExportTimestampParityInstrumentedTest {
         val previousRegistry = registryFile.takeIf { it.isFile }?.readText()
         val baselineName = "sticker-baseline-$id.mp4"
         val selectedName = "sticker-selected-$id.mp4"
+        val projectBaselineName = "sticker-project-baseline-$id.mp4"
         val projectName = "sticker-project-$id.mp4"
         val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
         val baselineConfig = ExportEngine.ExportConfig(
@@ -480,6 +483,7 @@ class ExportTimestampParityInstrumentedTest {
         )
         var baselineOutput: File? = null
         var selectedOutput: File? = null
+        var projectBaselineOutput: File? = null
         var projectOutput: File? = null
         val assetPath = StickerAssetResolver.packUri(packId, relativePath)
         val sticker = StickerOverlay(
@@ -774,18 +778,49 @@ class ExportTimestampParityInstrumentedTest {
                 trimEndMs = 1_800L,
                 stickers = listOf(sticker)
             )
-            engine.startProjectExport(
-                clips = listOf(projectClip),
-                config = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9"),
-                outputFileName = projectName
+            val projectConfig = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9")
+            suspend fun exportProjectPass(
+                clips: List<MediaClip>,
+                outputFileName: String,
+                label: String
+            ): File {
+                // Each pass gets its own engine because terminal state is published before run cleanup finishes.
+                val passEngine = ExportEngine(context)
+                val destination = File(outputDir, outputFileName)
+                var complete = false
+                try {
+                    passEngine.startProjectExport(clips, projectConfig, outputFileName)
+                    val terminal = withTimeout(180_000L) {
+                        passEngine.exportState.first { state ->
+                            !state.isExporting && (state.outputUri != null || state.error != null)
+                        }
+                    }
+                    assertNull("$label must complete: ${terminal.error}", terminal.error)
+                    val output = File(requireNotNull(Uri.parse(requireNotNull(terminal.outputUri)).path))
+                    assertEquals("$label output path", destination.canonicalPath, output.canonicalPath)
+                    assertTrue("$label output must be non-empty", output.isFile && output.length() > 0L)
+                    complete = true
+                    return output
+                } finally {
+                    withContext(NonCancellable) { passEngine.cancelProjectExportAndAwait() }
+                    if (!complete) destination.delete()
+                }
+            }
+
+            projectBaselineOutput = exportProjectPass(
+                listOf(projectClip.copy(stickers = emptyList())),
+                projectBaselineName,
+                "Whole-project sticker baseline export"
             )
-            val projectResult = awaitTerminalState(engine)
-            assertNull("Whole-project export with downloaded sticker must complete: ${projectResult.error}", projectResult.error)
-            projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
+            projectOutput = exportProjectPass(
+                listOf(projectClip),
+                projectName,
+                "Whole-project export with downloaded sticker"
+            )
 
             val baselineFile = requireNotNull(baselineOutput)
             verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
-            verifyExportFrames("Whole-project export", baselineFile, requireNotNull(projectOutput))
+            verifyExportFrames("Whole-project export", requireNotNull(projectBaselineOutput), requireNotNull(projectOutput))
         } finally {
             instrumentation.runOnMainSync { engine.release() }
             source.delete()
@@ -794,9 +829,11 @@ class ExportTimestampParityInstrumentedTest {
             if (previousRegistry == null) registryFile.delete() else registryFile.writeText(previousRegistry)
             baselineOutput?.delete()
             selectedOutput?.delete()
+            projectBaselineOutput?.delete()
             projectOutput?.delete()
             File(outputDir, baselineName).delete()
             File(outputDir, selectedName).delete()
+            File(outputDir, projectBaselineName).delete()
             File(outputDir, projectName).delete()
         }
     }

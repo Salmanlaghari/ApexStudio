@@ -460,7 +460,9 @@ class ExportTimestampParityInstrumentedTest {
     fun downloadedLottieStickerAdvancesAndPreservesPixelsOutsideItsBoundsInBothExportPaths() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val engine = ExportEngine(context)
+        // Terminal state can be published before the previous export writer has finished cleanup.
+        val baselineEngine = ExportEngine(context)
+        val stickerEngine = ExportEngine(context)
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "sticker-export-source-$id.mp4")
         val packId = "sticker-export-$id"
@@ -755,19 +757,29 @@ class ExportTimestampParityInstrumentedTest {
                 StickerAssetResolver.downloadedFile(context, assetPath)?.isFile == true)
             selectVisibleAnimationSamples()
 
-            engine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
-            val baselineResult = awaitTerminalState(engine)
+            baselineEngine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
+            val baselineResult = awaitTerminalState(baselineEngine)
             assertNull("Sticker baseline export must complete: ${baselineResult.error}", baselineResult.error)
-            baselineOutput = File(requireNotNull(Uri.parse(baselineResult.outputUri).path))
+            val baselineExportFile = File(
+                requireNotNull(Uri.parse(requireNotNull(baselineResult.outputUri)).path)
+            )
+            assertEquals("Sticker baseline must use its requested output path",
+                File(outputDir, baselineName).canonicalPath, baselineExportFile.canonicalPath)
+            baselineOutput = baselineExportFile
 
-            engine.startExport(
+            stickerEngine.startExport(
                 Uri.fromFile(source).toString(),
                 baselineConfig.copy(stickers = listOf(sticker)),
                 selectedName
             )
-            val selectedResult = awaitTerminalState(engine)
+            val selectedResult = awaitTerminalState(stickerEngine)
             assertNull("Selected export with downloaded sticker must complete: ${selectedResult.error}", selectedResult.error)
-            selectedOutput = File(requireNotNull(Uri.parse(selectedResult.outputUri).path))
+            val stickerExportFile = File(
+                requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path)
+            )
+            assertEquals("Selected sticker export must use its requested output path",
+                File(outputDir, selectedName).canonicalPath, stickerExportFile.canonicalPath)
+            selectedOutput = stickerExportFile
 
             val sourceDurationMs = readVideoTrack(source).videoTrackDurationUs / 1_000L
             val projectClip = MediaClip(
@@ -822,7 +834,10 @@ class ExportTimestampParityInstrumentedTest {
             verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
             verifyExportFrames("Whole-project export", requireNotNull(projectBaselineOutput), requireNotNull(projectOutput))
         } finally {
-            instrumentation.runOnMainSync { engine.release() }
+            instrumentation.runOnMainSync {
+                baselineEngine.release()
+                stickerEngine.release()
+            }
             source.delete()
             packDir.deleteRecursively()
             packArchive.delete()

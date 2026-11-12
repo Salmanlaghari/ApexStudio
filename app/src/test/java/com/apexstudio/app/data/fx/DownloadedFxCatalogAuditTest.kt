@@ -5,6 +5,7 @@ import com.apexstudio.app.data.export.ExportEngine
 import com.apexstudio.app.data.packs.download.PackManifestRepo
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -41,6 +42,14 @@ class DownloadedFxCatalogAuditTest {
         val payloadHash = sha256(payloadBytes)
         assertEquals("Pack download SHA must match the source payload", pack.sha256.lowercase(), payloadHash)
         assertEquals("Installed entry SHA must match the parsed payload", pack.entrySha256.lowercase(), payloadHash)
+
+        val emulatorFixture = File(repoRoot, "app/src/androidTest/assets/fx_profiles.json")
+        assertTrue("Missing offline emulator shader fixture: ${emulatorFixture.path}", emulatorFixture.isFile)
+        assertArrayEquals(
+            "Emulator shader fixture must be the exact published FX payload",
+            payloadBytes,
+            emulatorFixture.readBytes()
+        )
 
         val effects = DownloadedEffectRepository.loadPackEffects(payloadFile.parentFile!!, pack)
         assertEquals("All 30 published profiles must pass the runtime validator", pack.itemCount, effects.size)

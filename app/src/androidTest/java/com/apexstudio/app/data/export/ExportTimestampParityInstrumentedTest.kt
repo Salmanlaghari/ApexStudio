@@ -15,11 +15,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.fx.DownloadedFxEffect
+import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -37,7 +39,7 @@ import kotlin.math.abs
 @UnstableApi
 class ExportTimestampParityInstrumentedTest {
     @Test
-    fun downloadedShaderFamiliesCompileAsGles2FragmentPrograms() {
+    fun downloadedFamilySamplesAndPublishedProfilesCompileOnGles2() {
         val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         assertTrue("EGL display must be available", display !== EGL14.EGL_NO_DISPLAY)
         val version = IntArray(2)
@@ -108,6 +110,48 @@ class ExportTimestampParityInstrumentedTest {
                 val log = GLES20.glGetShaderInfoLog(shader)
                 GLES20.glDeleteShader(shader)
                 assertTrue("$family downloadable shader must compile: $log", compiled[0] == GLES20.GL_TRUE)
+            }
+
+            val instrumentation = InstrumentationRegistry.getInstrumentation()
+            val publishedPayload = instrumentation.context.assets
+                .open("fx_profiles.json")
+                .bufferedReader()
+                .use { it.readText() }
+            val items = JSONObject(publishedPayload).getJSONArray("effects")
+            assertEquals("The published FX test asset must contain all 30 profiles", 30, items.length())
+            val publishedProfiles = (0 until items.length()).map { index ->
+                val item = items.getJSONObject(index)
+                val tint = item.getJSONArray("tint")
+                DownloadedFxEffect(
+                    id = item.getString("id"),
+                    label = item.getString("name"),
+                    category = item.getString("category"),
+                    family = item.getString("family"),
+                    a = item.getDouble("a").toFloat(),
+                    b = item.getDouble("b").toFloat(),
+                    c = item.getDouble("c").toFloat(),
+                    tintR = tint.getDouble(0).toFloat(),
+                    tintG = tint.getDouble(1).toFloat(),
+                    tintB = tint.getDouble(2).toFloat(),
+                    isAnimated = item.getBoolean("animated"),
+                    defaultSpeed = item.getDouble("defaultSpeed").toFloat()
+                )
+            }
+            assertEquals(
+                "All published profiles must have unique IDs",
+                publishedProfiles.size,
+                publishedProfiles.map { it.id }.toSet().size
+            )
+            publishedProfiles.forEach { effect ->
+                val program = FxGlEffect(effect, intensity = 0.73f, speed = effect.defaultSpeed)
+                    .toGlShaderProgram(instrumentation.targetContext, useHdr = false)
+                try {
+                    val outputSize = program.configure(320, 180)
+                    assertEquals("${effect.id} program width", 320, outputSize.width)
+                    assertEquals("${effect.id} program height", 180, outputSize.height)
+                } finally {
+                    program.release()
+                }
             }
         } finally {
             EGL14.eglMakeCurrent(

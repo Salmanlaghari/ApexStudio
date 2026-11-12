@@ -411,10 +411,35 @@ fun TextPanel(
             return@Column
         }
         if (selected == null) {
-            Text("2 · Add your words", color = ApexThemeTokens.current.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            Text("Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it.",
+            Text(
+                if (activeTab == TextPanelTab.PRESETS) "Start with a sample style" else "2 · Add your words",
+                color = ApexThemeTokens.current.primary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                if (activeTab == TextPanelTab.PRESETS) {
+                    "Tap a preview to add a styled “Your title” layer, then edit the words and place it on the video."
+                } else {
+                    "Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it."
+                },
                 color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp, lineHeight = 15.sp,
                 modifier = Modifier.padding(vertical = 8.dp))
+            if (activeTab == TextPanelTab.PRESETS) {
+                val starterStyles = remember { TextDesignMotionPack.presets.take(8) }
+                Text("Real style + motion previews", color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    modifier = Modifier.fillMaxWidth().height(76.dp).testTag("text-empty-style-gallery")
+                ) {
+                    items(starterStyles, key = { it.id }) { preset ->
+                        TextDesignMotionSampleCard(preset, false, "text-empty-style-${preset.id}") {
+                            onApplyDesignMotion(preset)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            }
             Box(
                 modifier = Modifier.fillMaxWidth()
                     .heightIn(min = 48.dp)

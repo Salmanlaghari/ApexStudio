@@ -84,6 +84,12 @@ fun ApexRoot() {
                                 currentTab = "edit"
                             },
                             onOpenSettings = { overlay = Overlay.Settings },
+                            onOpenShortsTemplates = { overlay = Overlay.ShortTemplates },
+                            onOpenTextStyles = { id ->
+                                projectId = id
+                                editorEntryWorkspace = "text-styles"
+                                currentTab = "edit"
+                            },
                             shortsTemplateRequestId = pendingShortsTemplateId,
                             onShortsTemplateRequestConsumed = { pendingShortsTemplateId = null }
                         )

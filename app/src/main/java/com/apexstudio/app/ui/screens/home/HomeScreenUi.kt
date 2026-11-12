@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -46,15 +47,21 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apexstudio.app.data.text.TextDesignMotionPack
+import com.apexstudio.app.data.text.TextDesignMotionPreset
 import coil.compose.AsyncImage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
@@ -78,7 +85,9 @@ internal fun ApexHomeContent(
     onRenameProject: (Project) -> Unit,
     onDeleteProject: (Project) -> Unit,
     onShowAll: () -> Unit,
-    onExploreAiTools: () -> Unit = onCreateVideo
+    onExploreAiTools: () -> Unit = onCreateVideo,
+    onExploreShortsTemplates: () -> Unit = {},
+    onExploreTextStyles: () -> Unit = {}
 ) {
     val theme = ApexThemeTokens.current
     val listState = rememberLazyListState()
@@ -137,6 +146,12 @@ internal fun ApexHomeContent(
             CreativeWorkspaceHero(
                 onCreate = { showCreateChoices = true },
                 compactPhone = compactPhone
+            )
+        }
+        item {
+            DashboardQuickActions(
+                onOpenShortsTemplates = onExploreShortsTemplates,
+                onOpenTextStyles = onExploreTextStyles
             )
         }
         item {
@@ -399,6 +414,151 @@ private fun HomeEmptyProjects(searching: Boolean) {
         Icon(if (searching) Icons.Default.Search else Icons.Default.Folder, contentDescription = null, tint = theme.secondary)
         Text(if (searching) "No projects found" else "Your next story starts here", color = theme.textPrimary, fontWeight = FontWeight.Bold)
         Text(if (searching) "Try another project or clip name." else "Choose a video or photo to start editing.", color = theme.textSecondary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+internal fun DashboardQuickActions(
+    onOpenShortsTemplates: () -> Unit,
+    onOpenTextStyles: () -> Unit
+) {
+    val fontScale = LocalDensity.current.fontScale
+    val featuredStyle = remember { TextDesignMotionPack.presets.firstOrNull() }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth().testTag("home-quick-starts")) {
+        val stackCards = maxWidth < 290.dp || fontScale >= 1.45f
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "TRY A STARTING POINT",
+                color = ApexPalette.TextTertiary,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
+            if (stackCards) {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    DashboardQuickStartCard(
+                        title = "Shorts templates",
+                        sample = "Cuts · timing · music",
+                        description = "Browse ready-made edits",
+                        action = "Browse templates →",
+                        icon = Icons.Default.Movie,
+                        accent = ApexPalette.NeonPurple,
+                        tag = "home-shorts-templates-entry",
+                        onClick = onOpenShortsTemplates,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DashboardQuickStartCard(
+                        title = "Text styles",
+                        sample = featuredStyle?.name ?: "Preview styles and motion",
+                        description = "See a look before you apply it",
+                        action = "Preview styles →",
+                        icon = Icons.Default.TextFields,
+                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: ApexPalette.NeonCyan,
+                        sampleBackground = featuredStyle?.bgArgb?.let { Color(it.toInt()) },
+                        sampleStyle = featuredStyle,
+                        tag = "home-text-styles-entry",
+                        onClick = onOpenTextStyles,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DashboardQuickStartCard(
+                        title = "Shorts templates",
+                        sample = "Cuts · timing · music",
+                        description = "Browse ready-made edits",
+                        action = "Browse templates →",
+                        icon = Icons.Default.Movie,
+                        accent = ApexPalette.NeonPurple,
+                        tag = "home-shorts-templates-entry",
+                        onClick = onOpenShortsTemplates,
+                        modifier = Modifier.weight(1f)
+                    )
+                    DashboardQuickStartCard(
+                        title = "Text styles",
+                        sample = featuredStyle?.name ?: "Preview styles and motion",
+                        description = "See a look before you apply it",
+                        action = "Preview styles →",
+                        icon = Icons.Default.TextFields,
+                        accent = featuredStyle?.colorArgb?.let { Color(it.toInt()) } ?: ApexPalette.NeonCyan,
+                        sampleBackground = featuredStyle?.bgArgb?.let { Color(it.toInt()) },
+                        sampleStyle = featuredStyle,
+                        tag = "home-text-styles-entry",
+                        onClick = onOpenTextStyles,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardQuickStartCard(
+    title: String,
+    sample: String,
+    description: String,
+    action: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accent: Color,
+    tag: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    sampleBackground: Color? = null,
+    sampleStyle: TextDesignMotionPreset? = null
+) {
+    Column(
+        modifier = modifier
+            .heightIn(min = 94.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brush.linearGradient(listOf(ApexPalette.BgElevated, ApexPalette.BgSurface)))
+            .border(1.dp, accent.copy(alpha = 0.48f), RoundedCornerShape(14.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag(tag)
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(16.dp))
+            Text(title, color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (sampleStyle == null) {
+            Text(
+                sample,
+                color = accent,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(sampleBackground ?: Color.Transparent)
+                    .padding(horizontal = 3.dp, vertical = 1.dp)
+            )
+        } else {
+            Text(
+                "Your title",
+                color = Color(sampleStyle.colorArgb.toInt()),
+                fontSize = (9f * sampleStyle.sizeScale.coerceIn(0.8f, 1.2f)).sp,
+                fontWeight = if (sampleStyle.isBold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (sampleStyle.isItalic) FontStyle.Italic else FontStyle.Normal,
+                fontFamily = when (sampleStyle.fontFamily.lowercase()) {
+                    "serif" -> FontFamily.Serif
+                    "monospace" -> FontFamily.Monospace
+                    else -> FontFamily.SansSerif
+                },
+                letterSpacing = (sampleStyle.letterSpacingEm * 9f).sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(sampleBackground ?: ApexPalette.BgElevated)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+            Text(sample, color = ApexPalette.TextSecondary, fontSize = 8.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(description, color = ApexPalette.TextSecondary, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(action, color = accent, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 

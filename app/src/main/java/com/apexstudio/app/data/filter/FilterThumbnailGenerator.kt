@@ -74,11 +74,10 @@ object FilterThumbnailGenerator {
                 // (filter_sample_portrait.jpg, 731 KB) was removed; this
                 // decodes the same drawable. The procedural fallback below
                 // still covers a missing resource.
-                val input = context.resources.openRawResource(
+                val decoded = android.graphics.BitmapFactory.decodeResource(
+                    context.resources,
                     com.apexstudio.app.R.drawable.filter_sample_portrait
                 )
-                val decoded = android.graphics.BitmapFactory.decodeStream(input)
-                input.close()
                 if (decoded != null) {
                     return centerCropAndScale(decoded, size)
                 }

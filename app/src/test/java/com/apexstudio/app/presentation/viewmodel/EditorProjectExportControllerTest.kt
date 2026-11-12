@@ -1,6 +1,9 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.*
+import androidx.media3.common.MimeTypes
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.ExportVideoEncoderPlan
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
@@ -42,15 +45,34 @@ class EditorProjectExportControllerTest {
         assertEquals(0f, buildProjectExportConfig(state, AudioStudioState(isMuted = true), settings).volume, 0f)
     }
 
-    @Test fun `historical 8K export settings are mapped to supported 4K output`() {
+    @Test fun `historical 8K settings stay 8K and fail closed before a device plan exists`() {
+        val settings8k = settings.copy(resolution = "8K Ultra HD")
         val config = buildProjectExportConfig(
             state,
             AudioStudioState(),
-            settings.copy(resolution = "8K Ultra HD")
+            settings8k
         )
-        assertEquals("4K", config.resolution)
+        assertEquals("8K", config.resolution)
         assertEquals(30, config.fps)
         assertEquals("9:16", config.aspectRatio)
+        assertNotNull(wholeProjectExportUnsupportedReason(state, AudioStudioState(), settings8k))
+    }
+
+    @Test fun `verified device encoder plan reaches whole-project config unchanged`() {
+        val settings8k = settings.copy(resolution = "8K")
+        val plan = ExportVideoEncoderPlan(MimeTypes.VIDEO_H265, "vendor.hevc.encoder")
+        val availability = EightKExportAvailability.Supported(plan)
+        assertNull(
+            wholeProjectExportUnsupportedReason(
+                state, AudioStudioState(), settings8k, eightKAvailability = availability
+            )
+        )
+        val config = buildProjectExportConfig(
+            state, AudioStudioState(), settings8k, encoderPlan = plan
+        )
+        assertEquals("8K", config.resolution)
+        assertEquals(MimeTypes.VIDEO_H265, config.videoMimeType)
+        assertEquals("vendor.hevc.encoder", config.videoEncoderName)
     }
 
     @Test fun `project music respects mute and solo before engine postmix`() {

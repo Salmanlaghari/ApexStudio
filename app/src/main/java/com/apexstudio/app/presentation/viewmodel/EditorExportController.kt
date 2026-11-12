@@ -3,7 +3,11 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.export.ExportEngine
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.Export8kCapability
+import com.apexstudio.app.data.export.ExportVideoEncoderPlan
 import com.apexstudio.app.data.export.ExportProgressStage
+import com.apexstudio.app.data.export.eightKCapabilityRequestForSettings
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
@@ -106,12 +110,28 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
         return
     }
+    val eightKRequest = eightKCapabilityRequestForSettings(aspectRatio, fps, quality, bitrateMbps)
+    val eightKAvailability = if (resolvedResolution == "8K") Export8kCapability.cached(eightKRequest) else null
     val settingsReason = videoExportSettingsUnsupportedReason(
-        resolvedResolution, fps, quality, aspectRatio, bitrateMbps
+        resolvedResolution, fps, quality, aspectRatio, bitrateMbps,
+        eightKAvailability = eightKAvailability,
+        isPhotoExport = selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE
     )
     if (settingsReason != null) {
         _export.update { it.copy(error = settingsReason, outputUri = null, warning = null) }
         return
+    }
+    val eightKPlan = (eightKAvailability as? EightKExportAvailability.Supported)?.plan
+    if (resolvedResolution == "8K") {
+        val memoryFailure = if (context == null) {
+            "Device memory status could not be verified for 8K export."
+        } else {
+            Export8kCapability.currentMemoryFailure(context)
+        }
+        if (memoryFailure != null) {
+            _export.update { it.copy(error = memoryFailure, outputUri = null, warning = null) }
+            return
+        }
     }
     if (s.activeFxId != null &&
         com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId) == null &&
@@ -174,6 +194,8 @@ fun EditorViewModel.startExport(
             aspectRatio = aspectRatio,
             videoFitMode = selected?.videoFitMode ?: com.apexstudio.app.domain.model.VideoFitMode.COVER,
             bitrateMbps = bitrateMbps,
+            videoMimeType = eightKPlan?.mimeType ?: androidx.media3.common.MimeTypes.VIDEO_H264,
+            videoEncoderName = eightKPlan?.codecName,
             filterPreset = filterPreset,
             filterIntensity = if (usesViralHdrPipeline) 0f else s.filterIntensity,
             adjustments = s.adjustments,
@@ -407,6 +429,16 @@ fun EditorViewModel.startPhotoExport(
     bitrateMbps: Int = _export.value.settings.bitrateMbps
 ) {
     if (_export.value.isExporting) return
+    if (ExportResolution.canonical(resolution) == "8K") {
+        _export.update {
+            it.copy(
+                error = "8K still-photo export is not available yet; the photo renderer is memory-limited to 4K. Choose 4K or lower.",
+                outputUri = null,
+                warning = null
+            )
+        }
+        return
+    }
     val engine = exportEngine ?: run {
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
@@ -536,6 +568,7 @@ internal fun buildPhotoExportConfig(
         aspectRatio = aspectRatio,
         preserveInputAspectRatio = !clip.photoEdit.canvas.isOriginal,
         bitrateMbps = bitrateMbps,
+        isPhotoExport = true,
         // Photo edits are baked into the frames already.
         filterPreset = null,
         filterIntensity = 0f,
@@ -605,12 +638,18 @@ internal fun EditorViewModel.startColorStudioTimelineExport(snapshot: ColorTimel
 }
 
 /** Same eligibility explanation used by the action, safe to show before the user starts a render. */
-fun EditorViewModel.colorStudioTimelineExportBlocker(grade: ColorStudioGrade): String? {
+internal fun EditorViewModel.colorStudioTimelineExportBlocker(
+    grade: ColorStudioGrade,
+    eightKAvailability: EightKExportAvailability? = null
+): String? {
     val snapshot = _state.value
     val audioSnapshot = _audio.value
     val settings = _export.value.settings
     val filterPreset = resolveColorGradeGlobalFilter(snapshot)
-    return colorStudioTimelineExportBlocker(grade, snapshot, audioSnapshot, settings, filterPreset)
+    return colorStudioTimelineExportBlocker(
+        grade, snapshot, audioSnapshot, settings, filterPreset,
+        eightKAvailability ?: cachedEightKAvailability(settings)
+    )
 }
 
 private fun colorStudioTimelineExportBlocker(
@@ -618,7 +657,8 @@ private fun colorStudioTimelineExportBlocker(
     snapshot: EditorState,
     audio: AudioStudioState,
     settings: ExportSettings,
-    filterPreset: com.apexstudio.app.data.filter.FilterPreset?
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset?,
+    eightKAvailability: EightKExportAvailability? = null
 ): String? {
     projectVisualScopeUnsupportedReason(snapshot)?.let { return it }
     if (snapshot.activeFilterId != null && filterPreset == null) {
@@ -629,8 +669,26 @@ private fun colorStudioTimelineExportBlocker(
     ) {
         return "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
     }
-    val config = buildProjectExportConfig(snapshot, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+    if (ExportResolution.canonical(settings.resolution) == "8K") {
+        val reason = videoExportSettingsUnsupportedReason(
+            "8K", settings.frameRate, settings.quality.label.lowercase(),
+            settings.aspectRatio, settings.bitrateMbps, eightKAvailability
+        )
+        if (reason != null) return reason
+    }
+    val encoderPlan = (eightKAvailability as? EightKExportAvailability.Supported)?.plan
+    val config = buildProjectExportConfig(
+        snapshot, audio, settings, filterPreset, encoderPlan = encoderPlan
+    ).copy(colorStudioGrade = grade)
     return projectCompositionUnsupportedReason(projectMainExportClips(snapshot), config)
+}
+
+private fun cachedEightKAvailability(settings: ExportSettings): EightKExportAvailability? {
+    if (ExportResolution.canonical(settings.resolution) != "8K") return null
+    val request = eightKCapabilityRequestForSettings(
+        settings.aspectRatio, settings.frameRate, settings.quality.label.lowercase(), settings.bitrateMbps
+    )
+    return Export8kCapability.cached(request)
 }
 
 private fun EditorViewModel.resolveColorGradeGlobalFilter(state: EditorState): com.apexstudio.app.data.filter.FilterPreset? {
@@ -653,19 +711,27 @@ internal fun buildColorTimelineExportSnapshot(
     audio: AudioStudioState,
     settings: ExportSettings,
     grade: ColorStudioGrade,
-    filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
+    filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null,
+    eightKAvailability: EightKExportAvailability? = cachedEightKAvailability(settings)
 ): ColorTimelineExportSnapshot {
-    val reason = colorStudioTimelineExportBlocker(grade, state, audio, settings, filterPreset)
+    val reason = colorStudioTimelineExportBlocker(
+        grade, state, audio, settings, filterPreset, eightKAvailability
+    )
     require(reason == null) { reason ?: "Timeline Color rendering is unavailable." }
+    val encoderPlan = (eightKAvailability as? EightKExportAvailability.Supported)?.plan
     return ColorTimelineExportSnapshot(
         projectMainExportClips(state).toList(),
-        buildProjectExportConfig(state, audio, settings, filterPreset).copy(colorStudioGrade = grade)
+        buildProjectExportConfig(state, audio, settings, filterPreset, encoderPlan = encoderPlan)
+            .copy(colorStudioGrade = grade)
     )
 }
 
-internal fun EditorViewModel.captureColorTimelineExportSnapshot(grade: ColorStudioGrade): ColorTimelineExportSnapshot {
+internal fun EditorViewModel.captureColorTimelineExportSnapshot(
+    grade: ColorStudioGrade,
+    eightKAvailability: EightKExportAvailability? = null
+): ColorTimelineExportSnapshot {
     check(!_export.value.isExporting) { "Wait for the current export to finish before rendering a comparison." }
     val state = _state.value
     return buildColorTimelineExportSnapshot(state, _audio.value, _export.value.settings, grade,
-        resolveColorGradeGlobalFilter(state))
+        resolveColorGradeGlobalFilter(state), eightKAvailability ?: cachedEightKAvailability(_export.value.settings))
 }

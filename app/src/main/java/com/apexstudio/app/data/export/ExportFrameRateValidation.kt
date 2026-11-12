@@ -57,7 +57,10 @@ internal data class EncodedFrameRateAudit(
     val encodedAverageFps: Double?,
     val requestedFps: Int,
     val outputDurationMs: Long?,
-    val transformerFrameCountDelta: Long?
+    val transformerFrameCountDelta: Long?,
+    val videoMimeType: String? = null,
+    val videoWidth: Int? = null,
+    val videoHeight: Int? = null
 ) {
     val warning: String?
         get() = when {
@@ -85,6 +88,8 @@ internal data class EncodedFrameRateAudit(
         append(" maxGapUs=$maxTimestampGapUs")
         outputDurationMs?.let { append(" outputDurationMs=$it") }
         transformerFrameCountDelta?.let { append(" transformerFrameCountDelta=$it") }
+        videoMimeType?.let { append(" videoMimeType=$it") }
+        if (videoWidth != null && videoHeight != null) append(" videoSize=${videoWidth}x$videoHeight")
     }
 }
 
@@ -166,11 +171,19 @@ internal fun inspectEncodedVideo(
         extractor.setDataSource(context, Uri.fromFile(file), null)
         var videoTrack = -1
         var trackDurationMs: Long? = null
+        var videoMimeType: String? = null
+        var videoWidth: Int? = null
+        var videoHeight: Int? = null
         for (index in 0 until extractor.trackCount) {
             val format = extractor.getTrackFormat(index)
             val mime = format.getString(MediaFormat.KEY_MIME).orEmpty()
             if (mime.startsWith("video/")) {
                 videoTrack = index
+                videoMimeType = mime
+                videoWidth = if (format.containsKey(MediaFormat.KEY_WIDTH))
+                    runCatching { format.getInteger(MediaFormat.KEY_WIDTH) }.getOrNull() else null
+                videoHeight = if (format.containsKey(MediaFormat.KEY_HEIGHT))
+                    runCatching { format.getInteger(MediaFormat.KEY_HEIGHT) }.getOrNull() else null
                 if (format.containsKey(MediaFormat.KEY_DURATION)) {
                     trackDurationMs = (format.getLong(MediaFormat.KEY_DURATION) / 1000L).takeIf { it > 0L }
                 }
@@ -192,8 +205,25 @@ internal fun inspectEncodedVideo(
             outputDurationMs = durationMs,
             requestedFps = requestedFps,
             transformerFrameCount = transformerFrameCount
-        )
+        ).copy(videoMimeType = videoMimeType, videoWidth = videoWidth, videoHeight = videoHeight)
     } finally {
         extractor.release()
     }
+}
+
+/** Returns an actionable mismatch when the final muxed stream is not the exact requested 8K format. */
+internal fun eightKOutputFormatMismatch(
+    expectedMimeType: String,
+    expectedWidth: Int,
+    expectedHeight: Int,
+    actualMimeType: String?,
+    actualWidth: Int?,
+    actualHeight: Int?
+): String? {
+    if (actualMimeType.equals(expectedMimeType, ignoreCase = true) &&
+        actualWidth == expectedWidth && actualHeight == expectedHeight
+    ) return null
+    return "The encoded stream did not match the requested 8K output. Expected " +
+        "$expectedWidth×$expectedHeight $expectedMimeType; got " +
+        "${actualWidth ?: "unknown"}×${actualHeight ?: "unknown"} ${actualMimeType ?: "unknown MIME"}."
 }

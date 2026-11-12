@@ -9,13 +9,14 @@ class ExportResolutionTest {
     }
 
     @Test fun `supported labels and historical aliases normalize to canonical values`() {
-        assertEquals(listOf("720P", "1080P", "1440P", "4K"), ExportResolution.supported)
+        assertEquals(listOf("720P", "1080P", "1440P", "4K", "8K"), ExportResolution.supported)
         assertEquals("720P", ExportResolution.canonical("720p"))
         assertEquals("1080P", ExportResolution.canonical("1080p"))
         assertEquals("1440P", ExportResolution.canonical("1440p"))
         assertEquals("4K", ExportResolution.canonical("2160p"))
         assertEquals("4K", ExportResolution.canonical("4K UHD"))
-        assertEquals("4K", ExportResolution.canonical("8K Ultra HD"))
+        assertEquals("8K", ExportResolution.canonical("8K Ultra HD"))
+        assertEquals("8K", ExportResolution.canonical("4320p"))
         assertEquals("1080P", ExportResolution.canonical("unrecognized legacy value"))
     }
 }

@@ -42,6 +42,78 @@ class ExportTerminalLifecycleTest {
         EditedMediaItem.Builder(MediaItem.fromUri("file:///test.mp4")).build()
     ))).build()
 
+    @Test fun `direct engine entry points reject 8K without a cached verified plan`() {
+        Export8kCapability.clearCacheForTests()
+        val engine = ExportEngine(context)
+        val config = ExportEngine.ExportConfig(resolution = "8K")
+
+        engine.startExport("file:///unused.mp4", config)
+        assertFalse(engine.exportState.value.isExporting)
+        assertTrue(engine.exportState.value.error.orEmpty().contains("not been verified"))
+
+        engine.startProjectExport(emptyList(), config)
+        assertFalse(engine.exportState.value.isExporting)
+        assertTrue(engine.exportState.value.error.orEmpty().contains("not been verified"))
+        engine.release()
+    }
+
+    @Test fun `rejected 8K call does not overwrite an export already in progress`() {
+        Export8kCapability.clearCacheForTests()
+        val engine = ExportEngine(context)
+        activate(engine)
+        val before = engine.exportState.value
+
+        engine.startExport("file:///unused.mp4", ExportEngine.ExportConfig(resolution = "8K"))
+
+        assertTrue(engine.exportState.value.isExporting)
+        assertEquals(before.stage, engine.exportState.value.stage)
+        assertNull(engine.exportState.value.error)
+        engine.release()
+    }
+
+    @Test fun `8K renderer rejects a codec plan that differs from the verified cache`() {
+        val request = eightKCapabilityRequestForSettings("16:9", 30, "high", 0)
+        Export8kCapability.cacheForTests(
+            request,
+            EightKExportAvailability.Supported(
+                ExportVideoEncoderPlan(MimeTypes.VIDEO_H265, "vendor.verified.hevc")
+            )
+        )
+        val failure = Export8kCapability.configFailure(
+            context,
+            ExportEngine.ExportConfig(
+                resolution = "8K",
+                fps = 30,
+                videoMimeType = MimeTypes.VIDEO_H264,
+                videoEncoderName = "vendor.unverified.avc"
+            )
+        )
+        assertTrue(failure.orEmpty().contains("plan changed after verification"))
+        Export8kCapability.clearCacheForTests()
+    }
+
+    @Test fun `8K photo render stays blocked even when video capability is verified`() {
+        val request = eightKCapabilityRequestForSettings("16:9", 30, "high", 0)
+        Export8kCapability.cacheForTests(
+            request,
+            EightKExportAvailability.Supported(
+                ExportVideoEncoderPlan(MimeTypes.VIDEO_H265, "vendor.verified.hevc")
+            )
+        )
+        val failure = Export8kCapability.configFailure(
+            context,
+            ExportEngine.ExportConfig(
+                resolution = "8K",
+                fps = 30,
+                videoMimeType = MimeTypes.VIDEO_H265,
+                videoEncoderName = "vendor.verified.hevc",
+                isPhotoExport = true
+            )
+        )
+        assertTrue(failure.orEmpty().contains("still-photo export is not available"))
+        Export8kCapability.clearCacheForTests()
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun listeners(active: Transformer): ListenerSet<Transformer.Listener> =
         Transformer::class.java.getDeclaredField("listeners").apply { isAccessible = true }

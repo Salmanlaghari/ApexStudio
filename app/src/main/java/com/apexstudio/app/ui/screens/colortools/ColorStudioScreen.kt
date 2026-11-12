@@ -55,7 +55,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.ColorStudioLut
 import com.apexstudio.app.data.color.ColorWheelVector
+import com.apexstudio.app.data.export.EightKExportAvailability
+import com.apexstudio.app.data.export.Export8kCapability
+import com.apexstudio.app.data.export.eightKCapabilityRequestForSettings
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ExportResolution
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
@@ -112,8 +116,26 @@ fun ColorStudioScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val exportUi by vm.export.collectAsStateWithLifecycle()
     val audioState by vm.audio.collectAsStateWithLifecycle()
+    val colorEightKRequest = remember(exportUi.settings) {
+        if (ExportResolution.canonical(exportUi.settings.resolution) == "8K") {
+            eightKCapabilityRequestForSettings(
+                exportUi.settings.aspectRatio,
+                exportUi.settings.frameRate,
+                exportUi.settings.quality.label.lowercase(),
+                exportUi.settings.bitrateMbps
+            )
+        } else null
+    }
+    val colorEightKAvailability by produceState<EightKExportAvailability?>(
+        initialValue = if (colorEightKRequest == null) null else EightKExportAvailability.Checking,
+        key1 = context.applicationContext,
+        key2 = colorEightKRequest
+    ) {
+        value = if (colorEightKRequest == null) null
+        else Export8kCapability.probeAndCache(context, colorEightKRequest)
+    }
     var timelineComparison by rememberSaveable(projectId, embedded, state.project?.id) {
-        mutableStateOf(!embedded || vm.colorStudioTimelineExportBlocker(ColorStudioGrade()) != null)
+        mutableStateOf(!embedded || vm.colorStudioTimelineExportBlocker(ColorStudioGrade(), colorEightKAvailability) != null)
     }
     var comparisonBusy by remember { mutableStateOf(false) }
     val candidates = remember(state.project?.clips) { ColorMediaIO.selectedSources(state.project?.clips.orEmpty()) }
@@ -134,8 +156,8 @@ fun ColorStudioScreen(
     var completedOutputGrade by remember { mutableStateOf<ColorStudioGrade?>(null) }
     var requestedTimelineGrade by remember { mutableStateOf<ColorStudioGrade?>(null) }
     var timelineOutputBaseline by remember { mutableStateOf<String?>(null) }
-    val timelineSnapshot = remember(state, audioState, exportUi.settings, exportUi.isExporting, grade) {
-        runCatching { vm.captureColorTimelineExportSnapshot(grade) }
+    val timelineSnapshot = remember(state, audioState, exportUi.settings, exportUi.isExporting, grade, colorEightKAvailability) {
+        runCatching { vm.captureColorTimelineExportSnapshot(grade, colorEightKAvailability) }
     }
     var exportJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -306,7 +328,7 @@ fun ColorStudioScreen(
     }
 
     if (exportDialog) {
-        val timelineBlocker = vm.colorStudioTimelineExportBlocker(grade)
+        val timelineBlocker = vm.colorStudioTimelineExportBlocker(grade, colorEightKAvailability)
         AlertDialog(onDismissRequest = { if (exportBusy) exportJob?.cancel() else exportDialog = false },
             title = { Text("Export Color result") },
             text = {

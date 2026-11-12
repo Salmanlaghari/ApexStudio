@@ -181,30 +181,38 @@ internal fun ExportPrimarySettingsRows(
     frameRate: Int,
     enabled: Boolean,
     onResolutionSelected: (String) -> Unit,
-    onFrameRateSelected: (Int) -> Unit
+    onFrameRateSelected: (Int) -> Unit,
+    resolutionUnavailableReason: String? = null
 ) {
     val resolutionOptions = listOf(
         "720P" to "1280 × 720",
         "1080P" to "1920 × 1080",
         "1440P" to "2560 × 1440",
-        "4K" to "3840 × 2160"
+        "4K" to "3840 × 2160",
+        "8K" to "8K UHD • exact device support required"
     )
     val fpsOptions = listOf(24, 30, 60, 90, 120).map { "$it FPS" to "${it} fps" }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ExportSettingPickerRow(
-            badge = "HD",
-            value = if (resolution.equals("4K", ignoreCase = true)) "4K" else "${resolution.removeSuffix("P").removeSuffix("p")}p",
+            badge = if (resolution.equals("8K", ignoreCase = true)) "8K" else "HD",
+            value = when (resolution.uppercase()) {
+                "4K" -> "4K"
+                "8K" -> "8K"
+                else -> "${resolution.removeSuffix("P").removeSuffix("p")}p"
+            },
             subtitle = when (resolution.uppercase()) {
                 "720P" -> "HD resolution"
                 "1440P" -> "2K QHD resolution"
                 "4K" -> "Ultra HD resolution"
+                "8K" -> "8K UHD; device and memory gated"
                 else -> "Full HD resolution"
             },
             options = resolutionOptions,
             selected = resolution.uppercase(),
             enabled = enabled,
             testTag = "export-resolution-setting",
-            onSelect = onResolutionSelected
+            onSelect = onResolutionSelected,
+            disabledOptionDetails = resolutionUnavailableReason?.let { mapOf("8K" to it) }.orEmpty()
         )
         ExportSettingPickerRow(
             badge = "FPS",
@@ -238,7 +246,8 @@ private fun ExportSettingPickerRow(
     selected: String,
     enabled: Boolean,
     testTag: String,
-    onSelect: (String) -> Unit
+    onSelect: (String) -> Unit,
+    disabledOptionDetails: Map<String, String> = emptyMap()
 ) {
     var expanded by remember(testTag) { mutableStateOf(false) }
     Box {
@@ -264,17 +273,19 @@ private fun ExportSettingPickerRow(
         if (options != null) {
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { (label, detail) ->
+                    val disabledReason = disabledOptionDetails[label]
                     DropdownMenuItem(
+                        enabled = disabledReason == null,
                         text = {
                             Column {
                                 Text(label, fontWeight = FontWeight.SemiBold)
-                                Text(detail, color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                                Text(disabledReason ?: detail, color = ApexPalette.TextSecondary, fontSize = 10.sp)
                             }
                         },
                         trailingIcon = if (label.equals(selected, ignoreCase = true)) {
                             { Text("✓", color = ApexPalette.NeonPurple, fontWeight = FontWeight.Bold) }
                         } else null,
-                        onClick = { expanded = false; onSelect(label) }
+                        onClick = { if (disabledReason == null) { expanded = false; onSelect(label) } }
                     )
                 }
             }

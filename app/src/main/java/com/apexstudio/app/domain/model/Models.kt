@@ -1525,16 +1525,16 @@ data class LutPreset(
 
 /** Canonical resolution values accepted by the editor and export pipeline. */
 object ExportResolution {
-    val supported: List<String> = listOf("720P", "1080P", "1440P", "4K")
+    val supported: List<String> = listOf("720P", "1080P", "1440P", "4K", "8K")
 
     /**
-     * Convert current and historical UI labels to a supported output preset.
-     * Older builds exposed 8K although device encoder support was not checked;
-     * map it down to the supported 4K ceiling rather than silently requesting 8K.
+     * Convert current and historical UI labels to a canonical output preset.
+     * 8K remains distinct here; device-specific encoder/render checks must gate it
+     * at export time rather than silently changing the requested output to 4K.
      */
     fun canonical(value: String?): String = when {
         value.isNullOrBlank() -> "1080P"
-        value.contains("8k", ignoreCase = true) || value.contains("4320") -> "4K"
+        value.contains("8k", ignoreCase = true) || value.contains("4320") -> "8K"
         value.contains("4k", ignoreCase = true) || value.contains("2160") -> "4K"
         value.contains("1440") -> "1440P"
         value.contains("720") -> "720P"

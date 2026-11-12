@@ -29,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -58,7 +59,7 @@ import coil.compose.AsyncImage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
 
 @Composable
@@ -79,6 +80,7 @@ internal fun ApexHomeContent(
     onShowAll: () -> Unit,
     onExploreAiTools: () -> Unit = onCreateVideo
 ) {
+    val theme = ApexThemeTokens.current
     val listState = rememberLazyListState()
     var showCreateChoices by remember { mutableStateOf(false) }
     val filteredProjects = remember(projects, searchText) {
@@ -91,7 +93,7 @@ internal fun ApexHomeContent(
     val visibleProjects = if (showAllProjects || searchText.isNotBlank()) filteredProjects else filteredProjects.take(3)
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(ApexPalette.BgBase)
+        modifier = Modifier.fillMaxSize().background(theme.bgBase)
     ) {
     val compactPhone = maxWidth < 600.dp
     LazyColumn(
@@ -117,16 +119,16 @@ internal fun ApexHomeContent(
                     onValueChange = onSearchChange,
                     modifier = Modifier.fillMaxWidth().testTag("home-project-search"),
                     singleLine = true,
-                    placeholder = { Text("Search projects", color = ApexPalette.TextTertiary) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = ApexPalette.NeonCyan) },
+                    placeholder = { Text("Search projects", color = theme.textTertiary) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = theme.primary) },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = ApexPalette.TextPrimary,
-                        unfocusedTextColor = ApexPalette.TextPrimary,
-                        focusedBorderColor = ApexPalette.NeonPurple,
-                        unfocusedBorderColor = ApexPalette.BorderGlass,
-                        cursorColor = ApexPalette.NeonCyan,
-                        focusedContainerColor = ApexPalette.BgSurface,
-                        unfocusedContainerColor = ApexPalette.BgSurface
+                        focusedTextColor = theme.textPrimary,
+                        unfocusedTextColor = theme.textPrimary,
+                        focusedBorderColor = theme.secondary,
+                        unfocusedBorderColor = theme.border,
+                        cursorColor = theme.primary,
+                        focusedContainerColor = theme.bgSurface,
+                        unfocusedContainerColor = theme.bgSurface
                     )
                 )
             }
@@ -142,15 +144,15 @@ internal fun ApexHomeContent(
                 Column(Modifier.weight(1f)) {
                     Text(
                         if (searchText.isBlank()) "Recent Projects" else "Search results",
-                        color = ApexPalette.TextPrimary,
+                        color = theme.textPrimary,
                         fontSize = if (compactPhone) 17.sp else 20.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    if (searchText.isNotBlank()) Text("${filteredProjects.size} matching projects", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                    if (searchText.isNotBlank()) Text("${filteredProjects.size} matching projects", color = theme.textSecondary, fontSize = 12.sp)
                 }
                 if (filteredProjects.size > 3 && searchText.isBlank()) {
                     TextButton(onClick = onShowAll, modifier = Modifier.testTag("home-see-all")) {
-                        Text(if (showAllProjects) "Show less" else "See all", color = ApexPalette.NeonCyan, fontWeight = FontWeight.SemiBold)
+                        Text(if (showAllProjects) "Show less" else "See all", color = theme.primary, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -180,12 +182,12 @@ internal fun ApexHomeContent(
     if (showCreateChoices) {
         AlertDialog(
             onDismissRequest = { showCreateChoices = false },
-            containerColor = ApexPalette.BgSurface,
-            title = { Text("Create a new project", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold) },
-            text = { Text("Choose the media you want to start with.", color = ApexPalette.TextSecondary) },
+            containerColor = theme.bgSurface,
+            title = { Text("Create a new project", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
+            text = { Text("Choose the media you want to start with.", color = theme.textSecondary) },
             confirmButton = {
                 TextButton(onClick = { showCreateChoices = false; onCreateVideo() }) {
-                    Icon(Icons.Default.Movie, contentDescription = null, tint = ApexPalette.NeonPurple)
+                    Icon(Icons.Default.Movie, contentDescription = null, tint = theme.secondary)
                     Spacer(Modifier.width(7.dp))
                     Text("Video project")
                 }
@@ -193,7 +195,7 @@ internal fun ApexHomeContent(
             dismissButton = {
                 Row {
                     TextButton(onClick = { showCreateChoices = false; onCreatePhoto() }) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = ApexPalette.NeonCyan)
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, tint = theme.primary)
                         Spacer(Modifier.width(5.dp))
                         Text("Photo project")
                     }
@@ -206,6 +208,7 @@ internal fun ApexHomeContent(
 
 @Composable
 private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
+    val theme = ApexThemeTokens.current
     Row(
         modifier = Modifier.fillMaxWidth().testTag("dashboard-header"),
         verticalAlignment = Alignment.CenterVertically,
@@ -220,20 +223,20 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
                 quadraticTo(w * .52f, h * .01f, w * .57f, h * .10f)
                 lineTo(w * .96f, h * .88f)
             }
-            drawPath(mark, Brush.linearGradient(listOf(ApexPalette.NeonPurple, Color(0xFF547BFF), ApexPalette.NeonCyan)), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * .18f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-            drawLine(Color(0xFF8A70FF), androidx.compose.ui.geometry.Offset(w * .28f, h * .62f), androidx.compose.ui.geometry.Offset(w * .75f, h * .62f), strokeWidth = w * .14f, cap = StrokeCap.Round)
+            drawPath(mark, Brush.linearGradient(listOf(theme.secondary, theme.secondaryGlow, theme.primary)), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * .18f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            drawLine(theme.secondary, androidx.compose.ui.geometry.Offset(w * .28f, h * .62f), androidx.compose.ui.geometry.Offset(w * .75f, h * .62f), strokeWidth = w * .14f, cap = StrokeCap.Round)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
                 buildAnnotatedString {
-                    withStyle(SpanStyle(color = ApexPalette.TextPrimary)) { append("Apex") }
-                    withStyle(SpanStyle(color = ApexPalette.NeonPurple)) { append("Studio") }
+                    withStyle(SpanStyle(color = theme.textPrimary)) { append("Apex") }
+                    withStyle(SpanStyle(color = theme.secondary)) { append("Studio") }
                 },
                 fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1
             )
-            Text("AI-POWERED VIDEO EDITOR", color = ApexPalette.TextTertiary, fontSize = 7.sp, letterSpacing = 1.7.sp, maxLines = 1)
+            Text("AI-POWERED VIDEO EDITOR", color = theme.textTertiary, fontSize = 7.sp, letterSpacing = 1.7.sp, maxLines = 1)
         }
         HeaderAction(Icons.Default.Search, "Search projects", onSearch, "dashboard-search")
         HeaderAction(Icons.Default.NotificationsNone, "App notification settings", onNotifications, "dashboard-notifications")
@@ -242,21 +245,23 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
 
 @Composable
 private fun HeaderAction(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, onClick: () -> Unit, tag: String) {
+    val theme = ApexThemeTokens.current
     IconButton(
         onClick = onClick,
         modifier = Modifier.size(36.dp).clip(CircleShape).testTag(tag)
     ) {
-        Icon(icon, contentDescription = description, tint = ApexPalette.TextPrimary, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = description, tint = theme.textPrimary, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
 private fun CreativeWorkspaceHero(onCreate: () -> Unit, compactPhone: Boolean) {
+    val theme = ApexThemeTokens.current
     Box(
         modifier = Modifier.fillMaxWidth().height(if (compactPhone) 156.dp else 232.dp)
             .clip(RoundedCornerShape(if (compactPhone) 20.dp else 24.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF0D1D34), Color(0xFF251047), Color(0xFF07314B))))
-            .border(1.dp, Brush.linearGradient(listOf(Color(0xFF4C92FF), ApexPalette.NeonPurple, ApexPalette.NeonCyan)), RoundedCornerShape(if (compactPhone) 20.dp else 24.dp))
+            .background(Brush.linearGradient(listOf(theme.bgDeep, theme.secondaryGlow, theme.bgSurface)))
+            .border(1.dp, Brush.linearGradient(listOf(theme.primaryGlow, theme.secondary, theme.primary)), RoundedCornerShape(if (compactPhone) 20.dp else 24.dp))
             .testTag("dashboard-new-project")
     ) {
         Image(
@@ -265,30 +270,30 @@ private fun CreativeWorkspaceHero(onCreate: () -> Unit, compactPhone: Boolean) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color(0xE80A1931), Color(0x7D16163B), Color(0x4421345E)))))
-        Text("IDEAS\nEDIT\nENHANCE\nSHARE", color = Color.White.copy(alpha = .60f), fontSize = 7.sp, lineHeight = 12.sp,
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(theme.bgDeep.copy(alpha = .91f), theme.bgDeep.copy(alpha = .57f), theme.bgDeep.copy(alpha = .22f)))))
+        Text("IDEAS\nEDIT\nENHANCE\nSHARE", color = theme.textPrimary.copy(alpha = .60f), fontSize = 7.sp, lineHeight = 12.sp,
             letterSpacing = 1.4.sp, modifier = Modifier.align(Alignment.TopEnd).padding(top = if (compactPhone) 13.dp else 20.dp, end = 16.dp))
-        Text("A HIGHER\nSTANDARD\nFOR CREATORS", color = Color.White.copy(alpha = .68f), fontSize = 7.sp,
+        Text("A HIGHER\nSTANDARD\nFOR CREATORS", color = theme.textPrimary.copy(alpha = .68f), fontSize = 7.sp,
             lineHeight = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = if (compactPhone) 12.dp else 18.dp))
         Column(
             modifier = Modifier.fillMaxWidth(if (compactPhone) .90f else .84f)
                 .padding(horizontal = if (compactPhone) 12.dp else 20.dp, vertical = if (compactPhone) 10.dp else 19.dp),
             verticalArrangement = Arrangement.spacedBy(if (compactPhone) 4.dp else 9.dp)
         ) {
-            Text("Your creative\nworkspace", color = Color.White, fontSize = if (compactPhone) 21.sp else 27.sp,
+            Text("Your creative\nworkspace", color = theme.textPrimary, fontSize = if (compactPhone) 21.sp else 27.sp,
                 lineHeight = if (compactPhone) 23.sp else 31.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Turn ideas into incredible videos\nwith the power of AI.", color = Color(0xFFC4D0F0),
+            Text("Turn ideas into incredible videos\nwith the power of AI.", color = theme.textSecondary,
                 fontSize = if (compactPhone) 10.sp else 13.sp, lineHeight = if (compactPhone) 12.sp else 18.sp)
             Row(
                 modifier = Modifier.padding(top = if (compactPhone) 1.dp else 5.dp).clip(RoundedCornerShape(30.dp))
-                    .background(Brush.horizontalGradient(listOf(Color(0xFFF0E7FF), Color(0xFFD9F8FF))))
+                    .background(Brush.horizontalGradient(listOf(theme.primary, theme.secondary)))
                     .clickable(onClick = onCreate).testTag("home-create-project"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFF17162B), modifier = Modifier.padding(start = if (compactPhone) 10.dp else 15.dp).size(if (compactPhone) 17.dp else 23.dp))
-                Text("Create new project", color = Color(0xFF17162B), fontSize = if (compactPhone) 13.sp else 15.sp,
+                Icon(Icons.Default.Add, contentDescription = null, tint = theme.bgDeep, modifier = Modifier.padding(start = if (compactPhone) 10.dp else 15.dp).size(if (compactPhone) 17.dp else 23.dp))
+                Text("Create new project", color = theme.bgDeep, fontSize = if (compactPhone) 13.sp else 15.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 7.dp, vertical = if (compactPhone) 7.dp else 13.dp))
-                Text("→", color = Color(0xFF17162B), fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = if (compactPhone) 10.dp else 16.dp))
+                Text("→", color = theme.bgDeep, fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = if (compactPhone) 10.dp else 16.dp))
             }
         }
     }
@@ -296,6 +301,7 @@ private fun CreativeWorkspaceHero(onCreate: () -> Unit, compactPhone: Boolean) {
 
 @Composable
 private fun HomeProjectCard(project: Project, canManage: Boolean, compactPhone: Boolean, onOpen: () -> Unit, onRename: () -> Unit, onDelete: () -> Unit) {
+    val theme = ApexThemeTokens.current
     val context = LocalContext.current
     val clip = remember(project.clips) {
         project.clips.firstOrNull { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
@@ -315,33 +321,33 @@ private fun HomeProjectCard(project: Project, canManage: Boolean, compactPhone: 
     }
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(if (compactPhone) 14.dp else 17.dp))
-            .background(Color(0xFF141923)).border(1.dp, Color(0xFF252D3B), RoundedCornerShape(if (compactPhone) 14.dp else 17.dp))
+            .background(theme.bgSurface).border(1.dp, theme.border, RoundedCornerShape(if (compactPhone) 14.dp else 17.dp))
             .clickable(onClick = onOpen).padding(if (compactPhone) 8.dp else 10.dp).testTag("home-recent-project-${project.id}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.width(if (compactPhone) 96.dp else 118.dp).height(if (compactPhone) 58.dp else 70.dp)
-            .clip(RoundedCornerShape(10.dp)).background(ApexPalette.BgElevated), contentAlignment = Alignment.Center) {
+            .clip(RoundedCornerShape(10.dp)).background(theme.bgElevated), contentAlignment = Alignment.Center) {
             when {
                 extractedFrame != null -> androidx.compose.foundation.Image(extractedFrame!!, contentDescription = "Preview of ${project.name}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 imageModel != null -> AsyncImage(model = imageModel, contentDescription = "Preview of ${project.name}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 else -> {
-                    Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF251047), Color(0xFF105077)))), contentAlignment = Alignment.Center) {
-                        Icon(if (clip?.type == ClipType.IMAGE) Icons.Default.PhotoLibrary else Icons.Default.VideoLibrary, contentDescription = null, tint = Color.White.copy(alpha = .9f), modifier = Modifier.size(29.dp))
+                    Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(theme.secondaryGlow, theme.primaryGlow))), contentAlignment = Alignment.Center) {
+                        Icon(if (clip?.type == ClipType.IMAGE) Icons.Default.PhotoLibrary else Icons.Default.VideoLibrary, contentDescription = null, tint = theme.textPrimary.copy(alpha = .9f), modifier = Modifier.size(29.dp))
                     }
                 }
             }
-            Box(Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(topStart = 7.dp)).background(Color.Black.copy(alpha = .72f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
-                Text(TimeFormat.msToShort(project.durationMs), color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+            Box(Modifier.align(Alignment.BottomEnd).clip(RoundedCornerShape(topStart = 7.dp)).background(theme.bgDeep.copy(alpha = .82f)).padding(horizontal = 6.dp, vertical = 3.dp)) {
+                Text(TimeFormat.msToShort(project.durationMs), color = theme.textPrimary, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(project.name, color = ApexPalette.TextPrimary, fontSize = if (compactPhone) 12.sp else 14.sp,
+            Text(project.name, color = theme.textPrimary, fontSize = if (compactPhone) 12.sp else 14.sp,
                 fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Schedule, contentDescription = null, tint = ApexPalette.TextTertiary, modifier = Modifier.size(12.dp))
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = theme.textTertiary, modifier = Modifier.size(12.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(homeEditedLabel(project.lastEditedMs), color = ApexPalette.TextSecondary, fontSize = if (compactPhone) 9.sp else 10.sp, maxLines = 1)
+                Text(homeEditedLabel(project.lastEditedMs), color = theme.textSecondary, fontSize = if (compactPhone) 9.sp else 10.sp, maxLines = 1)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -353,7 +359,7 @@ private fun HomeProjectCard(project: Project, canManage: Boolean, compactPhone: 
             var showMenu by remember(project.id) { mutableStateOf(false) }
             Box {
                 IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp).testTag("home-project-menu-${project.id}")) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "More options for ${project.name}", tint = ApexPalette.TextSecondary, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options for ${project.name}", tint = theme.textSecondary, modifier = Modifier.size(20.dp))
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() }, modifier = Modifier.testTag("home-project-rename-${project.id}"))
@@ -366,8 +372,9 @@ private fun HomeProjectCard(project: Project, canManage: Boolean, compactPhone: 
 
 @Composable
 private fun ProjectMetaChip(label: String) {
-    Text(label, color = Color(0xFFC4CBE0), fontSize = 9.sp, maxLines = 1,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Color(0xFF252B3B)).padding(horizontal = 7.dp, vertical = 4.dp))
+    val theme = ApexThemeTokens.current
+    Text(label, color = theme.textSecondary, fontSize = 9.sp, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(theme.bgElevated).padding(horizontal = 7.dp, vertical = 4.dp))
 }
 
 private fun homeEditedLabel(lastEditedMs: Long): String {
@@ -383,40 +390,42 @@ private fun homeEditedLabel(lastEditedMs: Long): String {
 
 @Composable
 private fun HomeEmptyProjects(searching: Boolean) {
+    val theme = ApexThemeTokens.current
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(18.dp)).padding(18.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(theme.bgSurface)
+            .border(1.dp, theme.border, RoundedCornerShape(18.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Icon(if (searching) Icons.Default.Search else Icons.Default.Folder, contentDescription = null, tint = ApexPalette.NeonPurple)
-        Text(if (searching) "No projects found" else "Your next story starts here", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
-        Text(if (searching) "Try another project or clip name." else "Choose a video or photo to start editing.", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+        Icon(if (searching) Icons.Default.Search else Icons.Default.Folder, contentDescription = null, tint = theme.secondary)
+        Text(if (searching) "No projects found" else "Your next story starts here", color = theme.textPrimary, fontWeight = FontWeight.Bold)
+        Text(if (searching) "Try another project or clip name." else "Choose a video or photo to start editing.", color = theme.textSecondary, fontSize = 12.sp)
     }
 }
 
 @Composable
 private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
+    val theme = ApexThemeTokens.current
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(if (compactPhone) 16.dp else 19.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF171542), Color(0xFF24205B), Color(0xFF172E56))))
-            .border(1.dp, ApexPalette.NeonPurple.copy(alpha = .48f), RoundedCornerShape(if (compactPhone) 16.dp else 19.dp))
+            .background(Brush.linearGradient(listOf(theme.bgDeep, theme.secondaryGlow.copy(alpha = .76f), theme.bgSurface)))
+            .border(1.dp, theme.secondary.copy(alpha = .58f), RoundedCornerShape(if (compactPhone) 16.dp else 19.dp))
             .padding(if (compactPhone) 10.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compactPhone) 3.dp else 5.dp)) {
-            Text("✦  CREATE FASTER WITH AI", color = Color(0xFFB9B4FF), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-            Text("Explore AI tools in your next edit", color = ApexPalette.TextPrimary, fontSize = if (compactPhone) 13.sp else 17.sp,
+            Text("✦  CREATE FASTER WITH AI", color = theme.secondary, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text("Explore AI tools in your next edit", color = theme.textPrimary, fontSize = if (compactPhone) 13.sp else 17.sp,
                 fontWeight = FontWeight.Bold, lineHeight = if (compactPhone) 16.sp else 20.sp)
             TextButton(onClick = onOpenAiTools, contentPadding = PaddingValues(0.dp), modifier = Modifier.testTag("home-ai-tools-entry")) {
-                Text("Open AI tools  →", color = ApexPalette.NeonCyan, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text("Open AI tools  →", color = theme.primary, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             }
         }
         Box(Modifier.size(if (compactPhone) 72.dp else 92.dp), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(62.dp).align(Alignment.CenterStart).graphicsLayer { rotationZ = -9f }.clip(RoundedCornerShape(12.dp)).background(Color(0xFF211A56)))
-            Box(Modifier.size(if (compactPhone) 52.dp else 66.dp).align(Alignment.Center).graphicsLayer { rotationZ = -2f }.clip(RoundedCornerShape(12.dp)).background(Color(0xFF242D76)))
+            Box(Modifier.size(62.dp).align(Alignment.CenterStart).graphicsLayer { rotationZ = -9f }.clip(RoundedCornerShape(12.dp)).background(theme.bgElevated))
+            Box(Modifier.size(if (compactPhone) 52.dp else 66.dp).align(Alignment.Center).graphicsLayer { rotationZ = -2f }.clip(RoundedCornerShape(12.dp)).background(theme.secondaryGlow))
             Image(painterResource(com.apexstudio.app.R.drawable.apex_home_mountain_hero), contentDescription = null, contentScale = ContentScale.Crop,
                 modifier = Modifier.width(if (compactPhone) 46.dp else 58.dp).height(if (compactPhone) 58.dp else 72.dp).align(Alignment.CenterEnd).graphicsLayer { rotationZ = 7f }
-                    .clip(RoundedCornerShape(12.dp)).border(1.dp, ApexPalette.NeonCyan, RoundedCornerShape(12.dp)))
+                    .clip(RoundedCornerShape(12.dp)).border(1.dp, theme.primary, RoundedCornerShape(12.dp)))
         }
     }
 }

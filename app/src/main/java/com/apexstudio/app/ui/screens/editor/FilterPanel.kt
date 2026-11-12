@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutFilterEngine
-import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -63,8 +63,8 @@ fun FilterPanel(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-            .background(ApexPalette.BgSurface)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .background(ApexThemeTokens.current.bgSurface)
+            .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         // Header
@@ -74,7 +74,7 @@ fun FilterPanel(
         ) {
             Text(
                 "Filters",
-                color = ApexPalette.TextPrimary,
+                color = ApexThemeTokens.current.textPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 modifier = Modifier.weight(1f)
@@ -82,7 +82,7 @@ fun FilterPanel(
             Icon(
                 Icons.Default.Close,
                 contentDescription = "Close filters",
-                tint = ApexPalette.NeonCyan,
+                tint = ApexThemeTokens.current.primary,
                 modifier = Modifier
                     .size(24.dp)
                     .clip(CircleShape)
@@ -104,12 +104,12 @@ fun FilterPanel(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .background(
-                            if (selected) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                            else ApexPalette.BgElevated
+                            if (selected) ApexThemeTokens.current.primary.copy(alpha = 0.2f)
+                            else ApexThemeTokens.current.bgElevated
                         )
                         .border(
                             1.dp,
-                            if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                            if (selected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                             RoundedCornerShape(8.dp)
                         )
                         .clickable { onCategoryChange(c.id) }
@@ -118,7 +118,7 @@ fun FilterPanel(
                 ) {
                     Text(
                         c.name,
-                        color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        color = if (selected) ApexThemeTokens.current.primary else ApexThemeTokens.current.textSecondary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -162,7 +162,7 @@ fun FilterPanel(
         ) {
             Text(
                 "Intensity",
-                color = ApexPalette.TextSecondary,
+                color = ApexThemeTokens.current.textSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -173,16 +173,16 @@ fun FilterPanel(
                 valueRange = 0f..1f,
                 enabled = activeFilterId != null,
                 colors = SliderDefaults.colors(
-                    thumbColor = ApexPalette.NeonCyan,
-                    activeTrackColor = ApexPalette.NeonCyan,
-                inactiveTrackColor = ApexPalette.BorderGlass
+                    thumbColor = ApexThemeTokens.current.primary,
+                    activeTrackColor = ApexThemeTokens.current.primary,
+                inactiveTrackColor = ApexThemeTokens.current.border
                 ),
                 modifier = Modifier.weight(1f).testTag("filter-panel-intensity")
             )
             Spacer(Modifier.width(8.dp))
             Text(
                 "${(intensity * 100).toInt()}%",
-                color = if (activeFilterId == null) ApexPalette.TextTertiary else ApexPalette.NeonCyan,
+                color = if (activeFilterId == null) ApexThemeTokens.current.textTertiary else ApexThemeTokens.current.primary,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold
             )
@@ -215,7 +215,7 @@ private fun FilterChip(
                 .background(Brush.linearGradient(colors))
                 .border(
                     1.5.dp,
-                    if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                    if (selected) ApexThemeTokens.current.primary else ApexThemeTokens.current.border,
                     RoundedCornerShape(8.dp)
                 )
         ) {
@@ -252,7 +252,7 @@ private fun FilterChip(
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .background(Color.White.copy(alpha = 0.08f))
+                        .background(ApexThemeTokens.current.primary.copy(alpha = 0.08f))
                         .clip(RoundedCornerShape(10.dp))
                 )
             }
@@ -265,13 +265,13 @@ private fun FilterChip(
                     .height(26.dp)
                     .background(
                         Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.95f))
+                            listOf(Color.Transparent, ApexThemeTokens.current.bgDeep.copy(alpha = 0.95f))
                         )
                     )
             )
             Text(
                 label,
-                color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                color = if (selected) ApexThemeTokens.current.primary else ApexThemeTokens.current.textPrimary,
                 fontSize = 8.sp,
                 lineHeight = 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -290,13 +290,13 @@ private fun FilterChip(
                         .padding(4.dp)
                         .size(16.dp)
                         .clip(CircleShape)
-                        .background(ApexPalette.NeonCyan),
+                        .background(ApexThemeTokens.current.primary),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         Icons.Default.Check,
                         contentDescription = null,
-                        tint = Color.Black,
+                        tint = ApexThemeTokens.current.bgDeep,
                         modifier = Modifier.size(10.dp)
                     )
                 }
@@ -310,6 +310,7 @@ private fun FilterChip(
  * colour character. "Original" gets a neutral gradient; each LUT
  * preset maps to a signature look based on its name or category.
  */
+@Composable
 fun filterPreviewColors(filterId: String?): List<Color> {
     return when (filterId) {
         // Cinematic
@@ -434,13 +435,13 @@ fun filterPreviewColors(filterId: String?): List<Color> {
         "nordic_dusk" -> listOf(Color(0xFF1A237E), Color(0xFF9FA8DA))
         // Original / no filter
         null -> listOf(
-            ApexPalette.NeonPurple.copy(alpha = 0.5f),
-            ApexPalette.NeonCyan.copy(alpha = 0.5f)
+            ApexThemeTokens.current.secondary.copy(alpha = 0.5f),
+            ApexThemeTokens.current.primary.copy(alpha = 0.5f)
         )
         // Fallback
         else -> listOf(
-            ApexPalette.NeonPurple.copy(alpha = 0.5f),
-            ApexPalette.NeonCyan.copy(alpha = 0.5f)
+            ApexThemeTokens.current.secondary.copy(alpha = 0.5f),
+            ApexThemeTokens.current.primary.copy(alpha = 0.5f)
         )
     }
 }

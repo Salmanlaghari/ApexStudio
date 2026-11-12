@@ -17,8 +17,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.apexstudio.app.ui.components.BottomNavBar
 import com.apexstudio.app.ui.components.BottomNavItem
 import com.apexstudio.app.ui.components.defaultNavItems
@@ -48,7 +48,7 @@ fun ApexRoot() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(MaterialTheme.colorScheme.background)
     ) {
         Box(modifier = Modifier.weight(1f)) {
             NeonGradientBackground(modifier = Modifier.fillMaxSize()) {
@@ -125,11 +125,11 @@ fun ApexRoot() {
             showExportSettings -> listOf(
                 BottomNavItem("home", "Home", Icons.Default.Home),
                 BottomNavItem("edit", "Edit", Icons.Default.Tune),
-                BottomNavItem("export", "Export", Icons.Default.IosShare, selectedColor = Color(0xFF9768FF)),
+                BottomNavItem("export", "Export", Icons.Default.IosShare),
                 BottomNavItem("library", "Library", Icons.Default.VideoLibrary)
             )
             currentTab == "home" -> listOf(
-                BottomNavItem("home", "Projects", Icons.Default.Folder, selectedColor = Color(0xFF9768FF)),
+                BottomNavItem("home", "Projects", Icons.Default.Folder),
                 BottomNavItem("templates", "Templates", Icons.Default.PlayArrow),
                 BottomNavItem("settings", "Settings", Icons.Default.Settings)
             )

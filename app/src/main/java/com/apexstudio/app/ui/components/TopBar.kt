@@ -21,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.ui.theme.ApexPalette
 
 @Composable
 fun AppTopBar(
@@ -37,6 +36,7 @@ fun AppTopBar(
     onSettings: (() -> Unit)? = null,
     extraRight: @Composable (() -> Unit)? = null
 ) {
+    val colors = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxWidth()) {
     val compact = maxWidth < 380.dp
     Row(
@@ -68,17 +68,17 @@ fun AppTopBar(
             modifier = Modifier
                 .size(40.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Brush.linearGradient(listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple))),
+                .background(Brush.linearGradient(listOf(colors.primary, colors.secondary))),
             contentAlignment = Alignment.Center
         ) {
-            Text("A", color = ApexPalette.BgDeep, fontWeight = FontWeight.Black, fontSize = 20.sp)
+            Text("A", color = colors.onPrimary, fontWeight = FontWeight.Black, fontSize = 20.sp)
         }
         Spacer(Modifier.width(10.dp))
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                color = ApexPalette.TextPrimary,
+                color = colors.onSurface,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
@@ -87,7 +87,7 @@ fun AppTopBar(
             if (subtitle != null) {
                 Text(
                     subtitle,
-                    color = ApexPalette.TextSecondary,
+                    color = colors.onSurfaceVariant,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -99,7 +99,7 @@ fun AppTopBar(
                 icon = Icons.Default.Undo,
                 onClick = onUndo,
                 enabled = canUndo,
-                tint = if (canUndo) ApexPalette.TextPrimary else ApexPalette.TextMuted
+                tint = if (canUndo) colors.onSurface else colors.outline
             )
             Spacer(Modifier.width(4.dp))
         }
@@ -108,7 +108,7 @@ fun AppTopBar(
                 icon = Icons.Default.Refresh,
                 onClick = onRedo,
                 enabled = canRedo,
-                tint = if (canRedo) ApexPalette.TextPrimary else ApexPalette.TextMuted
+                tint = if (canRedo) colors.onSurface else colors.outline
             )
             Spacer(Modifier.width(4.dp))
         }
@@ -116,7 +116,7 @@ fun AppTopBar(
             NeonIconButton(
                 icon = Icons.Default.Settings,
                 onClick = onSettings,
-                tint = ApexPalette.TextPrimary
+                tint = colors.onSurface
             )
             Spacer(Modifier.width(4.dp))
         }
@@ -130,20 +130,20 @@ fun AppTopBar(
                     .background(
                         Brush.radialGradient(
                             listOf(
-                                ApexPalette.NeonCyan.copy(alpha = 0.6f),
-                                ApexPalette.NeonPurple.copy(alpha = 0.4f),
+                                colors.primary.copy(alpha = 0.6f),
+                                colors.secondary.copy(alpha = 0.4f),
                                 Color.Transparent
                             )
                         )
                     )
-                    .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f), CircleShape)
+                    .border(1.dp, colors.primary.copy(alpha = 0.5f), CircleShape)
                     .clickable(onClick = onExport),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.IosShare,
                     "Export",
-                    tint = ApexPalette.NeonCyan,
+                    tint = colors.primary,
                     modifier = Modifier.size(20.dp)
                 )
             }

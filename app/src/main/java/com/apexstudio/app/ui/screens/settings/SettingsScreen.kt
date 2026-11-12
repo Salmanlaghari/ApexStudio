@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -261,7 +262,7 @@ fun SettingsScreen(
 private fun SettingsSectionTitle(title: String) {
     Text(
         title,
-        color = ApexPalette.TextSecondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = FontWeight.SemiBold
     )
@@ -315,7 +316,7 @@ private fun ThemeDialog(
         title = { Text("Choose a theme") },
         text = {
             Column {
-                Text("Changes dashboard accents, background glow and app controls. Editor surfaces stay dark; timeline track colors stay fixed for layer recognition.", style = MaterialTheme.typography.bodySmall)
+                Text("Changes the app background, dashboard and settings surfaces, shared controls, and the Text and Filter panels. Other editor panels and specialist screens are being migrated. Timeline track colors stay fixed so video and audio layers remain recognizable.", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(8.dp))
                 ApexThemeOption.entries.forEach { option ->
                     Row(
@@ -323,11 +324,18 @@ private fun ThemeDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = option == selected, onClick = { onSelect(option) })
-                        Box(
-                            modifier = Modifier.size(18.dp).clip(RoundedCornerShape(50)).background(
-                                Brush.linearGradient(listOf(option.primary, option.secondary))
-                            )
-                        )
+                        Row(
+                            modifier = Modifier.width(54.dp).height(26.dp).clip(RoundedCornerShape(8.dp))
+                                .background(option.palette.bgSurface)
+                                .border(1.dp, option.palette.border, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(option.palette.primary))
+                            Box(Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(option.palette.secondary))
+                            Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(option.palette.bgElevated))
+                        }
                         Spacer(Modifier.width(12.dp))
                         Text(option.displayName, style = MaterialTheme.typography.bodyLarge)
                     }
@@ -371,7 +379,7 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(ApexPalette.BgElevated.copy(alpha = 0.5f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -383,25 +391,25 @@ private fun SettingsRow(
                 .background(Brush.linearGradient(listOf(tint, tint.copy(alpha = 0.5f)))),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, null, tint = ApexPalette.BgDeep, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
-                color = ApexPalette.TextPrimary,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
             Text(
                 subtitle,
-                color = ApexPalette.TextSecondary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
         }
         Icon(
             Icons.Default.ChevronRight, null,
-            tint = ApexPalette.TextTertiary,
+            tint = MaterialTheme.colorScheme.outline,
             modifier = Modifier.size(20.dp)
         )
     }

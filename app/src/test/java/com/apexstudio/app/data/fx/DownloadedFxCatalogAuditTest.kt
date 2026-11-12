@@ -17,6 +17,10 @@ import org.robolectric.annotation.Config
 import java.io.File
 import java.security.MessageDigest
 
+/**
+ * Catalog and runtime-wiring audit; intentionally does not create a GL context
+ * or assert rendered output.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class DownloadedFxCatalogAuditTest {

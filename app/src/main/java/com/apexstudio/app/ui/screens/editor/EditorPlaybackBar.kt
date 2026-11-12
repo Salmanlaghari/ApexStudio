@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Redo
@@ -29,7 +30,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
@@ -54,47 +57,74 @@ fun PlaybackControlBar(
     canNavigate: Boolean = true,
     showInlineKeyframe: Boolean = true
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.PlaybackBarHeight)
-            .background(EditorPalette.BgBase)
+            .background(Color(0xFF111820))
             .testTag("editor-playback-controls")
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        val compact = maxWidth < 360.dp
+        val iconWidth = if (compact) 34.dp else 38.dp
+        val playWidth = if (compact) 40.dp else 44.dp
+        val sideBalanceWidth = 48.dp - iconWidth
+
         Text(
             text = buildAnnotatedString {
-                withStyle(SpanStyle(color = EditorPalette.NeonCyan, fontWeight = FontWeight.SemiBold)) {
+                withStyle(SpanStyle(color = Color(0xFFCAD4DC), fontWeight = FontWeight.SemiBold)) {
                     append(TimeFormat.msToShort(currentTimeMs))
                 }
-                withStyle(SpanStyle(color = EditorPalette.TextMuted)) {
+                withStyle(SpanStyle(color = Color(0xFF7C8A96))) {
                     append(" / ${TimeFormat.msToShort(durationMs)}")
                 }
             },
-            color = EditorPalette.TextPrimary,
-            fontSize = 11.sp,
+            color = Color(0xFFCAD4DC),
+            fontSize = if (compact) 8.sp else 9.sp,
+            fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.weight(1f).padding(start = 3.dp)
+            modifier = Modifier.align(Alignment.TopCenter).testTag("playback-timecode")
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TransportIconButton(Icons.Default.SkipPrevious, "Previous clip boundary", canNavigate, onPrevious)
-            TransportIconButton(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                description = if (isPlaying) "Pause playback" else "Play playback",
-                enabled = canNavigate,
-                onClick = onTogglePlay,
-                prominent = true
-            )
-            TransportIconButton(Icons.Default.SkipNext, "Next clip boundary", canNavigate, onNext)
-            TransportIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", canUndo, onUndo)
-            TransportIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", canRedo, onRedo)
-            if (showInlineKeyframe) {
-                KeyframeDiamondAddButton(hasKeyframeAtPlayhead, canEditKeyframe, onToggleKeyframe)
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width(sideBalanceWidth))
+                TransportIconButton(Icons.AutoMirrored.Filled.Undo, "Undo", canUndo, onUndo, buttonWidth = iconWidth)
+                TransportIconButton(Icons.AutoMirrored.Filled.Redo, "Redo", canRedo, onRedo, buttonWidth = iconWidth)
             }
-            TransportIconButton(Icons.Default.Fullscreen, "Toggle fullscreen", true, onFullscreenToggle)
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TransportIconButton(Icons.Default.SkipPrevious, "Previous clip boundary", canNavigate, onPrevious, buttonWidth = iconWidth)
+                TransportIconButton(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    description = if (isPlaying) "Pause playback" else "Play playback",
+                    enabled = canNavigate,
+                    onClick = onTogglePlay,
+                    buttonWidth = playWidth,
+                    prominent = true
+                )
+                TransportIconButton(Icons.Default.SkipNext, "Next clip boundary", canNavigate, onNext, buttonWidth = iconWidth)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showInlineKeyframe) {
+                    KeyframeDiamondAddButton(hasKeyframeAtPlayhead, canEditKeyframe, onToggleKeyframe)
+                } else {
+                    Spacer(Modifier.width(48.dp))
+                }
+                TransportIconButton(Icons.Default.Fullscreen, "Toggle fullscreen", true, onFullscreenToggle, buttonWidth = iconWidth)
+            }
         }
     }
 }
@@ -105,15 +135,17 @@ private fun TransportIconButton(
     description: String,
     enabled: Boolean = true,
     onClick: () -> Unit,
+    buttonWidth: Dp = 38.dp,
     prominent: Boolean = false
 ) {
     Box(
         modifier = Modifier
-            .size(width = 38.dp, height = 40.dp)
+            .size(width = buttonWidth, height = 40.dp)
             .padding(2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(if (prominent) Modifier.background(EditorPalette.NeonPurple)
-                .border(1.dp, EditorPalette.NeonPurple, RoundedCornerShape(8.dp)) else Modifier)
+            .clip(if (prominent) CircleShape else RoundedCornerShape(8.dp))
+            .then(if (prominent) Modifier
+                .background(Color(0xFFE4EAF0), CircleShape)
+                .border(1.dp, Color.White.copy(alpha = 0.18f), CircleShape) else Modifier)
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
@@ -123,8 +155,8 @@ private fun TransportIconButton(
             contentDescription = null,
             tint = when {
                 !enabled -> EditorPalette.TextMuted
-                prominent -> EditorPalette.TextPrimary
-                else -> EditorPalette.TextPrimary
+                prominent -> Color(0xFF17212B)
+                else -> Color(0xFFB7C3CD)
             },
             modifier = Modifier.size(if (prominent) 25.dp else 23.dp)
         )

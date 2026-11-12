@@ -73,7 +73,9 @@ import com.apexstudio.app.ui.screens.settings.LocalCreatorProfile
 import com.apexstudio.app.ui.screens.settings.SettingsPreferences
 import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -235,13 +237,16 @@ internal fun ApexHomeContent(
                     val profile = localCreatorProfileForSave(profileNameDraft, profileAvatarDraft)
                     profileSaveScope.launch {
                         try {
-                            if (trySaveLocalCreatorProfile(profile, onSaveLocalProfile)) {
-                                showLocalProfile = false
-                            } else {
-                                localProfileSaveError = "Couldn't save profile. Please try again."
+                            val saved = trySaveLocalCreatorProfile(profile, onSaveLocalProfile)
+                            if (isActive) {
+                                if (saved) {
+                                    showLocalProfile = false
+                                } else {
+                                    localProfileSaveError = "Couldn't save profile. Please try again."
+                                }
                             }
                         } finally {
-                            isSavingLocalProfile = false
+                            if (isActive) isSavingLocalProfile = false
                         }
                     }
                 }
@@ -658,6 +663,7 @@ private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
 internal fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
     val accent = profileAvatarColor(profile.avatarId)
     Box(
+        // Primary dashboard action keeps a generous touch target; utility icons remain compact.
         modifier = Modifier.size(48.dp)
             .clip(CircleShape)
             .background(accent.copy(alpha = 0.18f))
@@ -790,7 +796,7 @@ internal suspend fun trySaveLocalCreatorProfile(
     true
 } catch (cancelled: CancellationException) {
     throw cancelled
-} catch (_: Exception) {
+} catch (_: IOException) {
     false
 }
 

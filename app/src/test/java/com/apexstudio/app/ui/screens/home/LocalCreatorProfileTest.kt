@@ -102,6 +102,19 @@ class LocalCreatorProfileTest {
     }
 
     @Test
+    fun profileSaveDoesNotHideUnexpectedProgrammingErrors() = runBlocking {
+        var propagated = false
+        try {
+            trySaveLocalCreatorProfile(LocalCreatorProfile()) {
+                throw IllegalStateException("programming error")
+            }
+        } catch (_: IllegalStateException) {
+            propagated = true
+        }
+        assertTrue(propagated)
+    }
+
+    @Test
     fun localProfileFormEditsOnlyLocalDisplayNameAndAvatarSelection() {
         var displayName by mutableStateOf("Raza")
         var avatarId by mutableStateOf("violet")

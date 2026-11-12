@@ -46,6 +46,10 @@ object SettingsPreferences {
         }
     }
 
+    /**
+     * Replace control characters and invisible spacing marks in display names.
+     * ZWNJ/ZWJ are intentionally preserved because they can shape scripts and emoji.
+     */
     internal fun normalizeLocalCreatorProfile(profile: LocalCreatorProfile): LocalCreatorProfile =
         LocalCreatorProfile(
             displayName = profile.displayName

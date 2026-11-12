@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.system.Os
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -813,11 +814,16 @@ class ExportEngine(private val context: Context) {
                         finishedFile, config.fps, renderResult.videoFrameCount,
                         renderResult.durationMs, diagnostics, config
                     )
-                    if (destination.exists() && !destination.delete()) {
-                        throw IllegalStateException("Cannot replace existing project export")
+                    check(finishedFile.parentFile?.canonicalPath == destination.parentFile?.canonicalPath) {
+                        "Project export candidate must be in the destination directory for atomic publication"
                     }
-                    if (!finishedFile.renameTo(destination)) {
-                        throw IllegalStateException("Could not finalize project export file")
+                    currentCoroutineContext().ensureActive()
+                    synchronized(projectRunLock) {
+                        if (projectRun !== run || run.cancelled.get()) {
+                            throw kotlinx.coroutines.CancellationException("Project export was cancelled")
+                        }
+                        // Same-directory rename is the publication commit point and preserves any prior export on failure.
+                        Os.rename(finishedFile.absolutePath, destination.absolutePath)
                     }
                     publishProjectStage(run, ExportProgressStage.COMPLETE, diagnostics)
                     diagnostics.stage(
@@ -1923,6 +1929,17 @@ class ExportEngine(private val context: Context) {
                             "The 60 fps conversion changed the rendered video duration."
                         }
                     }
+                    val sourceVideoDurationMs = audit.outputDurationMs
+                        ?: throw IllegalStateException("The source video duration could not be verified before 60 fps conversion.")
+                    val verifiedCandidateDurationMs = candidateDurationMs
+                        ?: throw IllegalStateException("The converted video duration could not be verified.")
+                    val audioTrackCount = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+                        sourceFile = outputFile,
+                        candidateFile = candidate,
+                        sourceVideoDurationMs = sourceVideoDurationMs,
+                        candidateVideoDurationMs = verifiedCandidateDurationMs
+                    )
+                    diagnostics?.stage("cfr60_fallback_audio_verified", "audioTracks=$audioTrackCount")
                     val candidateWarning = candidateAudit.warning
                     if (candidateWarning != null) {
                         throw IllegalStateException("The converted video failed its 60 fps cadence audit: $candidateWarning")

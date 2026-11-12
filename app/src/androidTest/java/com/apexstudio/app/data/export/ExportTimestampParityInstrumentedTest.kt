@@ -224,6 +224,50 @@ class ExportTimestampParityInstrumentedTest {
     }
 
     @Test
+    fun bundledOpenH264FallbackGeneratesVerified60FpsAndPreservesAacAudio() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "cfr-fallback-source-$id.mp4")
+        var candidate: File? = null
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertTrue("Fallback fixture must contain AAC audio", hasTrack(source, "audio/"))
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
+            val normalized = ExportCfr60FpsNormalizer.transcode(source, targetBitrate = 6_000_000)
+            candidate = normalized
+
+            val audit = inspectEncodedVideo(
+                context = context,
+                file = normalized,
+                requestedFps = 60,
+                transformerDurationMs = sourceDurationMs
+            )
+            assertNull("CFR fallback output must pass the strict cadence audit: ${audit.warning}", audit.warning)
+            val candidateTrack = readVideoTrack(normalized)
+            assertActual60FpsCadence("direct CFR fallback", candidateTrack, sourceDurationMs * 1_000L)
+            assertTrue("CFR fallback must retain AAC audio", candidateTrack.audioDurationUs != null)
+            assertTrue(
+                "CFR fallback audio duration must remain synchronized",
+                abs(requireNotNull(candidateTrack.audioDurationUs) - sourceTrack.audioDurationUs!!) <= 150_000L
+            )
+            val audioTracks = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+                sourceFile = source,
+                candidateFile = normalized,
+                sourceVideoDurationMs = sourceDurationMs,
+                candidateVideoDurationMs = requireNotNull(audit.outputDurationMs)
+            )
+            assertTrue("CFR fallback must preserve at least one audio track", audioTracks > 0)
+        } finally {
+            candidate?.delete()
+            source.delete()
+        }
+    }
+
+    @Test
     fun selectedAndProjectExportsMeetVerified60FpsCadence() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

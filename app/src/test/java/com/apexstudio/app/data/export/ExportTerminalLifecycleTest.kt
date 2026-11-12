@@ -32,8 +32,9 @@ class ExportTerminalLifecycleTest {
     private val context get() = RuntimeEnvironment.getApplication()
     private fun activate(engine: ExportEngine): Transformer {
         val run = requireNotNull(engine.reserveNonProjectExport())
+        // This listener-ownership test intentionally writes no MP4; keep it outside the strict 60 fps output contract.
         val active = engine.buildHardwareTransformer(
-            ExportEngine.ExportConfig(), File(context.cacheDir, "lifecycle.mp4"), run
+            ExportEngine.ExportConfig(fps = 30), File(context.cacheDir, "lifecycle.mp4"), run
         )
         runBlocking { engine.startTransformerOnApplicationThread({ active }) { /* no native codec start */ } }
         return active

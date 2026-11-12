@@ -223,6 +223,148 @@ class ExportTimestampParityInstrumentedTest {
         }
     }
 
+    @Test
+    fun bundledOpenH264FallbackGeneratesVerified60FpsAndPreservesAacAudio() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "cfr-fallback-source-$id.mp4")
+        var candidate: File? = null
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertTrue("Fallback fixture must contain AAC audio", hasTrack(source, "audio/"))
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
+            val normalized = ExportCfr60FpsNormalizer.transcode(source, targetBitrate = 6_000_000)
+            candidate = normalized
+
+            val audit = inspectEncodedVideo(
+                context = context,
+                file = normalized,
+                requestedFps = 60,
+                transformerDurationMs = sourceDurationMs
+            )
+            assertNull("CFR fallback output must pass the strict cadence audit: ${audit.warning}", audit.warning)
+            val candidateTrack = readVideoTrack(normalized)
+            assertActual60FpsCadence("direct CFR fallback", candidateTrack, sourceDurationMs * 1_000L)
+            assertTrue("CFR fallback must retain AAC audio", candidateTrack.audioDurationUs != null)
+            assertTrue(
+                "CFR fallback audio duration must remain synchronized",
+                abs(requireNotNull(candidateTrack.audioDurationUs) - sourceTrack.audioDurationUs!!) <= 150_000L
+            )
+            val audioTracks = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+                sourceFile = source,
+                candidateFile = normalized,
+                sourceVideoDurationMs = sourceDurationMs,
+                candidateVideoDurationMs = requireNotNull(audit.outputDurationMs)
+            )
+            assertTrue("CFR fallback must preserve at least one audio track", audioTracks > 0)
+        } finally {
+            candidate?.delete()
+            source.delete()
+        }
+    }
+
+    @Test
+    fun selectedAndProjectExportsMeetVerified60FpsCadence() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val engine = ExportEngine(context)
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "cfr-60fps-source-$id.mp4")
+        val selectedName = "cfr-60fps-selected-$id.mp4"
+        val projectName = "cfr-60fps-project-$id.mp4"
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val clipDurationMs = 1_800L
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertEquals("Fixture must contain 60 constant-rate source samples", 60, sourceTrack.presentationTimesUs.size)
+            assertTrue("Fixture must be 30 fps", sourceTrack.maxGapUs in 33_000L..34_000L)
+            assertTrue("Fixture must retain its audio track", hasTrack(source, "audio/"))
+
+            engine.startExport(
+                Uri.fromFile(source).toString(),
+                ExportEngine.ExportConfig(
+                    resolution = "720p",
+                    fps = 60,
+                    aspectRatio = "16:9",
+                    trimEndMs = clipDurationMs
+                ),
+                selectedName
+            )
+            val selectedResult = awaitTerminalState(engine)
+            assertNull("Selected 60 fps export must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(selectedResult.outputUri).path))
+            val selectedTrack = readVideoTrack(selectedOutput!!)
+            assertOutputTiming(
+                label = "selected 60 fps export",
+                output = selectedTrack,
+                expectedDurationUs = clipDurationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            assertActual60FpsCadence("selected export", selectedTrack, clipDurationMs * 1_000L)
+            assertTrue("Selected 60 fps export must retain its audio track", selectedTrack.audioDurationUs != null)
+            assertTrue(
+                "Selected 60 fps audio must remain duration-synchronized",
+                abs(requireNotNull(selectedTrack.audioDurationUs) - clipDurationMs * 1_000L) <= 150_000L
+            )
+
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
+            val clips = (0..1).map { index ->
+                MediaClip(
+                    id = "cfr-60fps-$id-$index",
+                    name = "30 fps CFR fixture $index",
+                    uri = Uri.fromFile(source).toString(),
+                    durationMs = sourceDurationMs,
+                    trimEndMs = clipDurationMs
+                )
+            }
+            val plan = ProjectCompositionTimeline.build(clips)
+            assertEquals("Two 1.8-second clips must form a 3.6-second project", 3_600L, plan.durationMs)
+
+            engine.startProjectExport(
+                clips = clips,
+                config = ExportEngine.ExportConfig(resolution = "720p", fps = 60, aspectRatio = "16:9"),
+                outputFileName = projectName
+            )
+            val projectResult = awaitTerminalState(engine)
+            assertNull("Whole-project 60 fps export must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
+            val projectTrack = readVideoTrack(projectOutput!!)
+            assertOutputTiming(
+                label = "whole-project 60 fps export",
+                output = projectTrack,
+                expectedDurationUs = plan.durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            assertActual60FpsCadence("whole-project export", projectTrack, plan.durationMs * 1_000L)
+            assertTrue("Whole-project 60 fps export must retain its audio track", projectTrack.audioDurationUs != null)
+            assertTrue(
+                "Whole-project 60 fps audio must remain duration-synchronized",
+                abs(requireNotNull(projectTrack.audioDurationUs) - plan.durationMs * 1_000L) <= 150_000L
+            )
+        } finally {
+            instrumentation.runOnMainSync { engine.release() }
+            source.delete()
+            selectedOutput?.delete()
+            projectOutput?.delete()
+            File(outputDir, selectedName).delete()
+            File(outputDir, projectName).delete()
+            File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
+            File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
     private suspend fun awaitTerminalState(engine: ExportEngine): ExportEngine.ExportProgressState =
         withTimeout(180_000L) {
             engine.exportState.first { it.error != null || it.outputUri != null }
@@ -281,6 +423,30 @@ class ExportTimestampParityInstrumentedTest {
                 nearestDistanceUs <= anchorToleranceUs
             )
         }
+    }
+
+    private fun assertActual60FpsCadence(label: String, output: VideoTrack, expectedDurationUs: Long) {
+        val timestamps = output.presentationTimesUs
+        assertTrue("$label must expose positive video track duration", output.videoTrackDurationUs > 0L)
+        assertTrue(
+            "$label video track duration ${output.videoTrackDurationUs}us must stay within 150000us of planned " +
+                "$expectedDurationUs us",
+            abs(output.videoTrackDurationUs - expectedDurationUs) <= 150_000L
+        )
+        // Count samples against the actual encoded video track duration. The separately checked planned
+        // duration prevents audio/container duration from hiding a truncated video track.
+        val expectedSamples = (output.videoTrackDurationUs * 60L + 999_999L) / 1_000_000L
+        assertTrue(
+            "$label must contain approximately $expectedSamples samples for its encoded track duration " +
+                "${output.videoTrackDurationUs}us at 60 fps; got ${timestamps.size}",
+            timestamps.size.toLong() in (expectedSamples - 1L)..(expectedSamples + 1L)
+        )
+        val averageFps = timestamps.size * 1_000_000.0 / output.videoTrackDurationUs
+        assertTrue("$label encoded average must be 60 fps, got $averageFps", averageFps in 59.5..60.5)
+        val intervals = timestamps.zipWithNext { first, second -> second - first }
+        assertTrue("$label must contain timestamp intervals", intervals.isNotEmpty())
+        assertTrue("$label has an interval shorter than the 60 fps cadence", intervals.minOrNull()!! >= 12_500L)
+        assertTrue("$label has a gap too large for 60 fps: ${intervals.maxOrNull()} us", intervals.maxOrNull()!! <= 25_000L)
     }
 
     private fun hasTrack(file: File, mimePrefix: String): Boolean {

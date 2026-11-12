@@ -122,4 +122,12 @@ class ExportOutputPolicyTest {
         assertEquals(EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US, settings.repeatPreviousFrameIntervalUs)
         assertEquals(100_000L, settings.repeatPreviousFrameIntervalUs)
     }
+
+    @Test fun `60 fps encoder requests repeats at the target frame interval`() {
+        val settings = exportVideoEncoderSettings(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 60)
+        )
+
+        assertEquals(16_667L, settings.repeatPreviousFrameIntervalUs)
+    }
 }

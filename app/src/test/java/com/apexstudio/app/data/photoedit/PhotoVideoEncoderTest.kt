@@ -54,6 +54,14 @@ class PhotoVideoEncoderTest {
     }
 
     @Test
+    fun `duration frame count follows requested export cadence`() {
+        assertEquals(54, PhotoVideoEncoder.frameCountForDurationMs(1_800L, frameRate = 30))
+        assertEquals(108, PhotoVideoEncoder.frameCountForDurationMs(1_800L, frameRate = 60))
+        assertNull(PhotoVideoEncoder.frameCountForDurationMs(1_800L, frameRate = 0))
+        assertNull(PhotoVideoEncoder.frameCountForDurationMs(1_800L, frameRate = 121))
+    }
+
+    @Test
     fun `duration frame arithmetic rejects invalid and excessively large durations`() {
         assertNull(PhotoVideoEncoder.frameCountForDurationMs(Long.MIN_VALUE))
         assertNull(PhotoVideoEncoder.frameCountForDurationMs(-1))

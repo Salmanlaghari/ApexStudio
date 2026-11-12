@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.system.Os
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -54,7 +55,6 @@ import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -814,11 +814,16 @@ class ExportEngine(private val context: Context) {
                         finishedFile, config.fps, renderResult.videoFrameCount,
                         renderResult.durationMs, diagnostics, config
                     )
-                    if (destination.exists() && !destination.delete()) {
-                        throw IllegalStateException("Cannot replace existing project export")
+                    check(finishedFile.parentFile?.canonicalPath == destination.parentFile?.canonicalPath) {
+                        "Project export candidate must be in the destination directory for atomic publication"
                     }
-                    if (!finishedFile.renameTo(destination)) {
-                        throw IllegalStateException("Could not finalize project export file")
+                    currentCoroutineContext().ensureActive()
+                    synchronized(projectRunLock) {
+                        if (projectRun !== run || run.cancelled.get()) {
+                            throw kotlinx.coroutines.CancellationException("Project export was cancelled")
+                        }
+                        // Same-directory rename is the publication commit point and preserves any prior export on failure.
+                        Os.rename(finishedFile.absolutePath, destination.absolutePath)
                     }
                     publishProjectStage(run, ExportProgressStage.COMPLETE, diagnostics)
                     diagnostics.stage(
@@ -1858,50 +1863,128 @@ class ExportEngine(private val context: Context) {
     }
 
     /** Demuxes the completed output on a worker and returns only evidence-backed warnings. */
-    private fun validateEncodedOutput(
+    private suspend fun validateEncodedOutput(
         outputFile: File,
         requestedFps: Int,
         transformerFrameCount: Int?,
         transformerDurationMs: Long?,
         diagnostics: ExportDiagnosticTrace?,
         config: ExportConfig
-    ): String? = try {
-        val audit = inspectEncodedVideo(
-            context = context,
-            file = outputFile,
-            requestedFps = requestedFps,
-            transformerFrameCount = transformerFrameCount,
-            transformerDurationMs = transformerDurationMs
-        )
-        if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
-            check(config.videoMimeType in setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265)) {
-                "8K output must use a supported H.264 or HEVC video MIME."
-            }
-            check(!config.videoEncoderName.isNullOrBlank()) {
-                "8K output must carry a capability-verified hardware encoder plan."
-            }
-            val (expectedWidth, expectedHeight) = AspectCropTransformation.targetSizeFor(
-                "8K", config.aspectRatio
+    ): String? {
+        try {
+            val audit = inspectEncodedVideo(
+                context = context,
+                file = outputFile,
+                requestedFps = requestedFps,
+                transformerFrameCount = transformerFrameCount,
+                transformerDurationMs = transformerDurationMs
             )
-            val mismatch = eightKOutputFormatMismatch(
-                expectedMimeType = config.videoMimeType,
-                expectedWidth = expectedWidth,
-                expectedHeight = expectedHeight,
-                actualMimeType = audit.videoMimeType,
-                actualWidth = audit.videoWidth,
-                actualHeight = audit.videoHeight
-            )
-            if (mismatch != null) throw IllegalStateException(mismatch)
+            if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
+                check(config.videoMimeType in setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265)) {
+                    "8K output must use a supported H.264 or HEVC video MIME."
+                }
+                check(!config.videoEncoderName.isNullOrBlank()) {
+                    "8K output must carry a capability-verified hardware encoder plan."
+                }
+                val (expectedWidth, expectedHeight) = AspectCropTransformation.targetSizeFor(
+                    "8K", config.aspectRatio
+                )
+                val mismatch = eightKOutputFormatMismatch(
+                    expectedMimeType = config.videoMimeType,
+                    expectedWidth = expectedWidth,
+                    expectedHeight = expectedHeight,
+                    actualMimeType = audit.videoMimeType,
+                    actualWidth = audit.videoWidth,
+                    actualHeight = audit.videoHeight
+                )
+                if (mismatch != null) throw IllegalStateException(mismatch)
+            }
+
+            if (ExportCfr60FpsNormalizer.shouldNormalize(config, audit)) {
+                diagnostics?.stage("cfr60_fallback_started", audit.diagnosticSummary())
+                val candidate = ExportCfr60FpsNormalizer.transcode(
+                    inputFile = outputFile,
+                    targetBitrate = exportTargetBitrate(config)
+                )
+                try {
+                    val candidateAudit = inspectEncodedVideo(
+                        context = context,
+                        file = candidate,
+                        requestedFps = 60,
+                        // The source transform's frame count is no longer comparable after frame generation.
+                        transformerFrameCount = null,
+                        transformerDurationMs = transformerDurationMs
+                    )
+                    diagnostics?.stage("cfr60_fallback_audited", candidateAudit.diagnosticSummary())
+                    check(candidateAudit.videoMimeType == audit.videoMimeType &&
+                        candidateAudit.videoWidth == audit.videoWidth &&
+                        candidateAudit.videoHeight == audit.videoHeight
+                    ) {
+                        "The 60 fps conversion changed the rendered video format or dimensions."
+                    }
+                    val expectedDurationMs = audit.outputDurationMs ?: transformerDurationMs
+                    val candidateDurationMs = candidateAudit.outputDurationMs
+                    if (expectedDurationMs != null && candidateDurationMs != null) {
+                        check(kotlin.math.abs(candidateDurationMs - expectedDurationMs) <= 150L) {
+                            "The 60 fps conversion changed the rendered video duration."
+                        }
+                    }
+                    val sourceVideoDurationMs = audit.outputDurationMs
+                        ?: throw IllegalStateException("The source video duration could not be verified before 60 fps conversion.")
+                    val verifiedCandidateDurationMs = candidateDurationMs
+                        ?: throw IllegalStateException("The converted video duration could not be verified.")
+                    val audioTrackCount = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+                        sourceFile = outputFile,
+                        candidateFile = candidate,
+                        sourceVideoDurationMs = sourceVideoDurationMs,
+                        candidateVideoDurationMs = verifiedCandidateDurationMs
+                    )
+                    diagnostics?.stage("cfr60_fallback_audio_verified", "audioTracks=$audioTrackCount")
+                    val candidateWarning = candidateAudit.warning
+                    if (candidateWarning != null) {
+                        throw IllegalStateException("The converted video failed its 60 fps cadence audit: $candidateWarning")
+                    }
+                    currentCoroutineContext().ensureActive()
+                    ExportCfr60FpsNormalizer.replaceAtomically(candidate, outputFile)
+                    val publishedAudit = inspectEncodedVideo(
+                        context = context,
+                        file = outputFile,
+                        requestedFps = 60,
+                        transformerFrameCount = null,
+                        transformerDurationMs = transformerDurationMs
+                    )
+                    val publishedWarning = publishedAudit.warning
+                    if (publishedWarning != null) {
+                        throw IllegalStateException("The published 60 fps video failed its final cadence audit: $publishedWarning")
+                    }
+                    diagnostics?.stage("cfr60_fallback_completed", publishedAudit.diagnosticSummary())
+                    diagnostics?.stage("encoded_output_validated", publishedAudit.diagnosticSummary())
+                    return null
+                } finally {
+                    if (candidate.exists()) candidate.delete()
+                }
+            }
+
+            val warning = audit.warning
+            if (config.fps == 60 && warning != null) throw IllegalStateException(warning)
+            diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
+            return warning
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            diagnostics?.stage("encoded_output_validation_failed", "failure=${failure.javaClass.simpleName}")
+            if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
+                throw IllegalStateException("8K export was blocked because its final video format could not be verified.", failure)
+            }
+            if (config.fps == 60) {
+                throw IllegalStateException(
+                    failure.message ?: "The final encoded video could not be verified at 60 fps.",
+                    failure
+                )
+            }
+            Log.w(TAG, "Could not validate encoded export output", failure)
+            return "Export finished, but its encoded video stream could not be validated."
         }
-        diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
-        audit.warning
-    } catch (failure: Exception) {
-        diagnostics?.stage("encoded_output_validation_failed", "failure=${failure.javaClass.simpleName}")
-        if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
-            throw IllegalStateException("8K export was blocked because its final video format could not be verified.", failure)
-        }
-        Log.w(TAG, "Could not validate encoded export output", failure)
-        "Export finished, but its encoded video stream could not be validated."
     }
 
     internal fun buildHardwareTransformer(
@@ -1934,7 +2017,7 @@ class ExportEngine(private val context: Context) {
                     "video_transformer_completed",
                     "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount} outputBytes=${outputFile.length()}"
                 )
-                val outputValidation = CoroutineScope(Dispatchers.IO).async {
+                val outputValidation: suspend () -> String? = {
                     val durationCorrection = if (
                         exportResult.durationMs > 0L && outputFile.isFile && outputFile.length() > 0L
                     ) {
@@ -1960,36 +2043,36 @@ class ExportEngine(private val context: Context) {
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
                     val outputUri = Uri.fromFile(outputFile).toString()
                     publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
-                    CoroutineScope(Dispatchers.IO).launch {
+                    postMixJob?.cancel()
+                    val validationJob = CoroutineScope(Dispatchers.IO).launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                        val owner = currentCoroutineContext().job
                         val validationWarning = try {
-                            outputValidation.await()
+                            outputValidation()
                         } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            diagnostics?.failPhase("cancelled=true")
+                            if (outputFile.exists()) outputFile.delete()
                             throw cancelled
                         } catch (failure: Exception) {
                             diagnostics?.failPhase("video_duration_finalization_failed=true")
                             diagnostics?.stage("video_duration_finalization_failed", "failure=${failure.javaClass.simpleName}")
                             if (outputFile.exists()) outputFile.delete()
-                            mainHandler.post {
-                                if (nonProjectRun !== run) return@post
-                                _exportState.value = ExportProgressState(
-                                    error = failure.message ?: "Could not finalize exported video duration"
-                                )
-                            }
+                            publishPostMixState(owner, ExportProgressState(
+                                error = failure.message ?: "Could not finalize exported video duration"
+                            ))
                             return@launch
                         }
                         diagnostics?.phase(null)
                         diagnostics?.stage("export_completed")
-                        mainHandler.post {
-                            if (nonProjectRun !== run) return@post
-                            _exportState.value = ExportProgressState(
-                                isExporting = false,
-                                progress = 1f,
-                                stage = ExportProgressStage.COMPLETE,
-                                outputUri = outputUri,
-                                warning = validationWarning
-                            )
-                        }
+                        publishPostMixState(owner, ExportProgressState(
+                            isExporting = false,
+                            progress = 1f,
+                            stage = ExportProgressStage.COMPLETE,
+                            outputUri = outputUri,
+                            warning = validationWarning
+                        ))
                     }
+                    postMixJob = validationJob
+                    validationJob.start()
                     return
                 }
                 diagnostics?.stage(
@@ -2002,8 +2085,9 @@ class ExportEngine(private val context: Context) {
                     val mixContext = currentCoroutineContext()
                     val owner = mixContext.job
                     var videoValidationWarning = try {
-                        outputValidation.await()
+                        outputValidation()
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        if (outputFile.exists()) outputFile.delete()
                         throw cancelled
                     } catch (failure: Exception) {
                         diagnostics?.failPhase("video_duration_finalization_failed=true")
@@ -2121,6 +2205,7 @@ class ExportEngine(private val context: Context) {
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         diagnostics?.failPhase("cancelled=true")
                         if (mixedFile.exists()) mixedFile.delete()
+                        if (outputFile.exists()) outputFile.delete()
                         throw cancelled
                     } catch (e: Exception) {
                         diagnostics?.failPhase("failure=${e.javaClass.simpleName}")

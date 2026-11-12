@@ -121,6 +121,19 @@ object PackManager {
         Log.w(TAG, "Registry write failed", e)
     }
 
+    /** Persist metadata for a pack whose downloaded payload has already passed verification. */
+    internal fun recordInstalledPack(context: Context, packId: String, version: Int, sha256: String) {
+        val registry = readRegistry(context)
+        writeRegistry(
+            context,
+            registry.copy(packs = registry.packs + (packId to InstalledEntry(version, sha256)))
+        )
+    }
+
+    /** Stored archive checksum, exposed internally so pack fixtures can verify serialized metadata. */
+    internal fun installedPackSha256(context: Context, packId: String): String? =
+        readRegistry(context).packs[packId]?.sha256
+
     /** True when the pack is installed (any version). Disk read — call off the main thread. */
     fun isDownloaded(context: Context, packId: String): Boolean =
         readRegistry(context).packs.containsKey(packId) &&
@@ -294,11 +307,7 @@ object PackManager {
                                 }
                             }
                             if (installFailure == null) {
-                                val reg = readRegistry(appContext)
-                                writeRegistry(
-                                    appContext,
-                                    reg.copy(packs = reg.packs + (packId to InstalledEntry(pack.version, pack.sha256)))
-                                )
+                                recordInstalledPack(appContext, packId, pack.version, pack.sha256)
                                 // Let feature repositories verify the installed content. FX
                                 // payloads must parse into at least one pinned profile before
                                 // the pack can be reported as installed.

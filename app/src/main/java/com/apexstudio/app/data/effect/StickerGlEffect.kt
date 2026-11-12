@@ -63,6 +63,11 @@ class StickerGlEffect(
         private val glProgram: GlProgram
         private val overlayTexId: IntArray = intArrayOf(0)
 
+        private companion object {
+            const val VIDEO_TEXTURE_UNIT = 0
+            const val OVERLAY_TEXTURE_UNIT = 1
+        }
+
         // Phase 4: animated Lottie stickers — frame strip + sprite geometry,
         // re-uploaded only when the frame index changes.
         private val lottieFrames: List<android.graphics.Bitmap>? =
@@ -81,6 +86,12 @@ class StickerGlEffect(
         // mirroring TextOverlayGlEffect's animated re-upload. Without
         // keyframes this key is constant and the sprite uploads once.
         private var lastKeyframeStateKey: Any? = null
+
+        /** Keep sprite uploads off the video input unit even when GL state was changed upstream. */
+        private fun bindOverlayTexture(textureId: Int) {
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0 + OVERLAY_TEXTURE_UNIT)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        }
 
         init {
             glProgram = try {
@@ -154,7 +165,7 @@ class StickerGlEffect(
                     overlayTexId[0] = 0
                 }
                 GLES20.glGenTextures(1, tex, 0)
-                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+                bindOverlayTexture(tex[0])
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
                 GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
@@ -175,7 +186,7 @@ class StickerGlEffect(
         private fun uploadLottieFrame(frame: android.graphics.Bitmap, eff: StickerOverlay = sticker) {
             val sprite = StickerSpriteRenderer.render(frame, eff, lottieW, lottieH)
             try {
-                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, overlayTexId[0])
+                bindOverlayTexture(overlayTexId[0])
                 GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, sprite, 0)
                 GlUtil.checkGlError()
             } finally {
@@ -187,7 +198,7 @@ class StickerGlEffect(
             if (overlayTexId[0] != 0) return
             val tex = IntArray(1)
             GLES20.glGenTextures(1, tex, 0)
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex[0])
+            bindOverlayTexture(tex[0])
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
@@ -233,8 +244,6 @@ class StickerGlEffect(
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
-                glProgram.use()
-                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
                 val inWindow = timeMs >= sticker.startMs && timeMs <= sticker.endMs
                 // Keyframed stickers: re-rasterise when the interpolated
@@ -271,8 +280,13 @@ class StickerGlEffect(
                 }
                 val isVisible = (overlayTexId[0] != 0) && (timeMs >= sticker.startMs && timeMs <= sticker.endMs)
                 val overlayId = if (isVisible) overlayTexId[0] else inputTexId
-                glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)
+                // Sprite uploads bind on the current texture unit. Bind both inputs
+                // afterward; uploads themselves are pinned to the overlay unit above.
+                glProgram.use()
+                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, VIDEO_TEXTURE_UNIT)
+                glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, OVERLAY_TEXTURE_UNIT)
                 glProgram.bindAttributesAndUniforms()
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {
                 throw VideoFrameProcessingException(e, presentationTimeUs)

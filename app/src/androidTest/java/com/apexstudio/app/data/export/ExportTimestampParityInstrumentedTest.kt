@@ -18,7 +18,12 @@ import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
+import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.data.stickers.LottieFrameCache
+import com.apexstudio.app.data.stickers.StickerAssetResolver
+import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.StickerOverlay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -29,11 +34,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /** Real Media3/codec regression; CI compiles this test but needs a device to execute it. */
 @RunWith(AndroidJUnit4::class)
@@ -440,6 +451,353 @@ class ExportTimestampParityInstrumentedTest {
             File(outputDir, projectName).delete()
             File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
             File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
+    @Test
+    fun downloadedLottieStickerAdvancesAndPreservesPixelsOutsideItsBoundsInBothExportPaths() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val engine = ExportEngine(context)
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "sticker-export-source-$id.mp4")
+        val packId = "sticker-export-$id"
+        val relativePath = "animated/heart.json"
+        val packArchive = File(context.cacheDir, "$packId.zip")
+        val packDir = PackManager.packDir(context, packId)
+        val assetFile = File(packDir, relativePath)
+        val registryFile = File(PackManager.packsRoot(context), "installed.json")
+        val previousRegistry = registryFile.takeIf { it.isFile }?.readText()
+        val baselineName = "sticker-baseline-$id.mp4"
+        val selectedName = "sticker-selected-$id.mp4"
+        val projectName = "sticker-project-$id.mp4"
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val baselineConfig = ExportEngine.ExportConfig(
+            resolution = "720p",
+            fps = 30,
+            aspectRatio = "16:9",
+            trimEndMs = 1_800L
+        )
+        var baselineOutput: File? = null
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
+        val assetPath = StickerAssetResolver.packUri(packId, relativePath)
+        val sticker = StickerOverlay(
+            id = "downloaded-heart-$id",
+            symbolOrUri = "",
+            category = "Love",
+            name = "Heart Pop",
+            x = 0.5f,
+            y = 0.5f,
+            sizeScale = 2f,
+            startMs = 0L,
+            endMs = 1_800L,
+            assetPath = assetPath
+        )
+        var earlyTimeUs = 0L
+        var laterTimeUs = 0L
+
+        fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        fun installTestPackAsset() {
+            val bundledAsset = context.assets.open("lottie/heart_pop.json").use { it.readBytes() }
+            ZipOutputStream(packArchive.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry(relativePath))
+                zip.write(bundledAsset)
+                zip.closeEntry()
+            }
+            assetFile.parentFile?.mkdirs()
+            ZipFile(packArchive).use { zip ->
+                val entry = requireNotNull(zip.getEntry(relativePath)) { "Sticker asset must exist in the test pack archive" }
+                zip.getInputStream(entry).use { input ->
+                    assetFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            assertEquals(
+                "Extracted sticker asset must match the bundled fixture SHA-256",
+                sha256(bundledAsset),
+                sha256(assetFile.readBytes())
+            )
+            val archiveSha256 = sha256(packArchive.readBytes())
+            PackManager.recordInstalledPack(context, packId, 1, archiveSha256)
+            assertEquals(
+                "PackManager's production serializer must retain the verified archive SHA-256",
+                archiveSha256,
+                PackManager.installedPackSha256(context, packId)
+            )
+        }
+
+        fun decodeFrame(file: File, timeUs: Long): Bitmap {
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(file.absolutePath)
+                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)) {
+                    "Could not decode a sticker export frame from ${file.name}"
+                }
+            } finally {
+                retriever.release()
+            }
+        }
+
+        fun stickerPixelBounds(frame: Bitmap): IntArray {
+            val rect = StickerSpriteRenderer.dstRect(sticker, frame.width, frame.height)
+            return intArrayOf(
+                floor(rect.left.toDouble()).toInt().coerceIn(0, frame.width),
+                floor(rect.top.toDouble()).toInt().coerceIn(0, frame.height),
+                ceil(rect.right.toDouble()).toInt().coerceIn(0, frame.width),
+                ceil(rect.bottom.toDouble()).toInt().coerceIn(0, frame.height)
+            )
+        }
+
+        fun pixelDistance(first: Int, second: Int): Int =
+            abs(Color.red(first) - Color.red(second)) +
+                abs(Color.green(first) - Color.green(second)) +
+                abs(Color.blue(first) - Color.blue(second))
+
+        fun framePixels(frame: Bitmap): IntArray =
+            IntArray(frame.width * frame.height).also { pixels ->
+                frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
+            }
+
+        fun animationChangedPixels(first: IntArray, second: IntArray): Int {
+            var changed = 0
+            for (index in first.indices) {
+                val a = first[index]
+                val b = second[index]
+                if (Color.alpha(a) > 32 || Color.alpha(b) > 32) {
+                    val delta = pixelDistance(a, b) + abs(Color.alpha(a) - Color.alpha(b))
+                    if (delta >= 80) changed++
+                }
+            }
+            return changed
+        }
+
+        fun selectVisibleAnimationSamples() {
+            val frames = requireNotNull(LottieFrameCache.frames(context, assetPath)) {
+                "The installed heart-pop pack must render Lottie frames"
+            }
+            val pixels = frames.map(::framePixels)
+            val visible = pixels.mapIndexedNotNull { index, frame ->
+                val opaquePixels = frame.count { Color.alpha(it) >= 32 }
+                if (opaquePixels >= 500) index to opaquePixels else null
+            }
+            assertTrue("The downloaded Lottie pack must contain at least two visible frames", visible.size >= 2)
+
+            var bestEarlyIndex = -1
+            var bestLaterIndex = -1
+            var bestScore = -1
+            for (early in 0 until visible.lastIndex) {
+                val (earlyIndex, earlyOpaquePixels) = visible[early]
+                for (later in early + 1 until visible.size) {
+                    val (laterIndex, laterOpaquePixels) = visible[later]
+                    val changedPixels = animationChangedPixels(pixels[earlyIndex], pixels[laterIndex])
+                    if (changedPixels >= 100) {
+                        val score = minOf(earlyOpaquePixels, laterOpaquePixels) + changedPixels
+                        if (score > bestScore) {
+                            bestEarlyIndex = earlyIndex
+                            bestLaterIndex = laterIndex
+                            bestScore = score
+                        }
+                    }
+                }
+            }
+            assertTrue("The downloaded Lottie pack must have two distinct visible animation phases", bestEarlyIndex >= 0)
+
+            // Match LottieFrameCache.frameIndex's 33 ms buckets and sample near their centers.
+            earlyTimeUs = (bestEarlyIndex * 33L + 16L) * 1_000L
+            laterTimeUs = (bestLaterIndex * 33L + 16L) * 1_000L
+            assertEquals(bestEarlyIndex, LottieFrameCache.frameIndex(earlyTimeUs / 1_000L, sticker.startMs, frames.size))
+            assertEquals(bestLaterIndex, LottieFrameCache.frameIndex(laterTimeUs / 1_000L, sticker.startMs, frames.size))
+        }
+
+        fun assertStickerPixels(
+            label: String,
+            frame: Bitmap,
+            baseline: Bitmap,
+            bounds: IntArray,
+            framePixels: IntArray,
+            baselinePixels: IntArray
+        ) {
+            assertEquals("$label width", baseline.width, frame.width)
+            assertEquals("$label height", baseline.height, frame.height)
+            var changedPixels = 0
+            for (y in bounds[1] until bounds[3]) {
+                for (x in bounds[0] until bounds[2]) {
+                    val index = y * frame.width + x
+                    if (pixelDistance(baselinePixels[index], framePixels[index]) >= 80) changedPixels++
+                }
+            }
+            assertTrue(
+                "$label must visibly composite the downloaded Lottie sticker inside its sprite bounds; changed pixels=$changedPixels",
+                changedPixels >= 500
+            )
+        }
+
+        fun assertBackgroundUnchangedOutsideSticker(
+            label: String,
+            frame: Bitmap,
+            baseline: Bitmap,
+            bounds: IntArray,
+            framePixels: IntArray,
+            baselinePixels: IntArray
+        ) {
+            assertEquals("$label width", baseline.width, frame.width)
+            assertEquals("$label height", baseline.height, frame.height)
+            var changedPixels = 0
+            var outsidePixels = 0
+            for (y in 0 until frame.height) {
+                for (x in 0 until frame.width) {
+                    val insideSticker =
+                        x in (bounds[0] until bounds[2]) && y in (bounds[1] until bounds[3])
+                    if (!insideSticker) {
+                        outsidePixels++
+                        val index = y * frame.width + x
+                        if (pixelDistance(baselinePixels[index], framePixels[index]) >= 80) changedPixels++
+                    }
+                }
+            }
+            val allowedChangedPixels = (outsidePixels / 100).coerceAtLeast(100)
+            assertTrue(
+                "$label must preserve the source video outside the sticker sprite bounds; " +
+                    "changed=$changedPixels, allowed=$allowedChangedPixels",
+                changedPixels <= allowedChangedPixels
+            )
+        }
+
+        fun assertAnimationAdvances(
+            label: String,
+            early: Bitmap,
+            later: Bitmap,
+            earlyPixels: IntArray,
+            earlyBaselinePixels: IntArray,
+            laterPixels: IntArray,
+            laterBaselinePixels: IntArray,
+            bounds: IntArray
+        ) {
+            assertEquals("$label frame width", early.width, later.width)
+            assertEquals("$label frame height", early.height, later.height)
+            var changedOverlayPixels = 0
+            for (y in bounds[1] until bounds[3]) {
+                for (x in bounds[0] until bounds[2]) {
+                    val index = y * early.width + x
+                    val earlyPixel = earlyPixels[index]
+                    val earlyBase = earlyBaselinePixels[index]
+                    val laterPixel = laterPixels[index]
+                    val laterBase = laterBaselinePixels[index]
+                    val delta =
+                        abs((Color.red(earlyPixel) - Color.red(earlyBase)) - (Color.red(laterPixel) - Color.red(laterBase))) +
+                            abs((Color.green(earlyPixel) - Color.green(earlyBase)) - (Color.green(laterPixel) - Color.green(laterBase))) +
+                            abs((Color.blue(earlyPixel) - Color.blue(earlyBase)) - (Color.blue(laterPixel) - Color.blue(laterBase)))
+                    if (delta >= 80) changedOverlayPixels++
+                }
+            }
+            assertTrue(
+                "$label must show distinct Lottie output between $earlyTimeUs us and $laterTimeUs us; " +
+                    "changed overlay pixels=$changedOverlayPixels",
+                changedOverlayPixels >= 100
+            )
+        }
+
+        fun verifyExportFrames(label: String, baselineFile: File, outputFile: File) {
+            val baselineEarly = decodeFrame(baselineFile, earlyTimeUs)
+            val outputEarly = decodeFrame(outputFile, earlyTimeUs)
+            val baselineLater = decodeFrame(baselineFile, laterTimeUs)
+            val outputLater = decodeFrame(outputFile, laterTimeUs)
+            try {
+                assertEquals("720p export width", 1_280, baselineEarly.width)
+                assertEquals("720p export height", 720, baselineEarly.height)
+                val bounds = stickerPixelBounds(baselineEarly)
+                val baselineEarlyPixels = framePixels(baselineEarly)
+                val outputEarlyPixels = framePixels(outputEarly)
+                val baselineLaterPixels = framePixels(baselineLater)
+                val outputLaterPixels = framePixels(outputLater)
+                assertStickerPixels(
+                    "$label early sample frame", outputEarly, baselineEarly, bounds,
+                    outputEarlyPixels, baselineEarlyPixels
+                )
+                assertStickerPixels(
+                    "$label later sample frame", outputLater, baselineLater, bounds,
+                    outputLaterPixels, baselineLaterPixels
+                )
+                assertBackgroundUnchangedOutsideSticker(
+                    "$label early sample frame", outputEarly, baselineEarly, bounds,
+                    outputEarlyPixels, baselineEarlyPixels
+                )
+                assertBackgroundUnchangedOutsideSticker(
+                    "$label later animation frame", outputLater, baselineLater, bounds,
+                    outputLaterPixels, baselineLaterPixels
+                )
+                assertAnimationAdvances(
+                    label, outputEarly, outputLater,
+                    outputEarlyPixels, baselineEarlyPixels, outputLaterPixels, baselineLaterPixels, bounds
+                )
+            } finally {
+                baselineEarly.recycle()
+                outputEarly.recycle()
+                baselineLater.recycle()
+                outputLater.recycle()
+            }
+        }
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            installTestPackAsset()
+            assertTrue("The test pack must be registered as installed", PackManager.isDownloaded(context, packId))
+            assertTrue("The downloaded sticker URI must resolve inside its installed pack",
+                StickerAssetResolver.downloadedFile(context, assetPath)?.isFile == true)
+            selectVisibleAnimationSamples()
+
+            engine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
+            val baselineResult = awaitTerminalState(engine)
+            assertNull("Sticker baseline export must complete: ${baselineResult.error}", baselineResult.error)
+            baselineOutput = File(requireNotNull(Uri.parse(baselineResult.outputUri).path))
+
+            engine.startExport(
+                Uri.fromFile(source).toString(),
+                baselineConfig.copy(stickers = listOf(sticker)),
+                selectedName
+            )
+            val selectedResult = awaitTerminalState(engine)
+            assertNull("Selected export with downloaded sticker must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(selectedResult.outputUri).path))
+
+            val sourceDurationMs = readVideoTrack(source).videoTrackDurationUs / 1_000L
+            val projectClip = MediaClip(
+                id = "sticker-project-$id",
+                name = "Downloaded sticker project fixture",
+                uri = Uri.fromFile(source).toString(),
+                durationMs = sourceDurationMs,
+                trimEndMs = 1_800L,
+                stickers = listOf(sticker)
+            )
+            engine.startProjectExport(
+                clips = listOf(projectClip),
+                config = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9"),
+                outputFileName = projectName
+            )
+            val projectResult = awaitTerminalState(engine)
+            assertNull("Whole-project export with downloaded sticker must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
+
+            val baselineFile = requireNotNull(baselineOutput)
+            verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
+            verifyExportFrames("Whole-project export", baselineFile, requireNotNull(projectOutput))
+        } finally {
+            instrumentation.runOnMainSync { engine.release() }
+            source.delete()
+            packDir.deleteRecursively()
+            packArchive.delete()
+            if (previousRegistry == null) registryFile.delete() else registryFile.writeText(previousRegistry)
+            baselineOutput?.delete()
+            selectedOutput?.delete()
+            projectOutput?.delete()
+            File(outputDir, baselineName).delete()
+            File(outputDir, selectedName).delete()
+            File(outputDir, projectName).delete()
         }
     }
 

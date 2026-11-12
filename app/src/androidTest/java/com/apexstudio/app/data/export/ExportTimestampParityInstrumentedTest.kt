@@ -4,9 +4,14 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.opengl.EGL14
+import android.opengl.EGLConfig
+import android.opengl.GLES20
 import androidx.media3.common.util.UnstableApi
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.apexstudio.app.data.fx.DownloadedFxEffect
+import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.domain.model.MediaClip
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -25,6 +30,89 @@ import kotlin.math.abs
 @RunWith(AndroidJUnit4::class)
 @UnstableApi
 class ExportTimestampParityInstrumentedTest {
+    @Test
+    fun downloadedShaderFamiliesCompileAsGles2FragmentPrograms() {
+        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        assertTrue("EGL display must be available", display !== EGL14.EGL_NO_DISPLAY)
+        val version = IntArray(2)
+        assertTrue("EGL must initialize", EGL14.eglInitialize(display, version, 0, version, 1))
+
+        val configs = arrayOfNulls<EGLConfig>(1)
+        val configCount = IntArray(1)
+        val configAttrs = intArrayOf(
+            EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+            EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+            EGL14.EGL_RED_SIZE, 8,
+            EGL14.EGL_GREEN_SIZE, 8,
+            EGL14.EGL_BLUE_SIZE, 8,
+            EGL14.EGL_NONE
+        )
+        assertTrue("EGL must provide an ES2 pbuffer config", EGL14.eglChooseConfig(
+            display, configAttrs, 0, configs, 0, configs.size, configCount, 0
+        ))
+        assertTrue("At least one EGL config is required", configCount[0] > 0)
+        val config = requireNotNull(configs[0])
+        val context = EGL14.eglCreateContext(
+            display, config, EGL14.EGL_NO_CONTEXT,
+            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0
+        )
+        assertTrue("An ES2 context must be created", context !== EGL14.EGL_NO_CONTEXT)
+        val surface = EGL14.eglCreatePbufferSurface(
+            display, config,
+            intArrayOf(EGL14.EGL_WIDTH, 1, EGL14.EGL_HEIGHT, 1, EGL14.EGL_NONE), 0
+        )
+        assertTrue("A pbuffer surface must be created", surface !== EGL14.EGL_NO_SURFACE)
+        assertTrue("The ES2 context must become current", EGL14.eglMakeCurrent(display, surface, surface, context))
+
+        val profiles = listOf(
+            Triple("PRISM", floatArrayOf(1.7f, 0.13f, 0.42f), false),
+            Triple("SPLIT_TONE", floatArrayOf(0.24f, 0.38f, 0.68f), false),
+            Triple("RIPPLE", floatArrayOf(2.2f, 0.013f, 2.8f), true),
+            Triple("MOSAIC", floatArrayOf(5f, 7f, 0.025f), false),
+            Triple("CRT", floatArrayOf(120f, 0.20f, 0.12f), true),
+            Triple("HALATION", floatArrayOf(0.30f, 7f, 0.62f), false),
+            Triple("INK", floatArrayOf(0.18f, 0.52f, 0.15f), false),
+            Triple("MIRROR", floatArrayOf(4f, 0f, 0.72f), false),
+            Triple("GLITCH", floatArrayOf(7f, 0.006f, 0.18f), true),
+            Triple("STREAK", floatArrayOf(0.10f, 0.36f, 0.66f), true)
+        )
+        try {
+            profiles.forEachIndexed { index, (family, values, animated) ->
+                val effect = DownloadedFxEffect(
+                    id = "gles_${family.lowercase()}",
+                    label = family,
+                    category = "Creator Pack",
+                    family = family,
+                    a = values[0],
+                    b = values[1],
+                    c = values[2],
+                    tintR = 0.22f + index * 0.02f,
+                    tintG = 0.7f,
+                    tintB = 0.9f,
+                    isAnimated = animated,
+                    defaultSpeed = 1f
+                )
+                val fragment = requireNotNull(ModernFxShaders.shaderFor(effect))
+                val shader = GLES20.glCreateShader(GLES20.GL_FRAGMENT_SHADER)
+                assertTrue("$family shader object must be created", shader != 0)
+                GLES20.glShaderSource(shader, fragment)
+                GLES20.glCompileShader(shader)
+                val compiled = IntArray(1)
+                GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
+                val log = GLES20.glGetShaderInfoLog(shader)
+                GLES20.glDeleteShader(shader)
+                assertTrue("$family downloadable shader must compile: $log", compiled[0] == GLES20.GL_TRUE)
+            }
+        } finally {
+            EGL14.eglMakeCurrent(
+                display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT
+            )
+            EGL14.eglDestroySurface(display, surface)
+            EGL14.eglDestroyContext(display, context)
+            EGL14.eglTerminate(display)
+        }
+    }
+
     @Test
     fun selectedAndProjectExportsPreserveVfrTimingWithinRequestedAverageFrameRate() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

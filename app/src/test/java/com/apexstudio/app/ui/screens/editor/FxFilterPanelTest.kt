@@ -12,10 +12,14 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
+import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.filter.FilterCategory
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.FilterPreset
+import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -57,6 +61,64 @@ class FxFilterPanelTest {
         compose.runOnIdle { assertEquals("hue_cycle", selectedFx) }
         compose.onNodeWithContentDescription("Close FX").assertIsDisplayed().performClick()
         compose.runOnIdle { assertTrue(closed) }
+    }
+
+    @Test
+    fun `downloaded effects can be fetched and selected from the FX category`() {
+        val effect = DownloadedFxEffect(
+            id = "dl_apex-fx-vol-01_prism_sample",
+            label = "Prism Sample",
+            category = "Creator Pack",
+            family = "PRISM",
+            a = 1.5f,
+            b = 0.12f,
+            c = 0.38f,
+            tintR = 0.2f,
+            tintG = 0.7f,
+            tintB = 0.9f,
+            isAnimated = true,
+            defaultSpeed = 1.2f
+        )
+        val selectedFx = mutableStateOf<String?>(null)
+        val speed = mutableStateOf(1f)
+        var downloadRequests = 0
+        val profiles = mutableStateOf(emptyList<DownloadedFxEffect>())
+        val packState = mutableStateOf<PackManager.PackState>(PackManager.PackState.NotDownloaded)
+        compose.setContent {
+            Box(Modifier.width(375.dp).height(240.dp)) {
+                FxPanel(
+                    activeFxId = selectedFx.value,
+                    intensity = 0.7f,
+                    speed = speed.value,
+                    onFxSelected = {
+                        selectedFx.value = it
+                        speed.value = effect.defaultSpeed
+                    },
+                    onIntensityChange = {},
+                    onSpeedChange = { speed.value = it },
+                    downloadedEffects = profiles.value,
+                    effectsPackState = packState.value,
+                    onDownloadEffectsPack = {
+                        downloadRequests++
+                        packState.value = PackManager.PackState.Downloaded
+                        profiles.value = listOf(effect)
+                    },
+                    onClose = {}
+                )
+            }
+        }
+
+        repeat(5) {
+            compose.onNodeWithTag("fx-category-list").performTouchInput { swipeLeft() }
+        }
+        compose.onNodeWithTag("fx-category-downloaded").performClick()
+        compose.onNodeWithText("Download 30 effects · 5.2 KB").performScrollTo().performClick()
+        compose.onNodeWithText("Prism Sample").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(1, downloadRequests)
+            assertEquals(effect.id, selectedFx.value)
+        }
+        compose.onNodeWithText("1.2x").performScrollTo().assertIsDisplayed()
     }
 
     @Test

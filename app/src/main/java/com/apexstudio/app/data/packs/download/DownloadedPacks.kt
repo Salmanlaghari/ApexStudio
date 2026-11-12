@@ -2,6 +2,7 @@ package com.apexstudio.app.data.packs.download
 
 import android.content.Context
 import android.util.Log
+import com.apexstudio.app.data.fx.DownloadedEffectRepository
 import com.apexstudio.app.data.filter.DownloadedLutFilterRepository
 import com.apexstudio.app.data.filter.GpuColorProfile
 import com.apexstudio.app.data.filter.GpuColorProfiles
@@ -16,15 +17,33 @@ object DownloadedPacks {
     private const val TAG = "DownloadedPacks"
 
     /** Called after the install registry is committed, before the UI state flips to Downloaded. */
-    suspend fun onPackInstalled(context: Context, packId: String) {
+    suspend fun onPackInstalled(context: Context, packId: String): Boolean {
         val manifest = PackManifestRepo.fetchManifest(context)
-        val pack = manifest.packs.firstOrNull { it.id == packId } ?: return
-        if (pack.category == "filters") ensureDownloadedFilterPacksRegisteredScan(context, manifest)
+        val pack = manifest.packs.firstOrNull { it.id == packId } ?: return false
+        return when (pack.category) {
+            "filters" -> {
+                ensureDownloadedFilterPacksRegisteredScan(context, manifest)
+                true
+            }
+            "effects" -> {
+                DownloadedEffectRepository.refreshInstalled(context, manifest)
+                DownloadedEffectRepository.hasPack(packId)
+            }
+            else -> true
+        }
     }
 
     /** Register every currently installed filter payload; safe to call on editor open. */
     suspend fun ensureDownloadedFilterPacksRegistered(context: Context) =
         ensureDownloadedFilterPacksRegisteredScan(context)
+
+    /** Register every currently installed, checksum-verified FX profile pack. */
+    suspend fun ensureDownloadedEffectPacksRegistered(
+        context: Context,
+        suppliedManifest: PackManifestRepo.PackManifestFile? = null
+    ) {
+        DownloadedEffectRepository.refreshInstalled(context, suppliedManifest)
+    }
 
     /**
      * Finds installed packs, validates their catalog category and payload type,

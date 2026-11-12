@@ -152,6 +152,7 @@ private fun EditorScreenContent(
     val mediaImportProgress by mediaPicker.importProgress.collectAsStateWithLifecycle()
     val filterEngine = remember { LutFilterEngine(context) }
     val downloadedFilterRegistryVersion by com.apexstudio.app.data.filter.FilterManifest.downloadedRegistryVersion.collectAsStateWithLifecycle()
+    val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var transitionPreviewPlayer by remember(projectId) { mutableStateOf<CompositionPlayer?>(null) }
     var transitionPreviewReady by remember(projectId) { mutableStateOf(false) }
@@ -635,6 +636,9 @@ private fun EditorScreenContent(
     val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
         state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
     }
+    val activeDownloadedFx = remember(state.activeFxId, downloadedFxProfiles) {
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+    }
     val previewGpuFilterConfig = mainPreviewClip
         ?.takeIf { it.type == ClipType.VIDEO }
         ?.gpuFilterConfig
@@ -660,6 +664,7 @@ private fun EditorScreenContent(
         state.gpuFilterCompareMode,
         state.lutCompareMode,
         activeFx,
+        activeDownloadedFx,
         state.fxIntensity,
         state.fxSpeed,
         state.adjustments,
@@ -744,6 +749,12 @@ private fun EditorScreenContent(
                 add(
                     com.apexstudio.app.data.fx.FxGlEffect(
                         activeFx, state.fxIntensity, state.fxSpeed
+                    )
+                )
+            } else if (activeDownloadedFx != null && state.fxIntensity > 0f) {
+                add(
+                    com.apexstudio.app.data.fx.FxGlEffect(
+                        activeDownloadedFx, state.fxIntensity, state.fxSpeed
                     )
                 )
             }

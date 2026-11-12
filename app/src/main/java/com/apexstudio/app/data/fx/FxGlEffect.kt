@@ -29,19 +29,39 @@ import androidx.media3.effect.GlShaderProgram
  * matches exactly what the user saw on screen.
  */
 @UnstableApi
-class FxGlEffect(
-    private val preset: FxPreset,
+class FxGlEffect private constructor(
+    private val effectId: String,
+    private val isAnimated: Boolean,
+    private val shaderSource: String,
     private val intensity: Float,
-    private val speed: Float = 1f
+    private val speed: Float
 ) : GlEffect {
 
+    constructor(preset: FxPreset, intensity: Float, speed: Float = 1f) : this(
+        preset.id, preset.isAnimated, shaderSourceFor(preset), intensity, speed
+    )
+
+    constructor(effect: DownloadedFxEffect, intensity: Float, speed: Float = 1f) : this(
+        effect.id,
+        effect.isAnimated,
+        ModernFxShaders.shaderFor(effect)
+            ?: throw IllegalArgumentException("Unsupported downloaded FX family: ${effect.family}"),
+        intensity,
+        speed
+    )
+
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
-        return FxShaderProgram(preset, intensity.coerceIn(0f, 1f), speed.coerceIn(0.1f, 4f), useHdr)
+        return FxShaderProgram(
+            effectId, isAnimated, shaderSource,
+            intensity.coerceIn(0f, 1f), speed.coerceIn(0.1f, 4f), useHdr
+        )
     }
 
     @UnstableApi
     private class FxShaderProgram(
-        private val preset: FxPreset,
+        private val effectId: String,
+        private val isAnimated: Boolean,
+        shaderSource: String,
         private val intensity: Float,
         private val speed: Float,
         useHdr: Boolean
@@ -53,9 +73,9 @@ class FxGlEffect(
 
         init {
             glProgram = try {
-                GlProgram(VERTEX_SHADER, shaderSourceFor(preset))
+                GlProgram(VERTEX_SHADER, shaderSource)
             } catch (e: Exception) {
-                throw VideoFrameProcessingException("Failed to compile FX shader for ${preset.id}", e)
+                throw VideoFrameProcessingException("Failed to compile FX shader for $effectId", e)
             }
             glProgram.setBufferAttribute(
                 "aFramePosition",
@@ -88,7 +108,7 @@ class FxGlEffect(
                 glProgram.setFloatUniform("uTime", presentationTimeUs / 1_000_000f)
                 // Only animated presets declare uSpeed; setting it on other
                 // shaders would hit a missing-uniform lookup.
-                if (preset.isAnimated) {
+                if (isAnimated) {
                     glProgram.setFloatUniform("uSpeed", speed)
                 }
                 glProgram.setFloatsUniform(

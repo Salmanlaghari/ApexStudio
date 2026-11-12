@@ -97,6 +97,7 @@ fun VideoPreviewArea(
     transitionPreviewNotice: String? = null,
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
+    downloadedFxEffect: com.apexstudio.app.data.fx.DownloadedFxEffect? = null,
     fxIntensity: Float = 0f,
     fxSpeed: Float = 1f,
     isPlaying: Boolean = false,
@@ -447,7 +448,8 @@ fun VideoPreviewArea(
                     intensity = fxIntensity,
                     isPlaying = isPlaying,
                     modifier = mediaContentModifier,
-                    speed = fxSpeed
+                    speed = fxSpeed,
+                    downloadedEffect = downloadedFxEffect
                 )
             }
 

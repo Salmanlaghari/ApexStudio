@@ -41,9 +41,10 @@ class ApexApp : Application() {
                     .readCachedManifest(this@ApexApp)
                 if (cachedCatalog != null) {
                     DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(this@ApexApp, cachedCatalog)
+                    DownloadedPacks.ensureDownloadedEffectPacksRegistered(this@ApexApp, cachedCatalog)
                 }
             }
-                .onFailure { Log.w("ApexApp", "Installed filter packs could not be loaded", it) }
+                .onFailure { Log.w("ApexApp", "Installed downloadable packs could not be loaded", it) }
         }
 
         // A leftover breadcrumb is useful context, but cannot prove a native crash.

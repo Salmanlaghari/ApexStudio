@@ -113,6 +113,13 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = settingsReason, outputUri = null, warning = null) }
         return
     }
+    if (s.activeFxId != null &&
+        com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId) == null &&
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId) == null
+    ) {
+        _export.update { it.copy(error = "The selected FX is unavailable. Re-download the effect pack or choose another effect.", outputUri = null, warning = null) }
+        return
+    }
     // Photo clip (PR F): bake the edits into a bitmap, encode a still
     // video, then run the normal export on it.
     if (selected?.type == com.apexstudio.app.domain.model.ClipType.IMAGE) {
@@ -140,6 +147,7 @@ fun EditorViewModel.startExport(
         }
     }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
+    val downloadedFxEffect = com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId)
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
@@ -176,6 +184,7 @@ fun EditorViewModel.startExport(
             chromaKeySettings = selected?.chromaKeySettings,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
+            downloadedFxEffect = downloadedFxEffect,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,
             // AR Face parity: bake the active AR card's graded look +
@@ -541,6 +550,7 @@ internal fun buildPhotoExportConfig(
         mask = clip.mask,
         keyframes = clip.keyframes,
         fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
+        downloadedFxEffect = com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId),
         fxIntensity = s.fxIntensity,
         fxSpeed = s.fxSpeed,
         // AR Face parity on the photo path too.
@@ -614,7 +624,9 @@ private fun colorStudioTimelineExportBlocker(
     if (snapshot.activeFilterId != null && filterPreset == null) {
         return "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
     }
-    if (snapshot.activeFxId != null && com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null) {
+    if (snapshot.activeFxId != null && com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null &&
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(snapshot.activeFxId) == null
+    ) {
         return "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
     }
     val config = buildProjectExportConfig(snapshot, audio, settings, filterPreset).copy(colorStudioGrade = grade)

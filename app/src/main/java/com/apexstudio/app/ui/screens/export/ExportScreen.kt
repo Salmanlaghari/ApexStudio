@@ -72,6 +72,7 @@ fun ExportScreen(
     val audioState by vm.audio.collectAsStateWithLifecycle()
     var wholeProject by rememberSaveable(projectId) { mutableStateOf(false) }
     val fxList = vm.fx.collectAsStateWithLifecycle().value
+    val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
     val transitionsList = vm.transitions.collectAsStateWithLifecycle().value
 
     // Resolution / FPS / FX are now read from the ViewModel's
@@ -407,6 +408,18 @@ fun ExportScreen(
                         onClick = {
                             // Tapping the same FX again clears it.
                             vm.setActiveFx(if (fx.id == activeFxId) null else fx.id)
+                        },
+                        modifier = Modifier.width(88.dp)
+                    )
+                }
+                items(downloadedFxProfiles, key = { it.id }) { effect ->
+                    MotionGraphicsCard(
+                        label = effect.label,
+                        icon = Icons.Default.Layers,
+                        selected = effect.id == activeFxId,
+                        enabled = !export.isExporting,
+                        onClick = {
+                            vm.setActiveFx(if (effect.id == activeFxId) null else effect.id)
                         },
                         modifier = Modifier.width(88.dp)
                     )

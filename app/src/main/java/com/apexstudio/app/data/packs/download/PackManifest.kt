@@ -24,6 +24,7 @@ object PackManifestRepo {
 
     private const val TAG = "PackManifest"
     const val FILTER_PROFILES_PAYLOAD = "filter_profiles"
+    const val FX_PROFILES_PAYLOAD = "fx_profiles_v1"
 
     /**
      * Raw-GitHub-hosted manifest (always current with `main`; no separate
@@ -63,6 +64,8 @@ object PackManifestRepo {
         val itemCount: Int = 0,
         /** Pack parser contract; legacy filter packs default to parametric profiles. */
         val payloadType: String = FILTER_PROFILES_PAYLOAD,
+        /** Optional checksum for the installed entry, separate from an enclosing archive hash. */
+        val entrySha256: String = "",
         /** "available" or "coming_soon". Coming-soon packs render disabled, never as dead buttons. */
         val status: String = "available"
     ) {

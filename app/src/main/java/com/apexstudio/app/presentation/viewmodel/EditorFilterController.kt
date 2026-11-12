@@ -330,19 +330,30 @@ fun EditorViewModel.openLensesPanel() = _state.update { it.copy(lensesPanelOpen 
 
 fun EditorViewModel.closeLensesPanel() = _state.update { it.copy(lensesPanelOpen = false) }
 
-fun EditorViewModel.setActiveFx(id: String?) = _state.update { it.copy(activeFxId = id) }
+fun EditorViewModel.setActiveFx(id: String?) = _state.update { state ->
+    val preset = FxPreset.byId(id)
+    val downloaded = if (id != null && preset == null)
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
+    if (id != null && preset == null && downloaded == null) state
+    else state.copy(activeFxId = id, fxSpeed = preset?.defaultSpeed ?: downloaded?.defaultSpeed ?: state.fxSpeed)
+}
 
 fun EditorViewModel.setFxIntensity(v: Float) = _state.update { it.copy(fxIntensity = v.coerceIn(0f, 1f)) }
 
 fun EditorViewModel.setFxSpeed(v: Float) = _state.update { it.copy(fxSpeed = v.coerceIn(0.1f, 4f)) }
 
 fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) = _state.update {
-    val presetSpeed = FxPreset.byId(id)?.defaultSpeed?.coerceIn(0.1f, 4f)
-    it.copy(
-        activeFxId = id,
-        fxIntensity = intensity.coerceIn(0f, 1f),
-        fxSpeed = presetSpeed ?: it.fxSpeed
-    )
+    val preset = FxPreset.byId(id)
+    val downloaded = if (id != null && preset == null)
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
+    if (id != null && preset == null && downloaded == null) it else {
+        val presetSpeed = (preset?.defaultSpeed ?: downloaded?.defaultSpeed)?.coerceIn(0.1f, 4f)
+        it.copy(
+            activeFxId = id,
+            fxIntensity = intensity.coerceIn(0f, 1f),
+            fxSpeed = presetSpeed ?: it.fxSpeed
+        )
+    }
 }
 
 fun EditorViewModel.selectFilter(id: String?, intensity: Float = 0.85f) = _state.update {

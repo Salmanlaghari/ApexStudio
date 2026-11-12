@@ -293,12 +293,26 @@ object PackManager {
                                 appContext,
                                 reg.copy(packs = reg.packs + (packId to InstalledEntry(pack.version, pack.sha256)))
                             )
-                            // Let features pick up the new content (e.g. filter packs).
-                            DownloadedPacks.onPackInstalled(appContext, packId)
+                            // Let feature repositories verify the installed content. FX
+                            // payloads must parse into at least one pinned profile before
+                            // the pack can be reported as installed.
+                            check(DownloadedPacks.onPackInstalled(appContext, packId)) {
+                                "Pack content did not pass its feature validation"
+                            }
                             true
                         } catch (e: Exception) {
                             Log.e(TAG, "Pack install failed: $packId", e)
                             installFailure = e.message ?: e.javaClass.simpleName
+                            runCatching {
+                                dir.deleteRecursively()
+                                val current = readRegistry(appContext)
+                                writeRegistry(appContext, current.copy(packs = current.packs - packId))
+                                if (_packsState.value.any { it.pack.id == packId && it.pack.category == "effects" }) {
+                                    DownloadedPacks.ensureDownloadedEffectPacksRegistered(appContext)
+                                }
+                            }.onFailure { cleanupError ->
+                                Log.w(TAG, "Rejected pack cleanup failed: $packId", cleanupError)
+                            }
                             false
                         }
                     }
@@ -328,6 +342,7 @@ object PackManager {
     fun delete(context: Context, packId: String) {
         val appContext = context.applicationContext
         val wasFilterPack = _packsState.value.any { it.pack.id == packId && it.pack.category == "filters" }
+        val wasEffectPack = _packsState.value.any { it.pack.id == packId && it.pack.category == "effects" }
         cancel(appContext, packId)
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -339,6 +354,10 @@ object PackManager {
             if (wasFilterPack) {
                 runCatching { DownloadedPacks.ensureDownloadedFilterPacksRegisteredScan(appContext) }
                     .onFailure { Log.w(TAG, "Filter registry refresh after pack deletion failed", it) }
+            }
+            if (wasEffectPack) {
+                runCatching { DownloadedPacks.ensureDownloadedEffectPacksRegistered(appContext) }
+                    .onFailure { Log.w(TAG, "Effect registry refresh after pack deletion failed", it) }
             }
         }
     }

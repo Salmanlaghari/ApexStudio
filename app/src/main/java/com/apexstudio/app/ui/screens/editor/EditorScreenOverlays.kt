@@ -322,6 +322,19 @@ fun FxPanelOverlay(
     vm: EditorViewModel
 ) {
     if (!state.fxPanelOpen) return
+    val context = LocalContext.current
+    val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
+    val packItems by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsStateWithLifecycle()
+    val effectsPackState = packItems.firstOrNull {
+        it.pack.id == com.apexstudio.app.data.fx.DownloadedEffectRepository.PACK_ID
+    }?.state
+    LaunchedEffect(Unit) {
+        runCatching {
+            com.apexstudio.app.data.packs.download.PackManager.refreshSync(context)
+            com.apexstudio.app.data.packs.download.DownloadedPacks
+                .ensureDownloadedEffectPacksRegistered(context)
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -341,6 +354,16 @@ fun FxPanelOverlay(
                 onIntensityChange = { vm.setFxIntensity(it) },
                 speed = state.fxSpeed,
                 onSpeedChange = { vm.setFxSpeed(it) },
+                downloadedEffects = downloadedFxProfiles,
+                effectsPackState = effectsPackState,
+                onDownloadEffectsPack = {
+                    val packId = com.apexstudio.app.data.fx.DownloadedEffectRepository.PACK_ID
+                    if (effectsPackState == com.apexstudio.app.data.packs.download.PackManager.PackState.Downloaded &&
+                        downloadedFxProfiles.isEmpty()
+                    ) {
+                        com.apexstudio.app.data.packs.download.PackManager.reinstall(context, packId)
+                    } else com.apexstudio.app.data.packs.download.PackManager.download(context, packId)
+                },
                 onKeyframesClick = {
                     vm.setKeyframePanelOpen(true)
                     vm.closeFxPanel()
@@ -1373,6 +1396,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val downloadedFxProfiles by com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.collectAsStateWithLifecycle()
+    val activeDownloadedFx = remember(state.activeFxId, downloadedFxProfiles) {
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId)
+    }
     val exportState by vm.export.collectAsStateWithLifecycle()
     val videoUpscaleProgress by vm.videoUpscaleUi.collectAsStateWithLifecycle()
     val localAnalysisProgress by vm.localAnalysis.collectAsStateWithLifecycle()
@@ -1692,6 +1719,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             playerError = state.playerError,
             transitionPreviewNotice = transitionPreviewNotice,
             activeFxId = if (isTransitionPreview) null else state.activeFxId,
+            downloadedFxEffect = if (isTransitionPreview) null else activeDownloadedFx,
             fxIntensity = if (isTransitionPreview) 0f else state.fxIntensity,
             fxSpeed = state.fxSpeed,
             isPlaying = state.isPlaying,

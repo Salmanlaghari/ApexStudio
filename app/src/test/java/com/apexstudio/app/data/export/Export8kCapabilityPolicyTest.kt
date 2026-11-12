@@ -79,6 +79,16 @@ class Export8kCapabilityPolicyTest {
         assertEquals(7, reasons.distinct().size)
     }
 
+    @Test fun `unreadable device RAM is not reported as insufficient physical RAM`() {
+        val result = evaluateEightKCapability(
+            request,
+            readyGates.copy(totalMemoryBytes = null, availableMemoryBytes = null),
+            listOf(hevc)
+        ) as EightKExportAvailability.Unsupported
+        assertTrue(result.reason.contains("memory status could not be verified"))
+        assertFalse(result.reason.contains("at least 8 GB"))
+    }
+
     @Test fun `GLES viewport is checked against the actual aspect ratio dimensions`() {
         val landscape = evaluateEightKCapability(
             request,

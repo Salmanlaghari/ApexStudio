@@ -100,13 +100,19 @@ internal fun evaluateEightKCapability(
     if (gates.isLowRamDevice != false) {
         return EightKExportAvailability.Unsupported("8K export is unavailable on low-RAM devices or when device memory status cannot be verified.")
     }
-    if ((gates.appMemoryClassMb ?: 0) < MIN_APP_MEMORY_CLASS_MB) {
+    val appMemoryClassMb = gates.appMemoryClassMb
+        ?: return EightKExportAvailability.Unsupported("App memory limits could not be verified for 8K export.")
+    if (appMemoryClassMb < MIN_APP_MEMORY_CLASS_MB) {
         return EightKExportAvailability.Unsupported("8K export needs at least ${MIN_APP_MEMORY_CLASS_MB} MB of app memory on this device.")
     }
-    if ((gates.totalMemoryBytes ?: 0L) < MIN_TOTAL_RAM_BYTES) {
+    val totalMemoryBytes = gates.totalMemoryBytes
+        ?: return EightKExportAvailability.Unsupported("Device memory status could not be verified for 8K export.")
+    val availableMemoryBytes = gates.availableMemoryBytes
+        ?: return EightKExportAvailability.Unsupported("Device memory status could not be verified for 8K export.")
+    if (totalMemoryBytes < MIN_TOTAL_RAM_BYTES) {
         return EightKExportAvailability.Unsupported("8K export requires a device with at least 8 GB of RAM.")
     }
-    if ((gates.availableMemoryBytes ?: 0L) < MIN_AVAILABLE_RAM_BYTES) {
+    if (availableMemoryBytes < MIN_AVAILABLE_RAM_BYTES) {
         return EightKExportAvailability.Unsupported("Not enough free device memory for a safe 8K render. Close other apps and try again.")
     }
 
@@ -331,6 +337,11 @@ internal fun encoderSelectorForPlan(plan: ExportVideoEncoderPlan): androidx.medi
                         it.supportedTypes.any { type -> type.equals(plan.mimeType, ignoreCase = true) }
                 }
             }.getOrNull()
-            if (match == null) ImmutableList.of() else ImmutableList.of(match)
+            if (match == null) {
+                throw IllegalStateException(
+                    "The verified 8K encoder ${plan.codecName} is no longer available. Reopen Export and retry the capability check."
+                )
+            }
+            ImmutableList.of(match)
         }
     }

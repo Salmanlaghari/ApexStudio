@@ -32,6 +32,33 @@ class SettingsPreferencesTest {
     }
 
     @Test
+    fun localCreatorProfilePersistsBoundedNameAndKnownAvatar() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val longName = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        SettingsPreferences.setLocalCreatorProfile(context, LocalCreatorProfile(longName, "cyan"))
+        assertEquals(
+            LocalCreatorProfile(longName.take(24), "cyan"),
+            SettingsPreferences.localCreatorProfile(context).first()
+        )
+
+        SettingsPreferences.setLocalCreatorProfile(context, LocalCreatorProfile("  \n  ", "unknown"))
+        assertEquals(
+            LocalCreatorProfile(),
+            SettingsPreferences.localCreatorProfile(context).first()
+        )
+    }
+
+    @Test
+    fun localCreatorProfileNormalizationHandlesControlCharactersOnEveryPath() {
+        assertEquals(
+            LocalCreatorProfile(displayName = "A B", avatarId = "violet"),
+            SettingsPreferences.normalizeLocalCreatorProfile(
+                LocalCreatorProfile(displayName = " A\tB\n\u200B ", avatarId = "unknown")
+            )
+        )
+    }
+
+    @Test
     fun themesHaveDistinctAccentsAndPolicyCoversCurrentDataPaths() {
         assertNotEquals(ApexThemeOption.NEON.primary, ApexThemeOption.VIOLET.primary)
         assertNotEquals(ApexThemeOption.VIOLET.primary, ApexThemeOption.EMBER.primary)
@@ -39,6 +66,7 @@ class SettingsPreferencesTest {
         assertTrue(policy.contains("Jamendo"))
         assertTrue(policy.contains("GitHub"))
         assertTrue(policy.contains("Snap"))
+        assertTrue(policy.contains("not synced"))
         assertTrue(policy.contains("Android device backup"))
         assertTrue(policy.contains("no prompt-based generative AI service"))
         assertTrue(policy.contains("public privacy-policy URL"))

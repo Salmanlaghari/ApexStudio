@@ -55,6 +55,8 @@ import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.screens.settings.LocalCreatorProfile
+import com.apexstudio.app.ui.screens.settings.SettingsPreferences
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +79,10 @@ fun HomeScreen(
     val context = LocalContext.current
     val repo = remember { MediaRepository }
     val projectRepo = remember { ProjectRepository(context) }
+    val localProfileFlow = remember(context.applicationContext) {
+        SettingsPreferences.localCreatorProfile(context)
+    }
+    val localProfile by localProfileFlow.collectAsState(initial = LocalCreatorProfile())
     var projects by remember { mutableStateOf<List<Project>>(emptyList()) }
     var savedProjectIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var projectToRename by remember { mutableStateOf<Project?>(null) }
@@ -327,7 +333,9 @@ fun HomeScreen(
             projectToRename = project
         },
         onDeleteProject = { projectToDelete = it },
-        onShowAll = { showAllProjects = !showAllProjects }
+        onShowAll = { showAllProjects = !showAllProjects },
+        localProfile = localProfile,
+        onSaveLocalProfile = { profile -> SettingsPreferences.setLocalCreatorProfile(context, profile) }
     )
 
     if (isApplyingShortsTemplate) {

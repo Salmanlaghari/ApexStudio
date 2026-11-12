@@ -28,9 +28,9 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -48,7 +48,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -57,7 +61,6 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.text.TextDesignMotionPack
@@ -66,8 +69,14 @@ import coil.compose.AsyncImage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.ui.screens.settings.LocalCreatorProfile
+import com.apexstudio.app.ui.screens.settings.SettingsPreferences
 import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun ApexHomeContent(
@@ -87,11 +96,20 @@ internal fun ApexHomeContent(
     onShowAll: () -> Unit,
     onExploreAiTools: () -> Unit = onCreateVideo,
     onExploreShortsTemplates: () -> Unit = {},
-    onExploreTextStyles: () -> Unit = {}
+    onExploreTextStyles: () -> Unit = {},
+    localProfile: LocalCreatorProfile = LocalCreatorProfile(),
+    onSaveLocalProfile: suspend (LocalCreatorProfile) -> Unit = {}
 ) {
     val theme = ApexThemeTokens.current
+    val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
     var showCreateChoices by remember { mutableStateOf(false) }
+    var showLocalProfile by remember { mutableStateOf(false) }
+    var profileNameDraft by remember { mutableStateOf(localProfile.displayName) }
+    var profileAvatarDraft by remember { mutableStateOf(localProfile.avatarId) }
+    var isSavingLocalProfile by remember { mutableStateOf(false) }
+    var localProfileSaveError by remember { mutableStateOf<String?>(null) }
+    val profileSaveScope = rememberCoroutineScope()
     val filteredProjects = remember(projects, searchText) {
         val query = searchText.trim()
         if (query.isEmpty()) projects else projects.filter { project ->
@@ -118,7 +136,16 @@ internal fun ApexHomeContent(
         item {
             ApexHomeHeader(
                 onSearch = onSearchOpen,
-                onNotifications = onNotifications
+                onNotifications = onNotifications,
+                profile = localProfile,
+                onProfile = {
+                    // Clear dashboard focus before showing the dialog; the name field stays opt-in.
+                    focusManager.clearFocus(force = true)
+                    profileNameDraft = localProfile.displayName
+                    profileAvatarDraft = localProfile.avatarId
+                    localProfileSaveError = null
+                    showLocalProfile = true
+                }
             )
         }
         if (searchOpen) {
@@ -194,6 +221,39 @@ internal fun ApexHomeContent(
     }
     }
 
+    if (showLocalProfile) {
+        LocalCreatorProfileDialog(
+            displayName = profileNameDraft,
+            onDisplayNameChange = { profileNameDraft = it.take(24) },
+            avatarId = profileAvatarDraft,
+            onAvatarSelected = { profileAvatarDraft = it },
+            isSaving = isSavingLocalProfile,
+            saveError = localProfileSaveError,
+            onDismiss = { if (!isSavingLocalProfile) showLocalProfile = false },
+            onSave = {
+                if (!isSavingLocalProfile) {
+                    isSavingLocalProfile = true
+                    localProfileSaveError = null
+                    val profile = localCreatorProfileForSave(profileNameDraft, profileAvatarDraft)
+                    profileSaveScope.launch {
+                        try {
+                            val saved = trySaveLocalCreatorProfile(profile, onSaveLocalProfile)
+                            if (isActive) {
+                                if (saved) {
+                                    showLocalProfile = false
+                                } else {
+                                    localProfileSaveError = "Couldn't save profile. Please try again."
+                                }
+                            }
+                        } finally {
+                            if (isActive) isSavingLocalProfile = false
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     if (showCreateChoices) {
         AlertDialog(
             onDismissRequest = { showCreateChoices = false },
@@ -222,7 +282,12 @@ internal fun ApexHomeContent(
 }
 
 @Composable
-private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
+private fun ApexHomeHeader(
+    onSearch: () -> Unit,
+    onNotifications: () -> Unit,
+    profile: LocalCreatorProfile,
+    onProfile: () -> Unit
+) {
     val theme = ApexThemeTokens.current
     Row(
         modifier = Modifier.fillMaxWidth().testTag("dashboard-header"),
@@ -255,6 +320,7 @@ private fun ApexHomeHeader(onSearch: () -> Unit, onNotifications: () -> Unit) {
         }
         HeaderAction(Icons.Default.Search, "Search projects", onSearch, "dashboard-search")
         HeaderAction(Icons.Default.NotificationsNone, "App notification settings", onNotifications, "dashboard-notifications")
+        ProfileAvatarAction(profile = profile, onClick = onProfile)
     }
 }
 
@@ -590,4 +656,152 @@ private fun AiToolsBanner(compactPhone: Boolean, onOpenAiTools: () -> Unit) {
                     .clip(RoundedCornerShape(12.dp)).border(1.dp, theme.primary, RoundedCornerShape(12.dp)))
         }
     }
+}
+
+
+@Composable
+internal fun ProfileAvatarAction(profile: LocalCreatorProfile, onClick: () -> Unit) {
+    val accent = profileAvatarColor(profile.avatarId)
+    Box(
+        // Primary dashboard action keeps a generous touch target; utility icons remain compact.
+        modifier = Modifier.size(48.dp)
+            .clip(CircleShape)
+            .background(accent.copy(alpha = 0.18f))
+            .border(1.dp, accent.copy(alpha = 0.8f), CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "Open local creator profile" }
+            .testTag("dashboard-profile"),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            profile.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "C",
+            color = accent,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+        )
+    }
+}
+
+@Composable
+internal fun LocalCreatorProfileDialog(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
+    avatarId: String,
+    onAvatarSelected: (String) -> Unit,
+    isSaving: Boolean,
+    saveError: String?,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    val theme = ApexThemeTokens.current
+    AlertDialog(
+        modifier = Modifier.testTag("local-profile-dialog"),
+        onDismissRequest = { if (!isSaving) onDismiss() },
+        containerColor = theme.bgSurface,
+        title = { Text("Creator profile", color = theme.textPrimary, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LocalCreatorProfileForm(
+                    displayName = displayName,
+                    onDisplayNameChange = onDisplayNameChange,
+                    avatarId = avatarId,
+                    onAvatarSelected = onAvatarSelected
+                )
+                saveError?.let { message ->
+                    Text(
+                        message,
+                        color = Color(0xFFFF8A80),
+                        fontSize = 12.sp,
+                        modifier = Modifier.testTag("local-profile-save-error")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            LocalCreatorProfileSaveAction(
+                enabled = !isSaving,
+                label = if (isSaving) "Saving…" else "Save profile",
+                onSave = onSave
+            )
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+internal fun LocalCreatorProfileForm(
+    displayName: String,
+    onDisplayNameChange: (String) -> Unit,
+    avatarId: String,
+    onAvatarSelected: (String) -> Unit
+) {
+    val theme = ApexThemeTokens.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device.",
+            color = theme.textSecondary,
+            fontSize = 12.sp
+        )
+        OutlinedTextField(
+            value = displayName,
+            onValueChange = onDisplayNameChange,
+            modifier = Modifier.fillMaxWidth().testTag("local-profile-name"),
+            singleLine = true,
+            label = { Text("Display name") },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = theme.textPrimary,
+                unfocusedTextColor = theme.textPrimary,
+                focusedBorderColor = theme.secondary,
+                unfocusedBorderColor = theme.border,
+                focusedLabelColor = theme.primary,
+                unfocusedLabelColor = theme.textTertiary,
+                cursorColor = theme.primary,
+                focusedContainerColor = theme.bgElevated,
+                unfocusedContainerColor = theme.bgElevated
+            )
+        )
+        Text("Avatar color", color = theme.textSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("violet" to "Violet", "cyan" to "Cyan", "amber" to "Amber").forEach { (id, label) ->
+                FilterChip(
+                    selected = avatarId == id,
+                    onClick = { onAvatarSelected(id) },
+                    modifier = Modifier.testTag("profile-avatar-$id"),
+                    label = { Text(label, fontSize = 10.sp) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun LocalCreatorProfileSaveAction(
+    enabled: Boolean = true,
+    label: String = "Save profile",
+    onSave: () -> Unit
+) {
+    TextButton(onClick = onSave, enabled = enabled) { Text(label) }
+}
+
+internal fun localCreatorProfileForSave(displayName: String, avatarId: String): LocalCreatorProfile =
+    SettingsPreferences.normalizeLocalCreatorProfile(LocalCreatorProfile(displayName, avatarId))
+
+internal suspend fun trySaveLocalCreatorProfile(
+    profile: LocalCreatorProfile,
+    onSave: suspend (LocalCreatorProfile) -> Unit
+): Boolean = try {
+    onSave(profile)
+    true
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (_: IOException) {
+    false
+}
+
+private fun profileAvatarColor(avatarId: String): Color = when (avatarId) {
+    "cyan" -> Color(0xFF38D9F5)
+    "amber" -> Color(0xFFFFBB55)
+    else -> Color(0xFFB692FF)
 }

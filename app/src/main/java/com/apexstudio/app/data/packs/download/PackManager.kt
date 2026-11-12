@@ -397,7 +397,7 @@ object PackManager {
      * for effect packs, the feature registrations it may have added. Best
      * effort — cleanup failures are logged, never thrown.
      */
-    private fun rejectInstalledPack(appContext: Context, packId: String, dir: File) {
+    private suspend fun rejectInstalledPack(appContext: Context, packId: String, dir: File) {
         runCatching {
             dir.deleteRecursively()
             val current = readRegistry(appContext)

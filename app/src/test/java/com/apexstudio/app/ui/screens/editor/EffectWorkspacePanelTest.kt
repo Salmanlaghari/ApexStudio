@@ -60,8 +60,17 @@ class EffectWorkspacePanelTest {
         }
         showPresets()
         compose.onNodeWithTag("workspace-preset-mono").assertIsNotSelected()
+        val previewCountBeforeSelection = compose.runOnIdle { previews.size }
         choosePreset("Monochrome")
         compose.onNodeWithTag("workspace-preset-mono").assertIsSelected()
+        compose.runOnIdle {
+            assertTrue("The first preset tap must emit a live-preview draft", previews.size > previewCountBeforeSelection)
+            assertEquals(
+                "The first live-preview callback must already contain the selected effect",
+                "mono",
+                previews[previewCountBeforeSelection].workspaceEffects.single().id
+            )
+        }
         compose.runOnIdle {
             assertEquals(clip, vm.state.value.project!!.clips.single())
             assertFalse(vm.state.value.canUndo)
@@ -86,8 +95,12 @@ class EffectWorkspacePanelTest {
         choosePreset("Warm")
         compose.onNodeWithTag("workspace-tuning-card").performScrollTo()
         compose.onNodeWithTag("workspace-effect-intensity").performScrollTo()
-            .performSemanticsAction(SemanticsActions.SetProgress) { it(0.35f) }
-        compose.runOnIdle { assertEquals(0.35f, previews.last().workspaceEffects.single().intensity, 0.02f) }
+        val previewCountBeforeIntensityChange = compose.runOnIdle { previews.size }
+        compose.onNodeWithTag("workspace-effect-intensity").performSemanticsAction(SemanticsActions.SetProgress) { it(0.35f) }
+        compose.runOnIdle {
+            assertTrue("Intensity changes must immediately emit a live-preview draft", previews.size > previewCountBeforeIntensityChange)
+            assertEquals(0.35f, previews[previewCountBeforeIntensityChange].workspaceEffects.single().intensity, 0.02f)
+        }
         compose.onNodeWithTag("workspace-apply").performClick()
         compose.runOnIdle {
             assertEquals(0.35f, vm.state.value.project!!.clips.single().workspaceEffects.single().intensity, 0.02f)

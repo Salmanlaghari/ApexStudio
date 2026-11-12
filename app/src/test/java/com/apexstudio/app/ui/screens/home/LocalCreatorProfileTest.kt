@@ -29,8 +29,8 @@ class LocalCreatorProfileTest {
     @Test
     fun dashboardProfileEditsOnlyLocalDisplayNameAndAvatarSelection() {
         var savedProfile: LocalCreatorProfile? = null
-        // Freeze before opening the dialog: its focused text field starts cursor
-        // animation during the click, before a later clock freeze can take effect.
+        // Keep the cursor's continuous blink from advancing the test clock;
+        // advance the dialog entry transition explicitly after the click below.
         compose.mainClock.autoAdvance = false
         compose.setContent {
             Box(Modifier.requiredSize(375.dp, 830.dp)) {

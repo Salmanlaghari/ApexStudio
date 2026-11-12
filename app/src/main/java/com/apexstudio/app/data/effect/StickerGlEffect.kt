@@ -233,8 +233,6 @@ class StickerGlEffect(
 
         override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
             try {
-                glProgram.use()
-                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val timeMs = presentationTimeUs / 1000L
                 val inWindow = timeMs >= sticker.startMs && timeMs <= sticker.endMs
                 // Keyframed stickers: re-rasterise when the interpolated
@@ -271,6 +269,10 @@ class StickerGlEffect(
                 }
                 val isVisible = (overlayTexId[0] != 0) && (timeMs >= sticker.startMs && timeMs <= sticker.endMs)
                 val overlayId = if (isVisible) overlayTexId[0] else inputTexId
+                // Sprite uploads bind on the current texture unit. Bind both inputs
+                // afterward so an animated frame cannot replace the video sampler.
+                glProgram.use()
+                glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 glProgram.setSamplerTexIdUniform("uOverlaySampler", overlayId, 1)
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)

@@ -25,6 +25,45 @@ class ExportCfr60FpsNormalizerTest {
     }
 
     @Test
+    fun audioTimingRejectsMissingSourceDurationInsteadOfSkippingSyncVerification() {
+        val failure = runCatching {
+            ExportCfr60FpsNormalizer.verifyAudioTrackTiming(
+                sourceDurationUs = null,
+                candidateDurationUs = 1_800_000L,
+                sourceVideoDurationMs = 1_800L,
+                candidateVideoDurationMs = 1_800L
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertTrue(failure?.message.orEmpty().contains("source audio duration"))
+    }
+
+    @Test
+    fun audioTimingRejectsShiftedCandidateAndAcceptsPreservedSourceDrift() {
+        val preserved = runCatching {
+            ExportCfr60FpsNormalizer.verifyAudioTrackTiming(
+                sourceDurationUs = 1_810_000L,
+                candidateDurationUs = 1_810_000L,
+                sourceVideoDurationMs = 1_800L,
+                candidateVideoDurationMs = 1_800L
+            )
+        }
+        assertTrue(preserved.isSuccess)
+
+        val shifted = runCatching {
+            ExportCfr60FpsNormalizer.verifyAudioTrackTiming(
+                sourceDurationUs = 1_810_000L,
+                candidateDurationUs = 2_010_000L,
+                sourceVideoDurationMs = 1_800L,
+                candidateVideoDurationMs = 1_800L
+            )
+        }.exceptionOrNull()
+        assertTrue(shifted is IllegalStateException)
+        assertTrue(shifted?.message.orEmpty().contains("duration or A/V synchronization"))
+    }
+
+    @Test
     fun fallbackOnlyRunsForReadableCadenceOnlyH264SixtyFpsMismatch() {
         val config = ExportEngine.ExportConfig(resolution = "720p", fps = 60)
         val underCadence = auditEncodedFrameTimestamps(

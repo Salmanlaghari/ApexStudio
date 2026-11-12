@@ -134,17 +134,39 @@ internal object ExportCfr60FpsNormalizer {
             }
             val candidateDurationUs = candidate.durationUs
                 ?: throw IllegalStateException("The 60 fps conversion's audio duration could not be verified.")
-            source.durationUs?.let { sourceDurationUs ->
-                val sourceDriftUs = sourceDurationUs - sourceVideoDurationMs * 1_000L
-                val candidateDriftUs = candidateDurationUs - candidateVideoDurationMs * 1_000L
-                check(abs(candidateDurationUs - sourceDurationUs) <= AV_SYNC_TOLERANCE_US &&
-                    abs(candidateDriftUs - sourceDriftUs) <= AV_SYNC_TOLERANCE_US
-                ) {
-                    "The 60 fps conversion changed audio track ${index + 1}'s duration or A/V synchronization."
-                }
-            }
+            verifyAudioTrackTiming(
+                sourceDurationUs = source.durationUs,
+                candidateDurationUs = candidateDurationUs,
+                sourceVideoDurationMs = sourceVideoDurationMs,
+                candidateVideoDurationMs = candidateVideoDurationMs,
+                trackNumber = index + 1
+            )
         }
         return sourceTracks.size
+    }
+
+    /** A candidate is not publishable unless both source and candidate durations prove audio sync. */
+    internal fun verifyAudioTrackTiming(
+        sourceDurationUs: Long?,
+        candidateDurationUs: Long?,
+        sourceVideoDurationMs: Long,
+        candidateVideoDurationMs: Long,
+        trackNumber: Int = 1
+    ) {
+        val verifiedSourceDurationUs = sourceDurationUs
+            ?: throw IllegalStateException("The source audio duration could not be verified before 60 fps conversion.")
+        val verifiedCandidateDurationUs = candidateDurationUs
+            ?: throw IllegalStateException("The 60 fps conversion's audio duration could not be verified.")
+        check(verifiedSourceDurationUs > 0L && verifiedCandidateDurationUs > 0L) {
+            "Audio track $trackNumber has no positive, verifiable duration."
+        }
+        val sourceDriftUs = verifiedSourceDurationUs - sourceVideoDurationMs * 1_000L
+        val candidateDriftUs = verifiedCandidateDurationUs - candidateVideoDurationMs * 1_000L
+        check(abs(verifiedCandidateDurationUs - verifiedSourceDurationUs) <= AV_SYNC_TOLERANCE_US &&
+            abs(candidateDriftUs - sourceDriftUs) <= AV_SYNC_TOLERANCE_US
+        ) {
+            "The 60 fps conversion changed audio track $trackNumber's duration or A/V synchronization."
+        }
     }
 
     private fun audioTracks(file: File): List<AudioTrackSignature> {

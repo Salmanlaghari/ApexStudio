@@ -105,7 +105,7 @@ class DashboardEditorEntriesTest {
             }
         }
 
-        compose.onNodeWithTag("home-shortcuts-shorts-templates-entry").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("home-shorts-templates-entry").assertIsDisplayed().performClick()
         compose.onNodeWithTag("home-text-styles-entry").assertIsDisplayed().performClick()
         compose.onNodeWithText("Amber Frame · Fade In").assertIsDisplayed()
         compose.runOnIdle {
@@ -121,7 +121,7 @@ class DashboardEditorEntriesTest {
                 DashboardQuickActions(onOpenShortsTemplates = {}, onOpenTextStyles = {})
             }
         }
-        val templates = compose.onNodeWithTag("home-shortcuts-shorts-templates-entry").fetchSemanticsNode().boundsInRoot
+        val templates = compose.onNodeWithTag("home-shorts-templates-entry").fetchSemanticsNode().boundsInRoot
         val textStyles = compose.onNodeWithTag("home-text-styles-entry").fetchSemanticsNode().boundsInRoot
         assertTrue("Text Styles should stack beneath Shorts at narrow phone widths", textStyles.top > templates.top)
     }

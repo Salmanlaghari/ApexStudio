@@ -54,7 +54,7 @@ import kotlin.math.max
 
 private fun ChromaKey.toLegacySettings() = ChromaKeySettings(
     enabled = enabled,
-    keyColorArgb = color.toArgb().toLong(),
+    keyColorArgb = color.toArgb().toLong() and 0xFFFF_FFFFL,
     similarity = tolerance,
     smoothness = softness,
     spillSuppression = spill,

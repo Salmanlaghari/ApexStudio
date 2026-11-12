@@ -29,9 +29,6 @@ class LocalCreatorProfileTest {
     @Test
     fun dashboardProfileEditsOnlyLocalDisplayNameAndAvatarSelection() {
         var savedProfile: LocalCreatorProfile? = null
-        // The profile assertion is about saved state, not transition timing.
-        // Freeze Compose animations so the dialog test cannot wait on UI motion.
-        compose.mainClock.autoAdvance = false
         compose.setContent {
             Box(Modifier.requiredSize(375.dp, 830.dp)) {
                 ApexHomeContent(
@@ -56,7 +53,6 @@ class LocalCreatorProfileTest {
         }
 
         compose.onNodeWithTag("dashboard-profile").assertIsDisplayed().performClick()
-        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithTag("local-profile-dialog").assertIsDisplayed()
         compose.onNodeWithText(
             "This profile is stored locally and is not synced by ApexStudio. Android backup or transfer settings may move app data to another device."

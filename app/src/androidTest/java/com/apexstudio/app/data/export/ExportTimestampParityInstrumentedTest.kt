@@ -20,23 +20,29 @@ import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.stickers.StickerAssetResolver
+import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.StickerOverlay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 
 /** Real Media3/codec regression; CI compiles this test but needs a device to execute it. */
 @RunWith(AndroidJUnit4::class)
@@ -447,7 +453,7 @@ class ExportTimestampParityInstrumentedTest {
     }
 
     @Test
-    fun downloadedLottieStickerProducesVisiblePixelsInSelectedAndProjectExports() = runBlocking {
+    fun downloadedLottieStickerAdvancesAndPreservesPixelsOutsideItsBoundsInBothExportPaths() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val engine = ExportEngine(context)
@@ -455,6 +461,7 @@ class ExportTimestampParityInstrumentedTest {
         val source = File(context.cacheDir, "sticker-export-source-$id.mp4")
         val packId = "sticker-export-$id"
         val relativePath = "animated/heart.json"
+        val packArchive = File(context.cacheDir, "$packId.zip")
         val packDir = PackManager.packDir(context, packId)
         val assetFile = File(packDir, relativePath)
         val registryFile = File(PackManager.packsRoot(context), "installed.json")
@@ -472,23 +479,52 @@ class ExportTimestampParityInstrumentedTest {
         var baselineOutput: File? = null
         var selectedOutput: File? = null
         var projectOutput: File? = null
-        var baselineFrame: Bitmap? = null
-        var selectedFrame: Bitmap? = null
-        var projectFrame: Bitmap? = null
+        val assetPath = StickerAssetResolver.packUri(packId, relativePath)
+        val sticker = StickerOverlay(
+            id = "downloaded-heart-$id",
+            symbolOrUri = "",
+            category = "Love",
+            name = "Heart Pop",
+            x = 0.5f,
+            y = 0.5f,
+            sizeScale = 2f,
+            startMs = 0L,
+            endMs = 1_800L,
+            assetPath = assetPath
+        )
+        val earlyTimeUs = 250_000L
+        val laterTimeUs = 1_250_000L
+
+        fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
         fun installTestPackAsset() {
-            assetFile.parentFile?.mkdirs()
-            context.assets.open("lottie/heart_pop.json").use { input ->
-                assetFile.outputStream().use { output -> input.copyTo(output) }
+            val bundledAsset = context.assets.open("lottie/heart_pop.json").use { it.readBytes() }
+            ZipOutputStream(packArchive.outputStream()).use { zip ->
+                zip.putNextEntry(ZipEntry(relativePath))
+                zip.write(bundledAsset)
+                zip.closeEntry()
             }
-            val registry = previousRegistry?.let { JSONObject(it) } ?: JSONObject()
-            val packs = registry.optJSONObject("packs") ?: JSONObject()
-            val sha256 = java.security.MessageDigest.getInstance("SHA-256")
-                .digest(assetFile.readBytes())
-                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
-            packs.put(packId, JSONObject().put("version", 1).put("sha256", sha256))
-            registry.put("packs", packs)
-            registryFile.writeText(registry.toString())
+            assetFile.parentFile?.mkdirs()
+            ZipFile(packArchive).use { zip ->
+                val entry = requireNotNull(zip.getEntry(relativePath)) { "Sticker asset must exist in the test pack archive" }
+                zip.getInputStream(entry).use { input ->
+                    assetFile.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+            assertEquals(
+                "Extracted sticker asset must match the bundled fixture SHA-256",
+                sha256(bundledAsset),
+                sha256(assetFile.readBytes())
+            )
+            val archiveSha256 = sha256(packArchive.readBytes())
+            PackManager.recordInstalledPack(context, packId, 1, archiveSha256)
+            assertEquals(
+                "PackManager's production serializer must retain the verified archive SHA-256",
+                archiveSha256,
+                PackManager.installedPackSha256(context, packId)
+            )
         }
 
         fun decodeFrame(file: File, timeUs: Long): Bitmap {
@@ -503,28 +539,153 @@ class ExportTimestampParityInstrumentedTest {
             }
         }
 
-        fun assertStickerPixels(label: String, frame: Bitmap, baseline: Bitmap) {
+        fun stickerPixelBounds(frame: Bitmap): IntArray {
+            val rect = StickerSpriteRenderer.dstRect(sticker, frame.width, frame.height)
+            return intArrayOf(
+                floor(rect.left.toDouble()).toInt().coerceIn(0, frame.width),
+                floor(rect.top.toDouble()).toInt().coerceIn(0, frame.height),
+                ceil(rect.right.toDouble()).toInt().coerceIn(0, frame.width),
+                ceil(rect.bottom.toDouble()).toInt().coerceIn(0, frame.height)
+            )
+        }
+
+        fun pixelDistance(first: Int, second: Int): Int =
+            abs(Color.red(first) - Color.red(second)) +
+                abs(Color.green(first) - Color.green(second)) +
+                abs(Color.blue(first) - Color.blue(second))
+
+        fun framePixels(frame: Bitmap): IntArray =
+            IntArray(frame.width * frame.height).also { pixels ->
+                frame.getPixels(pixels, 0, frame.width, 0, 0, frame.width, frame.height)
+            }
+
+        fun assertStickerPixels(
+            label: String,
+            frame: Bitmap,
+            baseline: Bitmap,
+            bounds: IntArray,
+            framePixels: IntArray,
+            baselinePixels: IntArray
+        ) {
             assertEquals("$label width", baseline.width, frame.width)
             assertEquals("$label height", baseline.height, frame.height)
-            val left = frame.width * 35 / 100
-            val right = frame.width * 65 / 100
-            val top = frame.height * 25 / 100
-            val bottom = frame.height * 75 / 100
             var changedPixels = 0
-            for (y in top until bottom) {
-                for (x in left until right) {
-                    val before = baseline.getPixel(x, y)
-                    val after = frame.getPixel(x, y)
-                    val difference = abs(Color.red(before) - Color.red(after)) +
-                        abs(Color.green(before) - Color.green(after)) +
-                        abs(Color.blue(before) - Color.blue(after))
-                    if (difference >= 80) changedPixels++
+            for (y in bounds[1] until bounds[3]) {
+                for (x in bounds[0] until bounds[2]) {
+                    val index = y * frame.width + x
+                    if (pixelDistance(baselinePixels[index], framePixels[index]) >= 80) changedPixels++
                 }
             }
             assertTrue(
-                "$label must visibly composite the downloaded Lottie sticker in the center; changed pixels=$changedPixels",
+                "$label must visibly composite the downloaded Lottie sticker inside its sprite bounds; changed pixels=$changedPixels",
                 changedPixels >= 500
             )
+        }
+
+        fun assertBackgroundUnchangedOutsideSticker(
+            label: String,
+            frame: Bitmap,
+            baseline: Bitmap,
+            bounds: IntArray,
+            framePixels: IntArray,
+            baselinePixels: IntArray
+        ) {
+            assertEquals("$label width", baseline.width, frame.width)
+            assertEquals("$label height", baseline.height, frame.height)
+            var changedPixels = 0
+            var outsidePixels = 0
+            for (y in 0 until frame.height) {
+                for (x in 0 until frame.width) {
+                    val insideSticker =
+                        x in (bounds[0] until bounds[2]) && y in (bounds[1] until bounds[3])
+                    if (!insideSticker) {
+                        outsidePixels++
+                        val index = y * frame.width + x
+                        if (pixelDistance(baselinePixels[index], framePixels[index]) >= 80) changedPixels++
+                    }
+                }
+            }
+            val allowedChangedPixels = (outsidePixels / 100).coerceAtLeast(100)
+            assertTrue(
+                "$label must preserve the source video outside the sticker sprite bounds; " +
+                    "changed=$changedPixels, allowed=$allowedChangedPixels",
+                changedPixels <= allowedChangedPixels
+            )
+        }
+
+        fun assertAnimationAdvances(
+            label: String,
+            early: Bitmap,
+            later: Bitmap,
+            earlyPixels: IntArray,
+            earlyBaselinePixels: IntArray,
+            laterPixels: IntArray,
+            laterBaselinePixels: IntArray,
+            bounds: IntArray
+        ) {
+            assertEquals("$label frame width", early.width, later.width)
+            assertEquals("$label frame height", early.height, later.height)
+            var changedOverlayPixels = 0
+            for (y in bounds[1] until bounds[3]) {
+                for (x in bounds[0] until bounds[2]) {
+                    val index = y * early.width + x
+                    val earlyPixel = earlyPixels[index]
+                    val earlyBase = earlyBaselinePixels[index]
+                    val laterPixel = laterPixels[index]
+                    val laterBase = laterBaselinePixels[index]
+                    val delta =
+                        abs((Color.red(earlyPixel) - Color.red(earlyBase)) - (Color.red(laterPixel) - Color.red(laterBase))) +
+                            abs((Color.green(earlyPixel) - Color.green(earlyBase)) - (Color.green(laterPixel) - Color.green(laterBase))) +
+                            abs((Color.blue(earlyPixel) - Color.blue(earlyBase)) - (Color.blue(laterPixel) - Color.blue(laterBase)))
+                    if (delta >= 80) changedOverlayPixels++
+                }
+            }
+            assertTrue(
+                "$label must show distinct Lottie output between $earlyTimeUs us and $laterTimeUs us; " +
+                    "changed overlay pixels=$changedOverlayPixels",
+                changedOverlayPixels >= 100
+            )
+        }
+
+        fun verifyExportFrames(label: String, baselineFile: File, outputFile: File) {
+            val baselineEarly = decodeFrame(baselineFile, earlyTimeUs)
+            val outputEarly = decodeFrame(outputFile, earlyTimeUs)
+            val baselineLater = decodeFrame(baselineFile, laterTimeUs)
+            val outputLater = decodeFrame(outputFile, laterTimeUs)
+            try {
+                assertEquals("720p export width", 1_280, baselineEarly.width)
+                assertEquals("720p export height", 720, baselineEarly.height)
+                val bounds = stickerPixelBounds(baselineEarly)
+                val baselineEarlyPixels = framePixels(baselineEarly)
+                val outputEarlyPixels = framePixels(outputEarly)
+                val baselineLaterPixels = framePixels(baselineLater)
+                val outputLaterPixels = framePixels(outputLater)
+                assertStickerPixels(
+                    "$label first animation frame", outputEarly, baselineEarly, bounds,
+                    outputEarlyPixels, baselineEarlyPixels
+                )
+                assertStickerPixels(
+                    "$label later animation frame", outputLater, baselineLater, bounds,
+                    outputLaterPixels, baselineLaterPixels
+                )
+                assertBackgroundUnchangedOutsideSticker(
+                    "$label first animation frame", outputEarly, baselineEarly, bounds,
+                    outputEarlyPixels, baselineEarlyPixels
+                )
+                assertBackgroundUnchangedOutsideSticker(
+                    "$label later animation frame", outputLater, baselineLater, bounds,
+                    outputLaterPixels, baselineLaterPixels
+                )
+                assertAnimationAdvances(
+                    label, outputEarly, outputLater,
+                    outputEarlyPixels, baselineEarlyPixels, outputLaterPixels, baselineLaterPixels, bounds
+                )
+            } finally {
+                baselineEarly.recycle()
+                outputEarly.recycle()
+                baselineLater.recycle()
+                outputLater.recycle()
+            }
         }
 
         try {
@@ -532,22 +693,9 @@ class ExportTimestampParityInstrumentedTest {
                 source.outputStream().use { output -> input.copyTo(output) }
             }
             installTestPackAsset()
-            val assetPath = StickerAssetResolver.packUri(packId, relativePath)
             assertTrue("The test pack must be registered as installed", PackManager.isDownloaded(context, packId))
             assertTrue("The downloaded sticker URI must resolve inside its installed pack",
                 StickerAssetResolver.downloadedFile(context, assetPath)?.isFile == true)
-            val sticker = StickerOverlay(
-                id = "downloaded-heart-$id",
-                symbolOrUri = "",
-                category = "Love",
-                name = "Heart Pop",
-                x = 0.5f,
-                y = 0.5f,
-                sizeScale = 2f,
-                startMs = 0L,
-                endMs = 1_800L,
-                assetPath = assetPath
-            )
 
             engine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
             val baselineResult = awaitTerminalState(engine)
@@ -581,20 +729,14 @@ class ExportTimestampParityInstrumentedTest {
             assertNull("Whole-project export with downloaded sticker must complete: ${projectResult.error}", projectResult.error)
             projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
 
-            baselineFrame = decodeFrame(requireNotNull(baselineOutput), 600_000L)
-            selectedFrame = decodeFrame(requireNotNull(selectedOutput), 600_000L)
-            projectFrame = decodeFrame(requireNotNull(projectOutput), 600_000L)
-            assertEquals("720p export width", 1_280, baselineFrame!!.width)
-            assertEquals("720p export height", 720, baselineFrame!!.height)
-            assertStickerPixels("Selected export", selectedFrame!!, baselineFrame!!)
-            assertStickerPixels("Whole-project export", projectFrame!!, baselineFrame!!)
+            val baselineFile = requireNotNull(baselineOutput)
+            verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
+            verifyExportFrames("Whole-project export", baselineFile, requireNotNull(projectOutput))
         } finally {
             instrumentation.runOnMainSync { engine.release() }
-            baselineFrame?.recycle()
-            selectedFrame?.recycle()
-            projectFrame?.recycle()
             source.delete()
             packDir.deleteRecursively()
+            packArchive.delete()
             if (previousRegistry == null) registryFile.delete() else registryFile.writeText(previousRegistry)
             baselineOutput?.delete()
             selectedOutput?.delete()

@@ -7,6 +7,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.screens.editor.BottomTimelineActionRow
@@ -49,6 +51,21 @@ class TimelineTransportLayoutTest {
         composeRule.onNodeWithContentDescription("Undo").assertIsNotEnabled()
         composeRule.onNodeWithContentDescription("Redo").assertIsNotEnabled()
         composeRule.onNodeWithContentDescription("Keyframe editing unavailable").assertIsNotEnabled()
+    }
+
+    @Test fun playheadTimecodeSitsAboveAVisuallyCenteredPlayButtonAt320dp() {
+        composeRule.setContent {
+            Column(Modifier.width(320.dp)) {
+                PlaybackControlBar(currentTimeMs = 1_000L, durationMs = 5_000L)
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("playback-timecode").assertIsDisplayed()
+            .assertTextContains("00:01 / 00:05")
+
+        val bar = composeRule.onNodeWithTag("editor-playback-controls").fetchSemanticsNode().boundsInRoot
+        val play = composeRule.onNodeWithContentDescription("Play playback").fetchSemanticsNode().boundsInRoot
+        assertEquals("Play remains centered on a narrow phone", bar.center.x, play.center.x, 4f)
     }
 
     @Test fun precisionStripFits320dpAndPreservesNavigationAndZoom() {

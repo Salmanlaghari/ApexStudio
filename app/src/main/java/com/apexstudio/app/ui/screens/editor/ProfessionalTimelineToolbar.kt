@@ -26,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -57,7 +56,7 @@ internal fun ProfessionalTimelineToolbar(
         modifier = modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.TimelineToolbarHeight)
-            .background(Color(0xFF0D1624))
+            .background(EditorPalette.BgBase)
             .padding(horizontal = 7.dp)
             .testTag("professional-timeline-toolbar"),
         verticalAlignment = Alignment.CenterVertically,
@@ -71,7 +70,7 @@ internal fun ProfessionalTimelineToolbar(
         ) {
             Text(
                 text = "TIMELINE",
-                color = EditorPalette.TextMuted,
+                color = EditorPalette.TextTertiary,
                 fontSize = 8.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.8.sp,
@@ -79,7 +78,7 @@ internal fun ProfessionalTimelineToolbar(
             )
             Text(
                 text = timecode,
-                color = EditorPalette.NeonCyan,
+                color = EditorPalette.TextPrimary,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.SemiBold,
@@ -94,10 +93,10 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .height(38.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .background(if (state.magneticSnapping) EditorPalette.NeonCyan.copy(alpha = 0.12f) else EditorPalette.BgSurface)
+                .background(if (state.magneticSnapping) EditorPalette.BgElevated else EditorPalette.BgSurface)
                 .border(
                     1.dp,
-                    if (state.magneticSnapping) EditorPalette.NeonCyan.copy(alpha = 0.55f) else EditorPalette.BorderGlass,
+                    if (state.magneticSnapping) EditorPalette.TrackBlue.copy(alpha = 0.65f) else EditorPalette.BorderGlass,
                     RoundedCornerShape(9.dp),
                 )
                 .clickable(onClick = onToggleSnapping)
@@ -110,11 +109,11 @@ internal fun ProfessionalTimelineToolbar(
                 Modifier
                     .size(6.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(if (state.magneticSnapping) EditorPalette.NeonCyan else EditorPalette.TextMuted),
+                    .background(if (state.magneticSnapping) EditorPalette.TrackBlue else EditorPalette.TextMuted),
             )
             Text(
                 text = "Snap",
-                color = if (state.magneticSnapping) EditorPalette.NeonCyan else EditorPalette.TextSecondary,
+                color = if (state.magneticSnapping) EditorPalette.TextPrimary else EditorPalette.TextSecondary,
                 fontSize = 9.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -146,10 +145,10 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(9.dp))
-                .then(if (focused) Modifier.background(EditorPalette.NeonPurple.copy(alpha = 0.20f)) else Modifier)
+                .then(if (focused) Modifier.background(EditorPalette.BgElevated) else Modifier)
                 .border(
                     1.dp,
-                    if (focused) EditorPalette.NeonPurple.copy(alpha = 0.7f) else EditorPalette.BorderGlass,
+                    if (focused) EditorPalette.TrackBlue.copy(alpha = 0.65f) else EditorPalette.BorderGlass,
                     RoundedCornerShape(9.dp),
                 )
                 .clickable(onClick = onToggleFocus)
@@ -166,7 +165,7 @@ internal fun ProfessionalTimelineToolbar(
             Icon(
                 imageVector = if (focused) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                 contentDescription = null,
-                tint = if (focused) EditorPalette.NeonPurple else EditorPalette.TextSecondary,
+                tint = if (focused) EditorPalette.TextPrimary else EditorPalette.TextSecondary,
                 modifier = Modifier.size(20.dp),
             )
         }

@@ -31,10 +31,10 @@ internal object Mp4VideoTailDurationNormalizer {
     )
 
     /**
-     * If [file]'s video track extends beyond [targetDurationMs] by more than the
-     * existing export tolerance, remux it with an explicit video EOS timestamp.
-     * The original file is replaced only after the corrected MP4 has been closed
-     * and its video-track duration has been verified.
+     * If [file]'s video track extends beyond the target tolerance or contains a
+     * sample at/after the exclusive target end, remux it with an explicit video
+     * EOS timestamp and drop out-of-range video samples. The original file is
+     * replaced only after the corrected MP4 is closed and verified.
      */
     fun normalize(
         file: File,
@@ -61,7 +61,11 @@ internal object Mp4VideoTailDurationNormalizer {
             val videoTrackIndex = videoTrackIndices.single()
             val videoFormat = formats[videoTrackIndex]
             val sourceVideoDurationUs = videoFormat.durationUsOrZero()
-            if (sourceVideoDurationUs <= targetDurationUs + DURATION_TOLERANCE_US) {
+            val sourcePtsBounds = readVideoPtsBounds(file, videoTrackIndex, checkCancelled)
+            val endPtsUs = Math.addExact(sourcePtsBounds.firstPtsUs, targetDurationUs)
+            if (sourceVideoDurationUs <= targetDurationUs + DURATION_TOLERANCE_US &&
+                sourcePtsBounds.lastPtsUs < endPtsUs
+            ) {
                 return Result(
                     changed = false,
                     targetDurationMs = targetDurationMs,
@@ -109,6 +113,11 @@ internal object Mp4VideoTailDurationNormalizer {
                 val inputTrackIndex = extractor.sampleTrackIndex
                 if (inputTrackIndex < 0) break
 
+                val presentationTimeUs = extractor.sampleTime
+                if (inputTrackIndex == videoTrackIndex && presentationTimeUs >= endPtsUs) {
+                    extractor.advance()
+                    continue
+                }
                 val sampleSize = extractor.sampleSize
                 if (sampleSize <= 0L || sampleSize > MAX_BUFFER_BYTES.toLong()) {
                     throw IllegalStateException("Unsupported encoded sample size: $sampleSize bytes")
@@ -117,7 +126,6 @@ internal object Mp4VideoTailDurationNormalizer {
                     sampleBuffer = ByteBuffer.allocateDirect(sampleSize.toInt())
                 }
                 sampleBuffer.clear()
-                val presentationTimeUs = extractor.sampleTime
                 val sampleFlags = extractor.sampleFlags
                 val bytesRead = extractor.readSampleData(sampleBuffer, 0)
                 if (bytesRead != sampleSize.toInt()) {
@@ -139,8 +147,10 @@ internal object Mp4VideoTailDurationNormalizer {
 
             check(videoSampleCount > 0L) { "Cannot set a terminal duration for an empty video track" }
             val videoStartPtsUs = checkNotNull(firstVideoPtsUs)
+            check(videoStartPtsUs == sourcePtsBounds.firstPtsUs) {
+                "Tail correction unexpectedly removed the first encoded video sample"
+            }
             val lastPtsUs = checkNotNull(lastVideoPtsUs)
-            val endPtsUs = Math.addExact(videoStartPtsUs, targetDurationUs)
             check(endPtsUs > lastPtsUs) {
                 "Target video end ${endPtsUs}us is not after the last encoded video PTS ${lastPtsUs}us"
             }
@@ -194,6 +204,35 @@ internal object Mp4VideoTailDurationNormalizer {
                 extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
             } ?: throw IllegalStateException("Corrected MP4 has no unique video track")
             extractor.getTrackFormat(videoTrack).durationUsOrZero()
+        } finally {
+            runCatching { extractor.release() }
+        }
+    }
+
+    private data class VideoPtsBounds(val firstPtsUs: Long, val lastPtsUs: Long)
+
+    private fun readVideoPtsBounds(
+        file: File,
+        videoTrackIndex: Int,
+        checkCancelled: () -> Unit
+    ): VideoPtsBounds {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            extractor.selectTrack(videoTrackIndex)
+            var firstPtsUs: Long? = null
+            var lastPtsUs: Long? = null
+            while (extractor.sampleTrackIndex >= 0) {
+                checkCancelled()
+                val presentationTimeUs = extractor.sampleTime
+                firstPtsUs = firstPtsUs?.let { minOf(it, presentationTimeUs) } ?: presentationTimeUs
+                lastPtsUs = lastPtsUs?.let { maxOf(it, presentationTimeUs) } ?: presentationTimeUs
+                extractor.advance()
+            }
+            return VideoPtsBounds(
+                firstPtsUs = checkNotNull(firstPtsUs) { "Cannot normalize an MP4 with no video samples" },
+                lastPtsUs = checkNotNull(lastPtsUs) { "Cannot normalize an MP4 with no video samples" }
+            )
         } finally {
             runCatching { extractor.release() }
         }

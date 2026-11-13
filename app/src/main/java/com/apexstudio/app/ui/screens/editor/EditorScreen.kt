@@ -632,9 +632,6 @@ private fun EditorScreenContent(
                 ?: state.customImportedLuts.firstOrNull { it.id == id }
         }
     }
-    val activeFx: com.apexstudio.app.data.fx.FxPreset? = remember(state.activeFxId) {
-        state.activeFxId?.let { id -> com.apexstudio.app.data.fx.FxPreset.byId(id) }
-    }
     val activeDownloadedFx by produceState<com.apexstudio.app.data.fx.DownloadedFxEffect?>(
         initialValue = null,
         key1 = state.activeFxId,
@@ -643,6 +640,7 @@ private fun EditorScreenContent(
         // Explicit verified lookup: findVerified re-checks the installed
         // entry's digest on the IO dispatcher and invalidates stale packs;
         // composition itself never touches disk.
+        value = null
         value = com.apexstudio.app.data.fx.DownloadedEffectRepository.findVerified(state.activeFxId)
     }
     val previewGpuFilterConfig = mainPreviewClip
@@ -662,7 +660,9 @@ private fun EditorScreenContent(
     val previewGpuFilterStageConfig = gpuFilterConfigPreviewKey(previewGpuFilterConfig)
     val sharedPreviewClip = mainPreviewClip?.let { clip -> state.project?.sharedVideoClip(clip.id) }
     val selectedKeyframes = mainPreviewClip?.keyframes
-    val resolvedActiveDownloadedFx = activeDownloadedFx
+    val globalFxBinding = remember(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed) {
+        globalFxPreviewBinding(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed)
+    }
 
     val currentEffects = remember(
         activePreset,
@@ -670,10 +670,7 @@ private fun EditorScreenContent(
         previewGpuFilterStageConfig,
         state.gpuFilterCompareMode,
         state.lutCompareMode,
-        activeFx,
-        resolvedActiveDownloadedFx,
-        state.fxIntensity,
-        state.fxSpeed,
+        globalFxBinding,
         state.adjustments,
         selectedKeyframes,
         sharedPreviewClip
@@ -752,19 +749,7 @@ private fun EditorScreenContent(
                     )
                 }
             }
-            if (activeFx != null && state.fxIntensity > 0f) {
-                add(
-                    com.apexstudio.app.data.fx.FxGlEffect(
-                        activeFx, state.fxIntensity, state.fxSpeed
-                    )
-                )
-            } else if (resolvedActiveDownloadedFx != null && state.fxIntensity > 0f) {
-                add(
-                    com.apexstudio.app.data.fx.FxGlEffect(
-                        resolvedActiveDownloadedFx, state.fxIntensity, state.fxSpeed
-                    )
-                )
-            }
+            globalFxBinding?.createEffect()?.let(::add)
             val hasSharedAnimation = sharedPreviewClip?.let {
                 it.animationKeyframeTimes().isNotEmpty()
             } == true
@@ -791,11 +776,9 @@ private fun EditorScreenContent(
         state.project?.clips,
         state.project?.videoAspectRatio,
         activePreset,
-        activeFx,
+        globalFxBinding,
         state.filterIntensity,
         state.adjustments,
-        state.fxIntensity,
-        state.fxSpeed,
         state.gpuFilterCompareMode,
         state.lutCompareMode
     ) {
@@ -888,9 +871,7 @@ private fun EditorScreenContent(
                         ))
                     }
                 }
-                if (activeFx != null && state.fxIntensity > 0f) {
-                    add(com.apexstudio.app.data.fx.FxGlEffect(activeFx, state.fxIntensity, state.fxSpeed))
-                }
+                globalFxBinding?.createEffect()?.let(::add)
                 if (!clip.keyframes.isEmpty() || shared?.animationKeyframeTimes()?.isNotEmpty() == true) {
                     add(com.apexstudio.app.data.animation.KeyframeAnimationEffect(
                         trackProvider = { clip.keyframes },

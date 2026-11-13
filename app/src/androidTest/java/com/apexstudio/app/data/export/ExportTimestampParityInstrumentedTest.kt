@@ -1125,8 +1125,21 @@ class ExportTimestampParityInstrumentedTest {
     fun downloadedAnimatedFxSurvivesEditorReopenAndChangesBothEncodedExportRoutes() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val id = UUID.randomUUID().toString()
+        // Keep the existing encoded-sticker regression's RGB/count floors unchanged.
+        // On this fixed 720p fixture, 80 rejects codec noise, 500 rejects a no-op FX,
+        // and 100 requires observable motion after subtracting source-frame changes.
+        val visibleRgbDistance = 80
+        val minChangedPixels = 500
+        val minAnimatedPixels = 100
+        val sampleTimesMs = listOf(400L, 1_400L)
+        val saveTimeoutMs = 20_000L
+        val savePollIntervalMs = 50L
+        val maxSavePolls = (saveTimeoutMs / savePollIntervalMs).toInt()
         val root = File(instrumentation.targetContext.cacheDir, "fx-roundtrip-$id").apply { mkdirs() }
         val context = object : ContextWrapper(instrumentation.targetContext) {
+            // VM/engine retain applicationContext; returning the base Application would
+            // escape these isolated paths. Assets/resolver/system services still delegate
+            // to the real context through ContextWrapper; no Application cast is required.
             override fun getApplicationContext(): android.content.Context = this
             override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
             override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
@@ -1163,14 +1176,15 @@ class ExportTimestampParityInstrumentedTest {
             editorJobs.clear()
         }
 
-        suspend fun awaitSavedFx(): Project = withTimeout(20_000L) {
+        suspend fun awaitSavedFx(): Project = withTimeout(saveTimeoutMs) {
             val expected = ProjectFxSettings(effectId, 0.73f, 1.8f)
-            var saved = repository.findById(id)
-            while (saved?.manualFxOverride != expected) {
-                delay(50L)
+            var saved: Project? = null
+            repeat(maxSavePolls) {
                 saved = repository.findById(id)
+                if (saved?.manualFxOverride == expected) return@withTimeout requireNotNull(saved)
+                delay(savePollIntervalMs)
             }
-            requireNotNull(saved)
+            error("FX save did not reach $expected after $maxSavePolls polls; last=${saved?.manualFxOverride}")
         }
 
         fun frameAt(file: File, timeMs: Long): Bitmap {
@@ -1188,7 +1202,7 @@ class ExportTimestampParityInstrumentedTest {
         fun changedPixels(first: IntArray, second: IntArray): Int = first.indices.count { index ->
             val a = first[index]; val b = second[index]
             abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) +
-                abs(Color.blue(a) - Color.blue(b)) >= 80
+                abs(Color.blue(a) - Color.blue(b)) >= visibleRgbDistance
         }
 
         fun animationChangedPixels(
@@ -1198,7 +1212,7 @@ class ExportTimestampParityInstrumentedTest {
             val b = later[index]; val bb = laterBaseline[index]
             abs((Color.red(a) - Color.red(ab)) - (Color.red(b) - Color.red(bb))) +
                 abs((Color.green(a) - Color.green(ab)) - (Color.green(b) - Color.green(bb))) +
-                abs((Color.blue(a) - Color.blue(ab)) - (Color.blue(b) - Color.blue(bb))) >= 80
+                abs((Color.blue(a) - Color.blue(ab)) - (Color.blue(b) - Color.blue(bb))) >= visibleRgbDistance
         }
 
         suspend fun exportPass(index: Int, config: ExportEngine.ExportConfig, clips: List<MediaClip>?): File {
@@ -1290,13 +1304,24 @@ class ExportTimestampParityInstrumentedTest {
             outputs[3] = exportPass(3, config, clips)
 
             fun verify(label: String, baselineFile: File, fxFile: File) {
-                assertOutputTiming("$label baseline", readVideoTrack(baselineFile), plan.durationMs * 1_000L, emptyList(), 30)
-                assertOutputTiming("$label FX", readVideoTrack(fxFile), plan.durationMs * 1_000L, emptyList(), 30)
+                val sampleAnchorsUs = sampleTimesMs.map { it * 1_000L }
+                val baselineTrack = readVideoTrack(baselineFile)
+                val fxTrack = readVideoTrack(fxFile)
+                assertOutputTiming("$label baseline", baselineTrack, plan.durationMs * 1_000L, sampleAnchorsUs, 30)
+                assertOutputTiming("$label FX", fxTrack, plan.durationMs * 1_000L, sampleAnchorsUs, 30)
+                // The source may be visually static: verify distinct encoded PTS instead
+                // of requiring different baseline pixels, then check decoded FX motion below.
+                listOf(baselineTrack, fxTrack).forEach { track ->
+                    val nearestPts = sampleAnchorsUs.map { target ->
+                        track.presentationTimesUs.minBy { abs(it - target) }
+                    }
+                    assertEquals("$label sample anchors must address distinct encoded frames", sampleTimesMs.size, nearestPts.distinct().size)
+                }
                 assertTrue("$label baseline must retain AAC audio", hasTrack(baselineFile, "audio/mp4a-latm"))
                 assertTrue("$label FX must retain AAC audio", hasTrack(fxFile, "audio/mp4a-latm"))
                 val frames = mutableListOf<Bitmap>()
                 try {
-                    listOf(400L, 1_400L).forEach { time ->
+                    sampleTimesMs.forEach { time ->
                         frames += frameAt(baselineFile, time)
                         frames += frameAt(fxFile, time)
                     }
@@ -1309,9 +1334,11 @@ class ExportTimestampParityInstrumentedTest {
                     val earlyChanged = changedPixels(baselineEarly, fxEarly)
                     val laterChanged = changedPixels(baselineLater, fxLater)
                     val animatedChanged = animationChangedPixels(fxEarly, baselineEarly, fxLater, baselineLater)
-                    assertTrue("$label early FX changed $earlyChanged pixels; need >=500", earlyChanged >= 500)
-                    assertTrue("$label later FX changed $laterChanged pixels; need >=500", laterChanged >= 500)
-                    assertTrue("$label animated delta changed $animatedChanged pixels; need >=100", animatedChanged >= 100)
+                    val fxFramesChanged = changedPixels(fxEarly, fxLater)
+                    assertTrue("$label FX samples must decode distinct pictures; changed=$fxFramesChanged", fxFramesChanged >= minAnimatedPixels)
+                    assertTrue("$label early FX changed $earlyChanged pixels; need >=$minChangedPixels", earlyChanged >= minChangedPixels)
+                    assertTrue("$label later FX changed $laterChanged pixels; need >=$minChangedPixels", laterChanged >= minChangedPixels)
+                    assertTrue("$label animated delta changed $animatedChanged pixels; need >=$minAnimatedPixels", animatedChanged >= minAnimatedPixels)
                 } finally { frames.forEach { it.recycle() } }
             }
             verify("selected route", requireNotNull(outputs[0]), requireNotNull(outputs[1]))

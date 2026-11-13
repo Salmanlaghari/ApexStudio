@@ -171,7 +171,7 @@ class ProjectFxPersistenceTest {
     }
 
     @Test
-    fun `manual LUT override survives template reopen undo redo export and explicit reset`() = runBlocking {
+    fun `manual LUT override survives template reopen undo redo export and explicit reset`(): Unit = runBlocking {
         val base = ApplicationProvider.getApplicationContext<Context>()
         val root = File(base.cacheDir, "project-lut-${System.nanoTime()}")
         val files = File(root, "files").apply { mkdirs() }
@@ -361,6 +361,7 @@ class ProjectFxPersistenceTest {
                         state.lastTransitionType == template.transitionType
                 }
             }
+            Unit
         } finally {
             store.clear()
             repository.deleteProject(projectId)

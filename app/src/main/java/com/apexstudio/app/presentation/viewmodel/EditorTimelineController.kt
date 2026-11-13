@@ -875,8 +875,18 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
         val templateLut = snapshot.project.lastTransmissionTemplateId?.let { templateId ->
             _transmissionTemplates.value.firstOrNull { it.id == templateId }
         }
-        val restoredGlobalFilterId = if (manualLut != null) manualLut.filterId else templateLut?.filterId
-        val restoredGlobalFilterIntensity = if (manualLut != null) {
+        val restoreGlobalLut = state.project?.manualLutOverride != snapshot.project.manualLutOverride ||
+            state.project?.lastTransmissionTemplateId != snapshot.project.lastTransmissionTemplateId
+        val restoredGlobalFilterId = if (!restoreGlobalLut) {
+            state.activeFilterId
+        } else if (manualLut != null) {
+            manualLut.filterId
+        } else {
+            templateLut?.filterId
+        }
+        val restoredGlobalFilterIntensity = if (!restoreGlobalLut) {
+            state.filterIntensity
+        } else if (manualLut != null) {
             manualLut.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
         } else {
             templateLut?.filterIntensity?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f

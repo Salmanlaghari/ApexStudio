@@ -50,7 +50,8 @@ class EditorSpecialistThemeTest {
         val rootView = AtomicReference<View?>()
         compose.setContent {
             ApexTheme(option = selectedTheme.value) {
-                SideEffect { rootView.set(LocalView.current) }
+                val composeView = LocalView.current
+                SideEffect { rootView.set(composeView) }
                 WallpaperChromaPanel(
                     settings = ChromaKeySettings(enabled = true),
                     onUpdate = {},
@@ -84,7 +85,8 @@ class EditorSpecialistThemeTest {
         val rootView = AtomicReference<View?>()
         compose.setContent {
             ApexTheme(option = selectedTheme.value) {
-                SideEffect { rootView.set(LocalView.current) }
+                val composeView = LocalView.current
+                SideEffect { rootView.set(composeView) }
                 MaskPanel(
                     mask = null,
                     onUpdate = {},
@@ -104,7 +106,8 @@ class EditorSpecialistThemeTest {
         val rootView = AtomicReference<View?>()
         compose.setContent {
             ApexTheme(option = selectedTheme.value) {
-                SideEffect { rootView.set(LocalView.current) }
+                val composeView = LocalView.current
+                SideEffect { rootView.set(composeView) }
                 TransitionPickerSheet(
                     fromClip = null,
                     toClip = null,
@@ -135,7 +138,8 @@ class EditorSpecialistThemeTest {
         )
         compose.setContent {
             ApexTheme(option = selectedTheme.value) {
-                SideEffect { rootView.set(LocalView.current) }
+                val composeView = LocalView.current
+                SideEffect { rootView.set(composeView) }
                 Box(Modifier.fillMaxWidth().testTag("trim-filmstrip")) {
                     TrimFilmstrip(
                         clip = clip,

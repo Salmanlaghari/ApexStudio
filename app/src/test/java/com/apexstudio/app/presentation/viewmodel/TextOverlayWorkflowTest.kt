@@ -147,20 +147,20 @@ class TextOverlayWorkflowTest {
             }
         }
 
-        fun measuredTextWidth(): Float {
+        fun measuredFontSizeSp(): Float {
             val layouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithText("Mum").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getResult ->
                 assertTrue(getResult(layouts))
             }
-            return layouts.single().size.width.toFloat()
+            return layouts.single().layoutInput.style.fontSize.value
         }
 
-        val baseWidth = measuredTextWidth()
+        val baseFontSize = measuredFontSizeSp()
         compose.runOnIdle { sizeScale.value = 2f }
         compose.waitForIdle()
-        val doubledWidth = measuredTextWidth()
+        val doubledFontSize = measuredFontSizeSp()
 
-        assertEquals(2f, doubledWidth / baseWidth, 0.2f)
+        assertEquals(2f, doubledFontSize / baseFontSize, 0.01f)
     }
 
     @Test

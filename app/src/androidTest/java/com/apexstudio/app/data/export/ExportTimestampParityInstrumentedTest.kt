@@ -2328,11 +2328,11 @@ class ExportTimestampParityInstrumentedTest {
             }
             val source = withTimeout(120_000L) {
                 requireNotNull(PhotoVideoEncoder.encodeStillImage(
-                    context = context,
-                    bitmap = sourceBitmap,
-                    durationMs = 1_000L,
-                    frameRate = 10
-                )) { "The deterministic green-screen MP4 fixture must encode." }
+                context = context,
+                bitmap = sourceBitmap,
+                durationMs = 1_000L,
+                frameRate = 30
+            )) { "The deterministic green-screen MP4 fixture must encode." }
             }
             sourceFile = source
             val sourceUri = Uri.fromFile(source).toString()
@@ -2342,6 +2342,7 @@ class ExportTimestampParityInstrumentedTest {
                 "The source fixture should retain approximately one second of video",
                 abs(sourceTrack.videoTrackDurationUs - 1_000_000L) <= 200_000L
             )
+            assertEquals("The 30fps source fixture must contain all 30 encoded samples", 30, sourceTrack.presentationTimesUs.size)
             assertTrue("The source fixture must contain multiple encoded frames", sourceTrack.presentationTimesUs.size >= 2)
 
             val wallpaperPath = wallpaperFile.canonicalPath
@@ -2406,7 +2407,7 @@ class ExportTimestampParityInstrumentedTest {
                 bakedTrack,
                 expectedDurationUs = sourceTrack.videoTrackDurationUs,
                 expectedSourceAnchorsUs = sourceTrack.presentationTimesUs,
-                requestedFps = 10
+                requestedFps = 30
             )
 
             val bakedDurationMs = (bakedTrack.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)

@@ -38,7 +38,7 @@ import com.apexstudio.app.data.captions.CaptionWordAnimation
 import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 /**
  * Professional CapCut-style interactive, draggable, resizable, and animated text overlay.

@@ -53,7 +53,8 @@ import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.GlassCard
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -1215,6 +1216,7 @@ private fun ResolutionPill(
 
 @Composable
 private fun GaugeArc(progress: Float, showProgress: Boolean, modifier: Modifier = Modifier) {
+    val theme = ApexThemeTokens.current
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center
@@ -1223,7 +1225,7 @@ private fun GaugeArc(progress: Float, showProgress: Boolean, modifier: Modifier 
             val stroke = 7f
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                color = ApexPalette.BgElevated,
+                color = theme.bgElevated,
                 startAngle = 135f,
                 sweepAngle = 270f,
                 useCenter = false,
@@ -1233,7 +1235,7 @@ private fun GaugeArc(progress: Float, showProgress: Boolean, modifier: Modifier 
             )
             drawArc(
                 brush = Brush.sweepGradient(
-                    listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple, ApexPalette.NeonCyan)
+                    listOf(theme.primary, theme.secondary, theme.primary)
                 ),
                 startAngle = 135f,
                 sweepAngle = 270f * progress,

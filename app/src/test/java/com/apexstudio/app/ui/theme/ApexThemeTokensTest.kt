@@ -54,6 +54,24 @@ class ApexThemeTokensTest {
                 val tokens = ApexThemeTokens.current
                 val scheme = MaterialTheme.colorScheme
                 val view = LocalView.current
+                val editorPalette = EditorPaletteObservation(
+                    bgDeep = EditorPalette.BgDeep,
+                    bgBase = EditorPalette.BgBase,
+                    bgSurface = EditorPalette.BgSurface,
+                    bgElevated = EditorPalette.BgElevated,
+                    bgGlass = EditorPalette.BgGlass,
+                    bgGlassSoft = EditorPalette.BgGlassSoft,
+                    primary = EditorPalette.NeonCyan,
+                    primaryGlow = EditorPalette.NeonCyanGlow,
+                    secondary = EditorPalette.NeonPurple,
+                    secondaryGlow = EditorPalette.NeonPurpleGlow,
+                    textPrimary = EditorPalette.TextPrimary,
+                    textSecondary = EditorPalette.TextSecondary,
+                    textTertiary = EditorPalette.TextTertiary,
+                    textMuted = EditorPalette.TextMuted,
+                    divider = EditorPalette.Divider,
+                    border = EditorPalette.BorderGlass
+                )
                 SideEffect {
                     observedWindow.set((view.context as Activity).window)
                     observed.set(
@@ -63,7 +81,8 @@ class ApexThemeTokensTest {
                             primary = scheme.primary,
                             tertiary = scheme.tertiary,
                             materialBackground = scheme.background,
-                            trackVideo = ApexPalette.TrackVideo
+                            trackVideo = ApexPalette.TrackVideo,
+                            editorPalette = editorPalette
                         )
                     )
                 }
@@ -78,6 +97,7 @@ class ApexThemeTokensTest {
         assertEquals(ApexThemeOption.NEON.palette.primary, neon.primary)
         assertEquals(ApexThemeOption.NEON.palette.primaryGlow, neon.tertiary)
         assertEquals(neon.background, neon.materialBackground)
+        assertEditorPaletteMatches(ApexThemeOption.NEON, neon.editorPalette)
         assertEquals(neon.background.toArgb(), neonWindow.statusBarColor)
         assertEquals(neon.background.toArgb(), neonWindow.navigationBarColor)
         assertTrue(!WindowCompat.getInsetsController(
@@ -91,6 +111,7 @@ class ApexThemeTokensTest {
         assertEquals(ApexThemeOption.VIOLET.palette.bgBase, violet.background)
         assertEquals(ApexThemeOption.VIOLET.palette.primary, violet.primary)
         assertEquals(ApexThemeOption.VIOLET.palette.primaryGlow, violet.tertiary)
+        assertEditorPaletteMatches(ApexThemeOption.VIOLET, violet.editorPalette)
         assertEquals(violet.background.toArgb(), requireNotNull(observedWindow.get()).statusBarColor)
 
         compose.runOnIdle { selected.value = ApexThemeOption.EMBER }
@@ -99,10 +120,34 @@ class ApexThemeTokensTest {
         assertEquals(ApexThemeOption.EMBER.palette.bgBase, ember.background)
         assertEquals(ApexThemeOption.EMBER.palette.primary, ember.primary)
         assertEquals(ApexThemeOption.EMBER.palette.primaryGlow, ember.tertiary)
+        assertEditorPaletteMatches(ApexThemeOption.EMBER, ember.editorPalette)
         assertNotEquals(neon.background, violet.background)
         assertNotEquals(violet.background, ember.background)
         assertEquals(neon.trackVideo, violet.trackVideo)
         assertEquals(violet.trackVideo, ember.trackVideo)
+    }
+
+    private fun assertEditorPaletteMatches(
+        option: ApexThemeOption,
+        actual: EditorPaletteObservation
+    ) {
+        val expected = option.palette
+        assertEquals(expected.bgDeep, actual.bgDeep)
+        assertEquals(expected.bgBase, actual.bgBase)
+        assertEquals(expected.bgSurface, actual.bgSurface)
+        assertEquals(expected.bgElevated, actual.bgElevated)
+        assertEquals(expected.bgSurface.copy(alpha = 0xCC / 255f), actual.bgGlass)
+        assertEquals(expected.bgSurface.copy(alpha = 0x80 / 255f), actual.bgGlassSoft)
+        assertEquals(expected.primary, actual.primary)
+        assertEquals(expected.primaryGlow, actual.primaryGlow)
+        assertEquals(expected.secondary, actual.secondary)
+        assertEquals(expected.secondaryGlow, actual.secondaryGlow)
+        assertEquals(expected.textPrimary, actual.textPrimary)
+        assertEquals(expected.textSecondary, actual.textSecondary)
+        assertEquals(expected.textTertiary, actual.textTertiary)
+        assertEquals(expected.textMuted, actual.textMuted)
+        assertEquals(expected.divider, actual.divider)
+        assertEquals(expected.border, actual.border)
     }
 
     private fun contrastRatio(foreground: Color, background: Color): Double {
@@ -118,6 +163,26 @@ class ApexThemeTokensTest {
         val primary: Color,
         val tertiary: Color,
         val materialBackground: Color,
-        val trackVideo: Color
+        val trackVideo: Color,
+        val editorPalette: EditorPaletteObservation
+    )
+
+    private data class EditorPaletteObservation(
+        val bgDeep: Color,
+        val bgBase: Color,
+        val bgSurface: Color,
+        val bgElevated: Color,
+        val bgGlass: Color,
+        val bgGlassSoft: Color,
+        val primary: Color,
+        val primaryGlow: Color,
+        val secondary: Color,
+        val secondaryGlow: Color,
+        val textPrimary: Color,
+        val textSecondary: Color,
+        val textTertiary: Color,
+        val textMuted: Color,
+        val divider: Color,
+        val border: Color
     )
 }

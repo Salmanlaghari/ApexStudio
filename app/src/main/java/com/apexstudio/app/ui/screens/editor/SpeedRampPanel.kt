@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.testTag
 import com.apexstudio.app.domain.model.SpeedPreset
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 
 /**
  * Compact speed controls for the editor. Rate presets and the custom rate
@@ -222,6 +223,7 @@ private fun SpeedCurveEditor(
     onCurveChanged: (List<SpeedPoint>) -> Unit,
     onClearCurve: () -> Unit
 ) {
+    val theme = ApexThemeTokens.current
     val math = SpeedCurveMath
     val draftState = remember(points, baseSpeed) {
         mutableStateOf(points.ifEmpty { math.flat(baseSpeed) })
@@ -419,7 +421,7 @@ private fun SpeedCurveEditor(
                     val y = math.speedToGraphY(sp) * h
                     drawLine(
                         color = if (sp == 1f) Color.White.copy(alpha = 0.35f)
-                        else ApexPalette.TextPrimary.copy(alpha = 0.12f),
+                        else theme.textPrimary.copy(alpha = 0.12f),
                         start = Offset(0f, y),
                         end = Offset(w, y),
                         strokeWidth = 1f
@@ -437,7 +439,7 @@ private fun SpeedCurveEditor(
                 }
                 drawPath(
                     path = path,
-                    color = ApexPalette.NeonCyan,
+                    color = theme.primary,
                     style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                 )
                 // Control points as diamonds (keyframe style).
@@ -454,13 +456,13 @@ private fun SpeedCurveEditor(
                     }
                     drawPath(
                         path = diamond,
-                        color = if (i == selectedIndex) ApexPalette.NeonCyan
+                        color = if (i == selectedIndex) theme.primary
                         else Color(0xFF0A0A0F)
                     )
                     drawPath(
                         path = diamond,
                         color = if (i == selectedIndex) Color.White
-                        else ApexPalette.NeonCyan,
+                        else theme.primary,
                         style = Stroke(width = 1.5.dp.toPx())
                     )
                 }
@@ -556,6 +558,7 @@ private fun SpeedCurveEditor(
     }
 }
 
+@Composable
 private fun Modifier.speedPanelCard(): Modifier = this
     .clip(RoundedCornerShape(11.dp))
     .background(ApexPalette.BgBase)

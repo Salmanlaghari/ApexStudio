@@ -41,7 +41,8 @@ import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
 
 @Composable
@@ -150,6 +151,7 @@ internal fun ExportProjectPreviewCard(
 
 @Composable
 internal fun ExportBrandHeader(onSettings: (() -> Unit)?) {
+    val theme = ApexThemeTokens.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -164,7 +166,7 @@ internal fun ExportBrandHeader(onSettings: (() -> Unit)?) {
                 quadraticTo(w * .52f, h * .01f, w * .57f, h * .10f)
                 lineTo(w * .96f, h * .88f)
             }
-            drawPath(mark, Brush.linearGradient(listOf(ApexPalette.NeonPurple, Color(0xFF547BFF), ApexPalette.NeonCyan)), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * .18f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+            drawPath(mark, Brush.linearGradient(listOf(theme.secondary, Color(0xFF547BFF), theme.primary)), style = androidx.compose.ui.graphics.drawscope.Stroke(width = w * .18f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
             drawLine(Color(0xFF8A70FF), Offset(w * .28f, h * .62f), Offset(w * .75f, h * .62f), strokeWidth = w * .14f, cap = StrokeCap.Round)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -317,6 +319,7 @@ private fun ExportSettingPickerRow(
 
 @Composable
 private fun ExportProgressRing(progress: Float, isActive: Boolean, modifier: Modifier = Modifier) {
+    val theme = ApexThemeTokens.current
     val fraction = progress.coerceIn(0f, 1f)
     val percentage = if (isActive && fraction > 0f) (fraction * 100f).toInt().coerceIn(1, 100) else null
     Box(modifier.testTag("export-progress-ring"), contentAlignment = Alignment.Center) {
@@ -324,7 +327,7 @@ private fun ExportProgressRing(progress: Float, isActive: Boolean, modifier: Mod
             val stroke = 4.dp.toPx()
             val arcSize = Size(size.width - stroke, size.height - stroke)
             drawArc(
-                color = ApexPalette.BgElevated,
+                color = theme.bgElevated,
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,
@@ -335,7 +338,7 @@ private fun ExportProgressRing(progress: Float, isActive: Boolean, modifier: Mod
             if (fraction > 0f) {
                 drawArc(
                     brush = Brush.sweepGradient(
-                        listOf(ApexPalette.NeonPurple, Color(0xFF427BFF), ApexPalette.NeonCyan)
+                        listOf(theme.secondary, Color(0xFF427BFF), theme.primary)
                     ),
                     startAngle = -90f,
                     sweepAngle = 360f * fraction,

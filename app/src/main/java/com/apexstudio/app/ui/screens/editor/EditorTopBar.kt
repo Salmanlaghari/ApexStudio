@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.components.BuildIdentity
 import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.theme.EditorPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 
 /** Branded editor header: identity is in the mark, while project details remain semantic. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -169,6 +170,7 @@ fun TopAppBarSection(
 /** Small original Compose vector mark; no raster or remote branding dependency. */
 @Composable
 private fun ApexStudioMark(modifier: Modifier = Modifier) {
+    val theme = ApexThemeTokens.current
     Canvas(modifier) {
         val w = size.width
         val h = size.height
@@ -180,11 +182,11 @@ private fun ApexStudioMark(modifier: Modifier = Modifier) {
             lineTo(w * .30f, h * .91f)
             lineTo(w * .30f, h * .47f)
         }
-        drawPath(ribbon, Brush.linearGradient(listOf(EditorPalette.NeonCyan, EditorPalette.NeonPurple,
+        drawPath(ribbon, Brush.linearGradient(listOf(theme.primary, theme.secondary,
             EditorPalette.NeonPink)), style = androidx.compose.ui.graphics.drawscope.Stroke(
                 width = w * .13f, cap = androidx.compose.ui.graphics.StrokeCap.Round,
                 join = androidx.compose.ui.graphics.StrokeJoin.Round))
-        drawLine(EditorPalette.NeonCyan,
+        drawLine(theme.primary,
             start = androidx.compose.ui.geometry.Offset(w * .08f, h * .21f),
             end = androidx.compose.ui.geometry.Offset(w * .08f, h * .79f),
             strokeWidth = w * .12f, cap = androidx.compose.ui.graphics.StrokeCap.Round)

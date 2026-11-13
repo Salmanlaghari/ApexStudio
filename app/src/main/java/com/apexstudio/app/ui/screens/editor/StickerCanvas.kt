@@ -70,7 +70,7 @@ import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.domain.model.STICKER_CROP_MIN_FRACTION
 import com.apexstudio.app.domain.model.StickerOverlay
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

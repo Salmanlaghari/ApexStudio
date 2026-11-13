@@ -424,6 +424,7 @@ private fun iconFor(preset: FxPreset): ImageVector = when (preset) {
     else -> Icons.Default.Layers
 }
 
+@Composable
 private fun colorsForFamily(family: String): List<Color> = when (family) {
     "PRISM" -> listOf(Color(0xFF00E5FF), Color(0xFFFF4FA3))
     "SPLIT_TONE" -> listOf(Color(0xFFFF9E65), Color(0xFF4AD3C8))

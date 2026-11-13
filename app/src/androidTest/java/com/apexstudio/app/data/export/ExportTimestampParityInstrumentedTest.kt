@@ -2387,29 +2387,29 @@ class ExportTimestampParityInstrumentedTest {
             assertTrue("The background-replacement encoder must produce a non-empty MP4", baked.isFile && baked.length() > 0L)
             assertTrue("The baked output must contain a video track", hasTrack(baked, "video/"))
 
-            val track = readVideoTrack(baked)
-            assertEquals("The baked video width must be retained", width, track.videoWidth)
-            assertEquals("The baked video height must be retained", height, track.videoHeight)
-            assertFalse("The baked video must contain encoded samples", track.presentationTimesUs.isEmpty())
-            assertTrue("The baked video track must report a positive duration", track.videoTrackDurationUs > 0L)
+            val bakedTrack = readVideoTrack(baked)
+            assertEquals("The baked video width must be retained", width, bakedTrack.videoWidth)
+            assertEquals("The baked video height must be retained", height, bakedTrack.videoHeight)
+            assertFalse("The baked video must contain encoded samples", bakedTrack.presentationTimesUs.isEmpty())
+            assertTrue("The baked video track must report a positive duration", bakedTrack.videoTrackDurationUs > 0L)
             assertEquals(
                 "Background replacement must retain every source frame",
                 sourceTrack.presentationTimesUs.size,
-                track.presentationTimesUs.size
+                bakedTrack.presentationTimesUs.size
             )
             assertTrue(
                 "The encoded video track duration must stay within 150 ms of the source",
-                abs(track.videoTrackDurationUs - sourceTrack.videoTrackDurationUs) <= 150_000L
+                abs(bakedTrack.videoTrackDurationUs - sourceTrack.videoTrackDurationUs) <= 150_000L
             )
             assertOutputTiming(
                 "Chroma Key background replacement",
-                track,
+                bakedTrack,
                 expectedDurationUs = sourceTrack.videoTrackDurationUs,
                 expectedSourceAnchorsUs = sourceTrack.presentationTimesUs,
                 requestedFps = 10
             )
 
-            val bakedDurationMs = (track.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)
+            val bakedDurationMs = (bakedTrack.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)
             val bakedClip = MediaClip(
                 id = "chroma-key-$id",
                 name = "Chroma Key encoded fixture",
@@ -2429,7 +2429,9 @@ class ExportTimestampParityInstrumentedTest {
                 aspectRatio = "16:9",
                 bitrateMbps = 8
             )
-            selectedEngine.startExport(Uri.fromFile(baked).toString(), exportConfig, selectedOutputName)
+            // Keep the selected route's endpoint explicit instead of relying only on the final input sample PTS.
+            val selectedConfig = exportConfig.copy(trimEndMs = bakedDurationMs)
+            selectedEngine.startExport(Uri.fromFile(baked).toString(), selectedConfig, selectedOutputName)
             val selectedResult = awaitTerminalState(selectedEngine)
             assertNull("Selected export of the baked chroma clip must complete: ${selectedResult.error}", selectedResult.error)
             selectedOutput = File(requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path))
@@ -2498,7 +2500,7 @@ class ExportTimestampParityInstrumentedTest {
                     label = label,
                     output = track,
                     expectedDurationUs = expectedDurationUs,
-                    expectedSourceAnchorsUs = emptyList(),
+                    expectedSourceAnchorsUs = bakedTrack.presentationTimesUs,
                     requestedFps = 30
                 )
                 assertTrue(

@@ -1515,19 +1515,13 @@ private fun EditorScreenContent(
                     }
                 },
                 onToggleKeyframe = {
-                    val selectedKeyframeClip = state.project?.clips?.firstOrNull {
-                        it.id == state.selectedClipId &&
-                            (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
-                    }
-                    val clip = selectedKeyframeClip ?: mainPreviewClip ?: selectedWorkspaceVideo(
-                        state.project, state.selectedClipId
-                    )
+                    val clip = selectedKeyframeVideo(state)
                     if (clip != null) {
                         vm.toggleKeyframeAtPlayheadFor(clip.id)
                     } else {
                         android.widget.Toast.makeText(
                             context,
-                            "Keyframe: select a clip first, then move the playhead",
+                            "Keyframe: select a visible video, photo, or overlay clip and place the playhead within it",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }

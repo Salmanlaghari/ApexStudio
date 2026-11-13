@@ -4,6 +4,9 @@ import android.graphics.RectF
 import android.net.Uri
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -310,5 +313,48 @@ class TimelineKeyframeEditingTest {
         assertEquals(20f, stickerPin.rotationKeyframes.single { it.timeMs == 500L }.value, 0f)
         assertEquals(0.5f, stickerPin.alphaKeyframes.single { it.timeMs == 500L }.value, 0f)
         assertEquals(700L, stickerPin.moveAnimationKeyframe(500L, 700L).animationKeyframeTimes().elementAt(1))
+    }
+
+    @Test
+    fun `image overlay keyframes survive typed and legacy timeline synchronization`() {
+        val legacyImage = MediaClip(
+            id = "image-overlay",
+            name = "Overlay photo",
+            uri = "file:///overlay.png",
+            durationMs = 1_000L,
+            type = ClipType.IMAGE,
+            trackIndex = 1,
+            timelineOffsetMs = 2_000L,
+            trimStartMs = 0L,
+            trimEndMs = 1_000L
+        )
+        val project = Project("p", "Project", 5_000L, clips = listOf(legacyImage))
+            .syncSharedTimeline(refreshLegacyClipFields = true)
+        val initialImage = project.timeline.tracks.filterIsInstance<OverlayTrack>()
+            .single().items.single() as OverlayItem.Image
+        assertEquals(legacyImage.id, initialImage.id)
+
+        val sharedImage = requireNotNull(project.sharedVideoClip(legacyImage.id))
+        assertEquals(ClipType.IMAGE, sharedImage.mediaType)
+        val animated = sharedImage.addAnimationKeyframe(2_500L).copy(id = "changed-id")
+        val updated = project.updateSharedVideoClip(legacyImage.id) { animated }
+        val updatedImage = updated.timeline.tracks.filterIsInstance<OverlayTrack>()
+            .single().items.single() as OverlayItem.Image
+
+        assertEquals("Typed overlay identity must remain stable", legacyImage.id, updatedImage.id)
+        assertEquals(legacyImage.id, updated.clips.single().id)
+        assertEquals(listOf(2_500L), updatedImage.transform.scaleKeyframes.map { it.timeMs })
+        assertEquals(listOf(2_500L), updated.clips.single().keyframes.keyframes.map { it.timeMs })
+
+        val resynchronized = updated.syncSharedTimeline()
+        val restoredImage = resynchronized.timeline.tracks.filterIsInstance<OverlayTrack>()
+            .single().items.single() as OverlayItem.Image
+        assertEquals(listOf(2_500L), restoredImage.transform.scaleKeyframes.map { it.timeMs })
+        val restoredSharedImage = requireNotNull(resynchronized.sharedVideoClip(legacyImage.id))
+        assertEquals(ClipType.IMAGE, restoredSharedImage.mediaType)
+        assertEquals(listOf(2_500L), restoredSharedImage.transform.scaleKeyframes.map { it.timeMs })
+        // Image overlays have no volume/pan fields; only visual channels must round-trip.
+        assertTrue(restoredSharedImage.volumeKeyframes.isEmpty())
+        assertTrue(restoredSharedImage.panKeyframes.isEmpty())
     }
 }

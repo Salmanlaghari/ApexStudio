@@ -141,6 +141,47 @@ class EditorReviewPlaybackRegressionTest {
         assertEquals(2_000L, thumbnail.sourceTimeMs)
     }
 
+    @Test fun selectedPhotoKeyframeActionUsesOnlyTheActivePhotoAtTheLivePlayhead() {
+        val photo = first.copy(id = "photo", uri = "file:///photo.jpg", type = ClipType.IMAGE,
+            trimStartMs = 0L, trimEndMs = 6_000L)
+        val project = Project("photo-project", "Photo", 6_000L, clips = listOf(photo))
+        val state = EditorState(project = project, selectedClipId = photo.id,
+            durationMs = 6_000L, playerPositionMs = 2_500L)
+
+        assertEquals(photo, selectedKeyframeVideo(state))
+        assertNull("An inactive playhead cannot keyframe the selected photo",
+            selectedKeyframeVideo(state.copy(playerPositionMs = 6_000L)))
+        assertNull("A hidden photo layer cannot be edited",
+            selectedKeyframeVideo(state.copy(hiddenVideoLayers = setOf(0))))
+        assertNull("No selection must never fall back to a preview clip",
+            selectedKeyframeVideo(state.copy(selectedClipId = null)))
+
+        val vm = EditorViewModel()
+        vm._state.value = state
+        vm._playerPosition.value = 2_500L
+        vm.toggleKeyframeAtPlayheadFor(photo.id)
+        assertEquals(listOf(2_500L), vm.state.value.project!!.clips.single().keyframes.keyframes.map { it.timeMs })
+
+        vm.toggleKeyframeAtPlayheadFor(photo.id)
+        assertTrue(vm.state.value.project!!.clips.single().keyframes.keyframes.isEmpty())
+    }
+
+    @Test fun selectedImageOverlayKeyframeRequiresThePlayheadInsideItsRange() {
+        val imageOverlay = first.copy(id = "image-overlay", type = ClipType.IMAGE, trackIndex = 1,
+            timelineOffsetMs = 2_000L, trimStartMs = 0L, trimEndMs = 1_000L)
+        val project = Project("overlay-photo-project", "Overlay photo", 6_000L, clips = listOf(imageOverlay))
+        val state = EditorState(project = project, selectedClipId = imageOverlay.id,
+            durationMs = 6_000L, playerPositionMs = 2_500L)
+
+        assertEquals(imageOverlay, selectedKeyframeVideo(state))
+        assertNull(selectedKeyframeVideo(state.copy(playerPositionMs = 1_999L)))
+        assertNull(selectedKeyframeVideo(state.copy(playerPositionMs = 3_000L)))
+        assertNull(selectedKeyframeVideo(state.copy(playerPositionMs = 2_500L, hiddenVideoLayers = setOf(1))))
+        val endingAtZero = imageOverlay.copy(id = "negative-image-overlay", timelineOffsetMs = -1_000L)
+        assertNull(selectedKeyframeVideo(state.copy(project = project.copy(clips = listOf(endingAtZero)),
+            selectedClipId = endingAtZero.id, playerPositionMs = 0L)))
+    }
+
     @Test fun keyframeControlsRequireActiveSelectedVideoAndRespectBoundariesAndHiddenTracks() {
         val state = EditorState(project = Project("p", "Project", 9_000L, clips = clips),
             selectedClipId = first.id, playerPositionMs = 4_999L)

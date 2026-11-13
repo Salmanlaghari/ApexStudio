@@ -474,6 +474,7 @@ fun ContextualBottomToolbar(
         // Photo clip selected → real photo-editing tools (PR F).
         ToolbarSelectionKind.PHOTO -> listOf(
             CtxToolItem("Crop", Icons.Default.Crop, ApexPalette.NeonCyan, onPhotoCrop),
+            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
             CtxToolItem("Split", Icons.Default.ContentCut, ApexPalette.NeonCyan, onSplit),
             CtxToolItem("Trim", Icons.Default.Edit, ApexPalette.NeonCyan, onTrim),
             CtxToolItem("Duplicate", Icons.Default.ContentCopy, ApexPalette.NeonCyan, onDuplicate),

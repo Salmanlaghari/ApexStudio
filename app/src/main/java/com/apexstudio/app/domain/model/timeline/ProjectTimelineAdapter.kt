@@ -529,7 +529,13 @@ internal fun Project.sharedVideoClip(clipId: String): VideoClip? =
     timeline.tracks.filterIsInstance<VideoTrack>().asSequence().flatMap { it.clips.asSequence() }
         .firstOrNull { it.id == clipId }
         ?: timeline.tracks.filterIsInstance<OverlayTrack>().asSequence().flatMap { it.items.asSequence() }
-            .filterIsInstance<OverlayItem.Video>().firstOrNull { it.id == clipId }?.toSharedVideoClip()
+            .firstOrNull { it.id == clipId }
+            ?.let { item ->
+                when (item) {
+                    is OverlayItem.Video -> item.toSharedVideoClip()
+                    is OverlayItem.Image -> item.toSharedVideoClip()
+                }
+            }
         ?: clips.firstOrNull { it.id == clipId }?.let { it.toSharedVideoClip(null, importLegacyAnimation = true) }
 
 internal fun Project.updateSharedVideoClip(clipId: String, transform: (VideoClip) -> VideoClip): Project {
@@ -553,7 +559,10 @@ internal fun Project.updateSharedVideoClip(clipId: String, transform: (VideoClip
         when (track) {
             is VideoTrack -> track.copy(clips = track.clips.map { if (it.id == clipId) updated else it })
             is OverlayTrack -> track.copy(items = track.items.map { item ->
-                if (item.id == clipId && item is OverlayItem.Video) updated.toOverlayVideo(item) else item
+                if (item.id != clipId) item else when (item) {
+                    is OverlayItem.Video -> updated.toOverlayVideo(item)
+                    is OverlayItem.Image -> updated.toOverlayImage(item)
+                }
             })
             else -> track
         }
@@ -852,6 +861,7 @@ private fun OverlayItem.Video.toSharedVideoClip(): VideoClip = VideoClip(
 private fun OverlayItem.Image.toSharedVideoClip(): VideoClip = VideoClip(
     id = id,
     uri = uri,
+    mediaType = ClipType.IMAGE,
     inMs = inMs,
     outMs = outMs,
     trimStartMs = trimStartMs,
@@ -943,6 +953,60 @@ private fun VideoClip.toOverlayVideo(existing: OverlayItem.Video?): OverlayItem.
     overlayFlipH = overlayFlipH, overlayFlipV = overlayFlipV, overlayVolume = overlayVolume,
     photoEdit = photoEdit, workspaceEffects = workspaceEffects, videoFitMode = videoFitMode
 ).let { converted -> existing?.let { converted.copy(id = it.id) } ?: converted }
+
+/** Image overlays are visual-only; VideoClip volume/pan channels have no image representation. */
+private fun VideoClip.toOverlayImage(existing: OverlayItem.Image): OverlayItem.Image = existing.copy(
+    id = existing.id,
+    uri = uri,
+    inMs = inMs,
+    outMs = outMs,
+    sourceName = sourceName,
+    sourceDurationMs = sourceDurationMs,
+    trimStartMs = trimStartMs,
+    trimEndMs = trimEndMs,
+    thumbnail = thumbnail,
+    groupId = groupId,
+    transform = transform,
+    opacity = opacity,
+    opacityKeyframes = opacityKeyframes,
+    filter = filter,
+    filterIntensity = filterIntensity,
+    filterKeyframes = filterKeyframes,
+    effectIntensity = effectIntensity,
+    effectIntensityKeyframes = effectIntensityKeyframes,
+    lutId = lutId,
+    lutIntensity = lutIntensity,
+    lutKeyframes = lutKeyframes,
+    saturation = saturation,
+    saturationKeyframes = saturationKeyframes,
+    mask = mask,
+    chromaKey = chromaKey,
+    blendMode = blendMode,
+    drawingLayer = drawingLayer,
+    denoiseEnabled = denoiseEnabled,
+    denoiseStrength = denoiseStrength,
+    backgroundReplace = backgroundReplace,
+    gpuFilterConfig = gpuFilterConfig,
+    projectVideoEffectId = projectVideoEffectId,
+    videoCrop = videoCrop,
+    faceCropTrack = faceCropTrack,
+    pipX = pipX,
+    pipY = pipY,
+    pipScale = pipScale,
+    pipRotationDeg = pipRotationDeg,
+    pipOpacity = pipOpacity,
+    overlayAspect = overlayAspect,
+    overlayBlend = overlayBlend,
+    overlayBorderWidth = overlayBorderWidth,
+    overlayBorderColor = overlayBorderColor,
+    overlayShadow = overlayShadow,
+    overlayFlipH = overlayFlipH,
+    overlayFlipV = overlayFlipV,
+    overlayVolume = overlayVolume,
+    photoEdit = photoEdit,
+    workspaceEffects = workspaceEffects,
+    videoFitMode = videoFitMode
+)
 
 private fun KeyframeTrack.toTypedVideoAnimation(): VideoClip {
     val ordered = keyframes.sortedBy(LegacyKeyframe::timeMs)

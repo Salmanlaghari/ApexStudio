@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.components
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -9,10 +10,13 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,6 +65,35 @@ class VideoTimelineHeaderTest {
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
     }
+
+    @Test
+    fun rulerLabelsDoNotOverlapAtMinimumZoom() {
+        val durationMs = 120_000L
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(MediaClip(
+                    id = "main", name = "Main", uri = "file:///main.mp4",
+                    durationMs = durationMs, trimEndMs = durationMs, type = ClipType.VIDEO
+                )),
+                totalDurationMs = durationMs,
+                playheadMs = 0L,
+                timelineZoom = TIMELINE_MIN_ZOOM,
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                scrollState = ScrollState(0),
+                modifier = Modifier.requiredSize(320.dp, 220.dp)
+            )
+        }
+        compose.waitForIdle()
+
+        val firstLabel = compose.onNodeWithTag("timeline-ruler-label-0", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val nextLabel = compose.onNodeWithTag("timeline-ruler-label-120", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue("Ruler labels overlap at minimum zoom: first=$firstLabel next=$nextLabel", nextLabel.left >= firstLabel.right)
+    }
+
     @Test
     fun multiSelectActionsAreReachableAtCompactWidthAndInvokeCallbacks() {
         var duplicated = false

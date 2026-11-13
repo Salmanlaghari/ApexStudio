@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.components
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TimelineViewportMathTest {
@@ -30,6 +31,22 @@ class TimelineViewportMathTest {
         )
 
         assertEquals(520, scroll)
+    }
+
+    @Test
+    fun `minimum zoom expands ruler label interval enough to avoid overlap`() {
+        val secondWidthDp = 54f * 0.01f
+        val labelWidthDp = 27f
+        val stepSeconds = timelineRulerLabelStepSeconds(secondWidthDp, labelWidthDp)
+
+        assertEquals(60, stepSeconds)
+        assertTrue(stepSeconds * secondWidthDp >= labelWidthDp + 2f)
+    }
+
+    @Test
+    fun `ruler keeps compact cadence at normal and frame-level zoom`() {
+        assertEquals(2, timelineRulerLabelStepSeconds(secondWidthDp = 54f, labelWidthDp = 27f))
+        assertEquals(1, timelineRulerLabelStepSeconds(secondWidthDp = 180f, labelWidthDp = 27f))
     }
 
     @Test

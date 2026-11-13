@@ -265,6 +265,8 @@ class ExportEngine(private val context: Context) {
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
             com.apexstudio.app.domain.model.KeyframeTrack(),
         val fxPreset: FxPreset? = null,
+        /** Requested on-demand profile ID; resolved against the installed pack digest before rendering. */
+        val downloadedFxEffectId: String? = null,
         /** Optional profile snapshot; the exporter revalidates it before use. */
         val downloadedFxEffect: com.apexstudio.app.data.fx.DownloadedFxEffect? = null,
         val fxIntensity: Float = 1f,
@@ -403,9 +405,7 @@ class ExportEngine(private val context: Context) {
         val trackVolume: Float? = null,
         val trackFadeInMs: Long = 0L,
         val trackFadeOutMs: Long = 0L,
-        val trackVolumeKeyframes: List<com.apexstudio.app.domain.model.VolumeKeyframe> = emptyList(),
-        /** Requested on-demand profile ID; resolved against its pinned pack digest before rendering. */
-        val downloadedFxEffectId: String? = null
+        val trackVolumeKeyframes: List<com.apexstudio.app.domain.model.VolumeKeyframe> = emptyList()
     )
 
     /**

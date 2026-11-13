@@ -19,6 +19,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.filter.FilterManifest
 import com.apexstudio.app.data.filter.LutFilterEngine
@@ -1804,9 +1805,37 @@ class ExportTimestampParityInstrumentedTest {
                 assertTrue("$name video duration ${track.videoTrackDurationUs}us differs from the planned ${plan.durationMs}ms",
                     track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - plan.durationMs * 1_000L) <= 150_000L)
             }
-            assertFalse("Baseline video-only export must have no audio", hasTrack(baseline, "audio/"))
-            outputs.drop(1).forEach {
-                assertTrue("Imported fixture is the sole AAC source", hasTrack(requireNotNull(it), "audio/mp4a-latm"))
+            val pcmWindowStart = 100 * PcmAudioExtractor.TARGET_RATE / 1_000
+            val pcmWindowEnd = 500 * PcmAudioExtractor.TARGET_RATE / 1_000
+            fun pcmWindowRms(samples: FloatArray): Double {
+                val end = minOf(pcmWindowEnd, samples.size)
+                if (end <= pcmWindowStart) return 0.0
+                val sumSquares = (pcmWindowStart until end).sumOf { index ->
+                    val sample = samples[index].toDouble()
+                    sample * sample
+                }
+                return kotlin.math.sqrt(sumSquares / (end - pcmWindowStart))
+            }
+            val baselineHasAudioTrack = hasTrack(baseline, "audio/")
+            val baselinePcm = PcmAudioExtractor.extractMono16k(context, Uri.fromFile(baseline))
+            val baselineRms = if (baselineHasAudioTrack) {
+                val samples = requireNotNull(baselinePcm) { "Baseline audio track must decode for silence verification" }
+                assertTrue("Baseline audio track must cover the 100-500ms window", samples.size >= pcmWindowEnd)
+                pcmWindowRms(samples)
+            } else {
+                assertNull("Audio-less baseline must not decode PCM", baselinePcm)
+                0.0
+            }
+            assertTrue("Baseline without imported music must be silent; 100-500ms RMS=$baselineRms", baselineRms < 0.005)
+            outputs.drop(1).forEachIndexed { index, output ->
+                val mixed = requireNotNull(output)
+                assertTrue("Imported fixture output $index must retain AAC", hasTrack(mixed, "audio/mp4a-latm"))
+                val mixedPcm = requireNotNull(PcmAudioExtractor.extractMono16k(context, Uri.fromFile(mixed))) {
+                    "Imported fixture output $index must contain decodable audio"
+                }
+                assertTrue("Imported fixture output $index must cover the 100-500ms window", mixedPcm.size >= pcmWindowEnd)
+                val mixedRms = pcmWindowRms(mixedPcm)
+                assertTrue("Imported 440Hz fixture output $index must be audible; 100-500ms RMS=$mixedRms", mixedRms > 0.01)
             }
             // Each caption is sampled only at its own common retained source phase; no output pixels
             // are observed while choosing anchors, and all three comparison files use the exact phase.

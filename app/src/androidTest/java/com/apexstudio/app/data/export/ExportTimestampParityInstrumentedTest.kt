@@ -2185,6 +2185,29 @@ class ExportTimestampParityInstrumentedTest {
 
             val sourceAnchors = sourceTrack.presentationTimesUs.filter { it < 1_800_000L }
             val tracks = outputs.map { readVideoTrack(requireNotNull(it)) }
+            val exclusiveEndUs = 1_800_000L
+            tracks.forEachIndexed { index, track ->
+                val label = names[index]
+                val details = "videoPtsUs=${track.presentationTimesUs} videoDurationUs=${track.videoTrackDurationUs} " +
+                    "movieDurationUs=${track.movieDurationUs} audioDurationUs=${track.audioDurationUs} tracks=${track.trackDurations}"
+                assertTrue("$label must contain encoded video samples; $details", track.presentationTimesUs.isNotEmpty())
+                assertTrue(
+                    "$label must keep every video sample before the exclusive ${exclusiveEndUs}us end; $details",
+                    track.presentationTimesUs.all { it < exclusiveEndUs }
+                )
+                assertTrue(
+                    "$label video track duration must remain within 150ms of the planned end; $details",
+                    track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - exclusiveEndUs) <= 150_000L
+                )
+                assertTrue(
+                    "$label movie duration must remain within 150ms of the planned end; $details",
+                    track.movieDurationUs?.let { abs(it - exclusiveEndUs) <= 150_000L } == true
+                )
+                assertTrue(
+                    "$label must retain its non-empty source audio track; $details",
+                    track.audioDurationUs?.let { it > 0L } == true
+                )
+            }
             fun commonSampleTime(baselineIndex: Int, adjustedIndex: Int): Long {
                 val common = commonRetainedFrameTimesUs(
                     referenceTimesUs = sourceAnchors,

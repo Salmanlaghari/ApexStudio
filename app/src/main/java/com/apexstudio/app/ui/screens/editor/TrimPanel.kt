@@ -908,8 +908,7 @@ internal fun TrimFilmstrip(
     trimEnd: Long,
     duration: Long,
     minimumTrimSpan: Long,
-    onTrimChange: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    onTrimChange: (Long, Long) -> Unit
 ) {
     val context = LocalContext.current
     val thumbCount = 8
@@ -948,7 +947,7 @@ internal fun TrimFilmstrip(
     }
 
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(ApexPalette.BgGlass)

@@ -1042,8 +1042,8 @@ class ExportTimestampParityInstrumentedTest {
                     complete = true
                     return output
                 } finally {
-                    withContext(NonCancellable) { passEngine.cancelProjectExportAndAwait() }
-                    if (!complete) destination.delete()
+                    val safeToDelete = withContext(NonCancellable) { passEngine.cancelAndCheckSafeToDelete() }
+                    if (!complete && safeToDelete) destination.delete()
                 }
             }
 
@@ -1555,17 +1555,25 @@ class ExportTimestampParityInstrumentedTest {
             verify("selected route", 0, 1)
             verify("whole-project route", 2, 3)
         } finally {
+            var safeToDeleteOutputs = true
             withContext(NonCancellable) {
-                try { closeEditor() } finally {
-                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                try {
+                    for (engine in engines) {
+                        val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                        safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+                    }
+                } finally {
+                    try { closeEditor() } finally {
                         instrumentation.runOnMainSync { engines.forEach { it.release() } }
                         try { DownloadedEffectRepository.refreshInstalled(context, PackManifestRepo.PackManifestFile()) }
                         finally {
-                            names.forEach { name ->
-                                File(outputDir, name).delete()
-                                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                            if (safeToDeleteOutputs) {
+                                names.forEach { name ->
+                                    File(outputDir, name).delete()
+                                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                                }
+                                root.deleteRecursively()
                             }
-                            root.deleteRecursively()
                         }
                     }
                 }
@@ -1880,13 +1888,21 @@ class ExportTimestampParityInstrumentedTest {
                 } finally { frames.forEach { it.recycle() } }
             }
         } finally {
+            var safeToDeleteOutputs = true
             withContext(NonCancellable) {
-                try { closeEditor() } finally {
-                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                try {
+                    for (engine in engines) {
+                        val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                        safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+                    }
+                } finally {
+                    try { closeEditor() } finally {
                         instrumentation.runOnMainSync { engines.forEach { it.release() } }
                         try { repository.deleteProject(id) } finally {
-                            names.forEach { File(outputDir, it).delete(); File(outputDir, it.removeSuffix(".mp4") + "_music.mp4").delete() }
-                            root.deleteRecursively()
+                            if (safeToDeleteOutputs) {
+                                names.forEach { File(outputDir, it).delete(); File(outputDir, it.removeSuffix(".mp4") + "_music.mp4").delete() }
+                                root.deleteRecursively()
+                            }
                         }
                     }
                 }
@@ -2099,20 +2115,24 @@ class ExportTimestampParityInstrumentedTest {
             assertPreviewParity("selected-clip export", requireNotNull(outputs[0]), requireNotNull(outputs[1]), commonSampleTime(0, 1))
             assertPreviewParity("whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3))
         } finally {
+            var safeToDeleteOutputs = true
+            for (engine in engines) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+            }
             httpFixture?.close()
             gallerySource?.recycle()
-            engines.forEach { engine ->
-                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
-            }
             instrumentation.runOnMainSync { engines.forEach { it.release() } }
-            names.forEach { name ->
-                File(outputDir, name).delete()
-                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            if (safeToDeleteOutputs) {
+                names.forEach { name ->
+                    File(outputDir, name).delete()
+                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                }
             }
             FilterManifest.resetForTesting()
             FilterThumbnailGenerator.invalidateDynamicCache()
             LutBitmapCache.clear()
-            root.deleteRecursively()
+            if (safeToDeleteOutputs) root.deleteRecursively()
         }
     }
 
@@ -2266,15 +2286,19 @@ class ExportTimestampParityInstrumentedTest {
                 "whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3)
             )
         } finally {
-            engines.forEach { engine ->
-                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
+            var safeToDeleteOutputs = true
+            for (engine in engines) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
             }
             instrumentation.runOnMainSync { engines.forEach { it.release() } }
-            names.forEach { name ->
-                File(outputDir, name).delete()
-                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            if (safeToDeleteOutputs) {
+                names.forEach { name ->
+                    File(outputDir, name).delete()
+                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                }
+                root.deleteRecursively()
             }
-            root.deleteRecursively()
         }
     }
 
@@ -2497,12 +2521,39 @@ class ExportTimestampParityInstrumentedTest {
                 val track = readVideoTrack(file)
                 assertEquals("$label output width", 1_280, track.videoWidth)
                 assertEquals("$label output height", 720, track.videoHeight)
+                val sourceAnchorsUs = bakedTrack.presentationTimesUs.sorted()
+                val outputAnchorsUs = track.presentationTimesUs.sorted()
+                val expectedInteriorAnchorsUs = sourceAnchorsUs.dropLast(2)
+                val anchorToleranceUs = 5_000L
                 assertOutputTiming(
                     label = label,
                     output = track,
                     expectedDurationUs = expectedDurationUs,
-                    expectedSourceAnchorsUs = bakedTrack.presentationTimesUs,
+                    // Media3 may omit the last two frame anchors at EOS; duration and exclusive end remain checked separately.
+                    expectedSourceAnchorsUs = expectedInteriorAnchorsUs,
                     requestedFps = 30
+                )
+                var nextOutputIndex = 0
+                expectedInteriorAnchorsUs.forEach { expectedUs ->
+                    while (nextOutputIndex < outputAnchorsUs.size &&
+                        outputAnchorsUs[nextOutputIndex] < expectedUs - anchorToleranceUs
+                    ) {
+                        nextOutputIndex++
+                    }
+                    assertTrue(
+                        "$label must retain each interior source PTS in order within ${anchorToleranceUs}us; " +
+                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}",
+                        nextOutputIndex < outputAnchorsUs.size &&
+                            abs(outputAnchorsUs[nextOutputIndex] - expectedUs) <= anchorToleranceUs
+                    )
+                    if (nextOutputIndex < outputAnchorsUs.size) nextOutputIndex++
+                }
+                assertTrue(
+                    "$label must not introduce output PTS unrelated to any source frame anchor within ${anchorToleranceUs}us; " +
+                        "output PTS=${track.presentationTimesUs}; source PTS=$sourceAnchorsUs",
+                    track.presentationTimesUs.all { outputUs ->
+                        sourceAnchorsUs.any { sourceUs -> abs(sourceUs - outputUs) <= anchorToleranceUs }
+                    }
                 )
                 assertTrue(
                     "$label must keep every encoded video PTS before the exclusive ${expectedDurationUs}us end; " +
@@ -2609,8 +2660,10 @@ class ExportTimestampParityInstrumentedTest {
             assertFinalExportPreservesChroma("Selected-clip export", requireNotNull(selectedOutput))
             assertFinalExportPreservesChroma("Whole-project export", requireNotNull(projectOutput))
         } finally {
-            listOf(selectedEngine, projectEngine).forEach { engine ->
-                try { engine.cancelExportAndAwait() } catch (_: Exception) { }
+            var safeToDeleteOutputs = true
+            for (engine in listOf(selectedEngine, projectEngine)) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
             }
             instrumentation.runOnMainSync {
                 selectedEngine.release()
@@ -2620,23 +2673,32 @@ class ExportTimestampParityInstrumentedTest {
             bakedFrame?.recycle()
             sourceBitmap.recycle()
             wallpaperBitmap.recycle()
-            sourceFile?.delete()
-            bakedFile?.delete()
-            selectedOutput?.delete()
-            projectOutput?.delete()
-            outputFile.delete()
-            wallpaperFile.delete()
-            File(exportOutputDir, selectedOutputName).delete()
-            File(exportOutputDir, projectOutputName).delete()
-            File(exportOutputDir, selectedOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
-            File(exportOutputDir, projectOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
-            root.deleteRecursively()
+            if (safeToDeleteOutputs) {
+                sourceFile?.delete()
+                bakedFile?.delete()
+                selectedOutput?.delete()
+                projectOutput?.delete()
+                outputFile.delete()
+                wallpaperFile.delete()
+                File(exportOutputDir, selectedOutputName).delete()
+                File(exportOutputDir, projectOutputName).delete()
+                File(exportOutputDir, selectedOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
+                File(exportOutputDir, projectOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
+                root.deleteRecursively()
+            }
         }
     }
 
     private suspend fun awaitTerminalState(engine: ExportEngine): ExportEngine.ExportProgressState =
         withTimeout(180_000L) {
             engine.exportState.first { it.error != null || it.outputUri != null }
+        }
+
+    private suspend fun ExportEngine.cancelAndCheckSafeToDelete(): Boolean =
+        try {
+            cancelExportAndAwait()
+        } catch (_: Exception) {
+            false
         }
 
     private fun assertOutputTiming(

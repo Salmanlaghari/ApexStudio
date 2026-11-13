@@ -98,6 +98,19 @@ class DownloadedFxCatalogAuditTest {
         assertEquals("The 30 downloadable profiles must not collapse to a smaller set of shader outputs", effects.size, shaderSources.size)
     }
 
+    @Test
+    fun `built-in FX catalog remains above thirty and every preset resolves to an app-owned shader`() {
+        val presets = FxPreset.values().toList()
+        assertTrue("At least 30 built-in effects must remain available", presets.size >= 30)
+        assertEquals("Built-in effect IDs must be unique", presets.size, presets.map { it.id }.toSet().size)
+
+        for (preset in presets) {
+            val shader = FxGlEffect.shaderSourceFor(preset)
+            assertTrue("${preset.id} must have a fragment entry point", shader.contains("void main()"))
+            assertTrue("${preset.id} must sample the source frame", shader.contains("texture2D(uTexSampler"))
+        }
+    }
+
     private fun findRepoRoot(): File {
         var current: File? = File(System.getProperty("user.dir") ?: ".").canonicalFile
         repeat(8) {

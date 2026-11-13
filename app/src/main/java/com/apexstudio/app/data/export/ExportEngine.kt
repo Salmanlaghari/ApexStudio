@@ -265,7 +265,9 @@ class ExportEngine(private val context: Context) {
         val keyframes: com.apexstudio.app.domain.model.KeyframeTrack =
             com.apexstudio.app.domain.model.KeyframeTrack(),
         val fxPreset: FxPreset? = null,
-        /** Verified allowlisted profile for an on-demand FX pack. */
+        /** Requested on-demand profile ID; resolved against the installed pack digest before rendering. */
+        val downloadedFxEffectId: String? = null,
+        /** Optional profile snapshot; the exporter revalidates it before use. */
         val downloadedFxEffect: com.apexstudio.app.data.fx.DownloadedFxEffect? = null,
         val fxIntensity: Float = 1f,
         val fxSpeed: Float = 1f,
@@ -446,6 +448,11 @@ class ExportEngine(private val context: Context) {
                     diagnostics.phase(ExportProgressStage.PREPARING.diagnosticName)
                     diagnostics.stage("project_preparation_started", "clips=${clips.size}")
                     publishProjectProgress(run, 0.01f)
+                    val verifiedDownloadedFxEffect =
+                        com.apexstudio.app.data.fx.DownloadedEffectRepository.resolveVerifiedForRender(
+                            config.downloadedFxEffectId,
+                            config.downloadedFxEffect
+                        )
                     val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
                     if (!outputDir.exists() && !outputDir.mkdirs()) {
                         throw IllegalStateException("Cannot create project export directory")
@@ -581,7 +588,7 @@ class ExportEngine(private val context: Context) {
                             if (config.fxIntensity > 0f) {
                                 val fxEffect = config.fxPreset?.let {
                                     com.apexstudio.app.data.fx.FxGlEffect(it, config.fxIntensity, config.fxSpeed)
-                                } ?: config.downloadedFxEffect?.let {
+                                } ?: verifiedDownloadedFxEffect?.let {
                                     com.apexstudio.app.data.fx.FxGlEffect(it, config.fxIntensity, config.fxSpeed)
                                 }
                                 if (fxEffect != null) add(fxEffect)
@@ -1071,6 +1078,11 @@ class ExportEngine(private val context: Context) {
                     diagnostics.stage("source_video_format_unavailable", "failure=${failure.javaClass.simpleName}")
                 }
                 currentCoroutineContext().ensureActive()
+                val verifiedDownloadedFxEffect =
+                    com.apexstudio.app.data.fx.DownloadedEffectRepository.resolveVerifiedForRender(
+                        config.downloadedFxEffectId,
+                        config.downloadedFxEffect
+                    )
                 require(config.projectVideoEffectId == null ||
                     com.apexstudio.app.data.template.ProjectVideoPresets.effect(config.projectVideoEffectId) != null) {
                     "Unknown project-video effect; export stopped rather than dropping the edit."
@@ -1261,7 +1273,7 @@ class ExportEngine(private val context: Context) {
                 if (config.fxIntensity > 0f) {
                     val fxEffect = config.fxPreset?.let {
                         FxGlEffect(it, config.fxIntensity, config.fxSpeed)
-                    } ?: config.downloadedFxEffect?.let {
+                    } ?: verifiedDownloadedFxEffect?.let {
                         FxGlEffect(it, config.fxIntensity, config.fxSpeed)
                     }
                     fxEffect?.let(videoEffects::add)

@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.update
  */
 fun EditorViewModel.applyTransmissionTemplate(id: String?) {
     if (id == null) {
+        activeFxSelectionRequest++
         _state.update {
             it.copy(
                 activeFilterId = null,
@@ -73,6 +74,7 @@ internal fun EditorViewModel.applyTransmissionTemplateInternal(
     template: TransmissionTemplate,
     persistTemplateMetadata: Boolean = true
 ) {
+    activeFxSelectionRequest++
     val targetSpeed = if (template.isSlowMotion && template.playbackSpeed > 0f) template.playbackSpeed else 1.0f
     _state.update {
         it.copy(

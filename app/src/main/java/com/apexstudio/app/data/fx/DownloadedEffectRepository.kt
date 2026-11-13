@@ -85,6 +85,25 @@ object DownloadedEffectRepository {
         effect
     }
 
+    /** Resolve the requested FX only after rechecking its installed pack digest. */
+    internal suspend fun resolveVerifiedForRender(
+        requestedId: String?,
+        suppliedEffect: DownloadedFxEffect?
+    ): DownloadedFxEffect? {
+        val id = requestedId ?: suppliedEffect?.id ?: return null
+        if (requestedId != null && suppliedEffect != null && requestedId != suppliedEffect.id) {
+            throw IllegalStateException("The selected downloaded FX could not be verified; choose it again.")
+        }
+        val verified = findVerified(id)
+            ?: throw IllegalStateException(
+                "The selected downloaded FX pack could not be verified. Re-download it or choose a built-in effect."
+            )
+        if (suppliedEffect != null && suppliedEffect != verified) {
+            throw IllegalStateException("The selected downloaded FX changed after selection; choose it again.")
+        }
+        return verified
+    }
+
     fun hasPack(packId: String): Boolean =
         _effects.value.any { it.id.startsWith("dl_${packId}_") }
 

@@ -54,7 +54,7 @@ internal fun buildProjectExportConfig(
     } else emptyMap(),
     adjustments = state.adjustments,
     fxPreset = FxPreset.byId(state.activeFxId),
-    downloadedFxEffect = com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId),
+    downloadedFxEffectId = state.activeFxId?.takeIf { FxPreset.byId(it) == null },
     fxIntensity = state.fxIntensity,
     fxSpeed = state.fxSpeed,
     pitchSemitones = audio.pitchSemitones,
@@ -91,7 +91,7 @@ internal fun wholeProjectExportUnsupportedReason(
     ?: if (state.activeFilterId != null && !activeFilterMirrorsViralHdr && filterPreset == null) {
         "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
     } else if (state.activeFxId != null && FxPreset.byId(state.activeFxId) == null &&
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(state.activeFxId) == null
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.value.none { it.id == state.activeFxId }
     ) {
         "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
     } else {

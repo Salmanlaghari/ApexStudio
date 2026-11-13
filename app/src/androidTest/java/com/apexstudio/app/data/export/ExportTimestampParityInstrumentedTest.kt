@@ -1462,8 +1462,11 @@ class ExportTimestampParityInstrumentedTest {
             ))
             val first = openEditor()
             withTimeout(20_000L) { first.state.first { it.project?.id == id && it.project?.clips?.singleOrNull()?.id == clip.id } }
+            instrumentation.runOnMainSync { first.selectFx(effect.id, intensity = 0.73f) }
+            withTimeout(20_000L) {
+                first.state.first { it.activeFxId == effectId && it.fxIntensity == 0.73f }
+            }
             instrumentation.runOnMainSync {
-                first.selectFx(effect.id, intensity = 0.73f)
                 first.setFxSpeed(1.8f)
                 first.flushProject()
             }
@@ -1488,12 +1491,16 @@ class ExportTimestampParityInstrumentedTest {
                 ExportSettings(resolution = "720p", frameRate = 30, aspectRatio = "16:9", bitrateMbps = 0)
             )
             assertNull(config.fxPreset)
-            assertEquals(effectId, config.downloadedFxEffect?.id)
+            assertEquals(effectId, config.downloadedFxEffectId)
+            assertNull(config.downloadedFxEffect)
             assertEquals(0.73f, config.fxIntensity, 0f)
             assertEquals(1.8f, config.fxSpeed, 0f)
             closeEditor()
 
-            val baseline = config.copy(fxPreset = null, downloadedFxEffect = null, fxIntensity = 0f, fxSpeed = 1f)
+            val baseline = config.copy(
+                fxPreset = null, downloadedFxEffectId = null, downloadedFxEffect = null,
+                fxIntensity = 0f, fxSpeed = 1f
+            )
             // One engine per pass: terminal publication can precede a previous writer's cleanup.
             outputs[0] = exportPass(0, baseline.copy(trimEndMs = 1_800L), null)
             outputs[1] = exportPass(1, config.copy(trimEndMs = 1_800L), null)

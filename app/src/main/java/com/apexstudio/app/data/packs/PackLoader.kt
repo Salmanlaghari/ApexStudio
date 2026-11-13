@@ -19,11 +19,15 @@ import kotlinx.serialization.json.jsonPrimitive
  * (generated originally for ApexStudio Pro — see `design/pro/packs/`).
  * All packs are parsed leniently (ignoreUnknownKeys) so a malformed pack
  * never crashes the app — it is simply skipped.
+ * The old effects JSON is metadata only: its GLSL files are helper snippets,
+ * not complete fragment programs, and are not part of the runtime FX catalog.
+ * Runtime FX use app-owned [com.apexstudio.app.data.fx.FxPreset] shaders or
+ * numeric profiles verified by [com.apexstudio.app.data.fx.DownloadedEffectRepository].
  *
  * Packs:
  * - filters (52 parametric) -> [PackFilter] -> converted to [GpuColorProfile]
  * - transitions (30)         -> [PackTransition]
- * - effects (25)             -> [PackEffect]
+ * - legacy effects (25 metadata records) -> [PackEffect] (not runtime FX)
  * - edit-presets (20)        -> [PackPreset] (generic id/name/params)
  * - adjust-presets (30)      -> [PackPreset]
  * - image-tools              -> [ImageToolsPack]
@@ -86,6 +90,7 @@ object PackLoader {
 
     // ---------- Effects pack ----------
 
+    /** Legacy pack metadata only; never execute `glsl_file` from downloaded content. */
     @Serializable
     data class PackEffect(
         val id: String,

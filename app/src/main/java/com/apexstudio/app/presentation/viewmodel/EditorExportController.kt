@@ -147,9 +147,10 @@ fun EditorViewModel.startExport(
             return
         }
     }
+    // Fast UI preflight only; ExportEngine rechecks the pinned digest on IO before rendering.
     if (s.activeFxId != null &&
         com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId) == null &&
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId) == null
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.value.none { it.id == s.activeFxId }
     ) {
         _export.update { it.copy(error = "The selected FX is unavailable. Re-download the effect pack or choose another effect.", outputUri = null, warning = null) }
         return
@@ -181,7 +182,9 @@ fun EditorViewModel.startExport(
         }
     }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
-    val downloadedFxEffect = com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId)
+    val downloadedFxEffectId = s.activeFxId?.takeIf {
+        com.apexstudio.app.data.fx.FxPreset.byId(it) == null
+    }
     val speed = selected?.speedMultiplier ?: s.playbackSpeed
     val stickers = (s.project?.stickers ?: emptyList()) + (selected?.stickers ?: emptyList())
     val audioSt = _audio.value
@@ -220,7 +223,7 @@ fun EditorViewModel.startExport(
             chromaKeySettings = selected?.chromaKeySettings,
             faceCropConfig = com.apexstudio.app.data.effect.FaceCropRenderConfig.forMainVideo(selected),
             fxPreset = fxPreset,
-            downloadedFxEffect = downloadedFxEffect,
+            downloadedFxEffectId = downloadedFxEffectId,
             fxIntensity = s.fxIntensity,
             fxSpeed = s.fxSpeed,
             // AR Face parity: bake the active AR card's graded look +
@@ -601,7 +604,9 @@ internal fun buildPhotoExportConfig(
         mask = clip.mask,
         keyframes = clip.keyframes,
         fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId),
-        downloadedFxEffect = com.apexstudio.app.data.fx.DownloadedEffectRepository.find(s.activeFxId),
+        downloadedFxEffectId = s.activeFxId?.takeIf {
+            com.apexstudio.app.data.fx.FxPreset.byId(it) == null
+        },
         fxIntensity = s.fxIntensity,
         fxSpeed = s.fxSpeed,
         // AR Face parity on the photo path too.
@@ -682,8 +687,10 @@ private fun colorStudioTimelineExportBlocker(
     if (snapshot.activeFilterId != null && filterPreset == null) {
         return "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
     }
-    if (snapshot.activeFxId != null && com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null &&
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(snapshot.activeFxId) == null
+    // This cached membership check only drives the UI blocker; ExportEngine re-verifies the pack digest.
+    if (snapshot.activeFxId != null &&
+        com.apexstudio.app.data.fx.FxPreset.byId(snapshot.activeFxId) == null &&
+        com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.value.none { it.id == snapshot.activeFxId }
     ) {
         return "The selected global FX is unavailable for export. Reapply the effect or use selected-clip export."
     }

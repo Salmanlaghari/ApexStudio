@@ -932,6 +932,7 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
 fun EditorViewModel.undo() = viewModelScope.launch {
     val current = undoSnapshot() ?: return@launch
     if (undoStack.isEmpty()) return@launch
+    activeFxSelectionRequest++
     redoStack.addLast(current)
     val prev = undoStack.removeLast()
     restoreUndoSnapshot(prev)
@@ -941,6 +942,7 @@ fun EditorViewModel.undo() = viewModelScope.launch {
 fun EditorViewModel.redo() = viewModelScope.launch {
     val current = undoSnapshot() ?: return@launch
     if (redoStack.isEmpty()) return@launch
+    activeFxSelectionRequest++
     undoStack.addLast(current)
     val next = redoStack.removeLast()
     restoreUndoSnapshot(next)

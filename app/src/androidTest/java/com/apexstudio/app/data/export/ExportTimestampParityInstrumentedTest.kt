@@ -2279,7 +2279,7 @@ class ExportTimestampParityInstrumentedTest {
     }
 
     @Test
-    fun chromaKeyWallpaperReplacementProducesDecodedPixelsInBakedMp4() = runBlocking {
+    fun bakedChromaWallpaperReplacementSurvivesSelectedAndProjectExports() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val baseContext = instrumentation.targetContext
         val id = UUID.randomUUID().toString()
@@ -2307,8 +2307,15 @@ class ExportTimestampParityInstrumentedTest {
         }
         val wallpaperFile = File(context.cacheDir, "wallpaper-$id.png")
         val outputFile = File(context.cacheDir, "baked-$id.mp4")
+        val exportOutputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val selectedOutputName = "chroma-selected-$id.mp4"
+        val projectOutputName = "chroma-project-$id.mp4"
+        val selectedEngine = ExportEngine(context)
+        val projectEngine = ExportEngine(context)
         var sourceFile: File? = null
         var bakedFile: File? = null
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
         var sourceFrame: Bitmap? = null
         var bakedFrame: Bitmap? = null
 
@@ -2330,6 +2337,7 @@ class ExportTimestampParityInstrumentedTest {
             sourceFile = source
             val sourceUri = Uri.fromFile(source).toString()
             val sourceTrack = readVideoTrack(source)
+            assertFalse("The deterministic still-video fixture must not contain audio", hasTrack(source, "audio/"))
             assertTrue(
                 "The source fixture should retain approximately one second of video",
                 abs(sourceTrack.videoTrackDurationUs - 1_000_000L) <= 200_000L
@@ -2415,6 +2423,38 @@ class ExportTimestampParityInstrumentedTest {
                 projectCompositionUnsupportedReason(listOf(bakedClip), ExportEngine.ExportConfig())
             )
 
+            val exportConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                aspectRatio = "16:9",
+                bitrateMbps = 8
+            )
+            selectedEngine.startExport(Uri.fromFile(baked).toString(), exportConfig, selectedOutputName)
+            val selectedResult = awaitTerminalState(selectedEngine)
+            assertNull("Selected export of the baked chroma clip must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path))
+            assertTrue("Selected export must contain an encoded MP4", selectedOutput!!.isFile && selectedOutput!!.length() > 0L)
+            assertEquals(
+                "Selected export must publish to its requested destination",
+                File(exportOutputDir, selectedOutputName).canonicalFile,
+                selectedOutput!!.canonicalFile
+            )
+
+            projectEngine.startProjectExport(
+                clips = listOf(bakedClip),
+                config = exportConfig,
+                outputFileName = projectOutputName
+            )
+            val projectResult = awaitTerminalState(projectEngine)
+            assertNull("Whole-project export of the baked chroma clip must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(requireNotNull(projectResult.outputUri)).path))
+            assertTrue("Whole-project export must contain an encoded MP4", projectOutput!!.isFile && projectOutput!!.length() > 0L)
+            assertEquals(
+                "Whole-project export must publish to its requested destination",
+                File(exportOutputDir, projectOutputName).canonicalFile,
+                projectOutput!!.canonicalFile
+            )
+
             fun decodeFirstFrame(file: File): Bitmap {
                 val retriever = MediaMetadataRetriever()
                 return try {
@@ -2448,6 +2488,83 @@ class ExportTimestampParityInstrumentedTest {
                 "The encoded source must retain a recognizably red foreground region",
                 rgbL1Distance(original.getPixel(width * 5 / 6, height / 2), Color.RED) < 80
             )
+
+            fun assertFinalExportPreservesChroma(label: String, file: File) {
+                val expectedDurationUs = bakedDurationMs * 1_000L
+                val track = readVideoTrack(file)
+                assertEquals("$label output width", 1_280, track.videoWidth)
+                assertEquals("$label output height", 720, track.videoHeight)
+                assertOutputTiming(
+                    label = label,
+                    output = track,
+                    expectedDurationUs = expectedDurationUs,
+                    expectedSourceAnchorsUs = emptyList(),
+                    requestedFps = 30
+                )
+                assertTrue(
+                    "$label must keep every encoded video PTS before the exclusive ${expectedDurationUs}us end; " +
+                        "video PTS=${track.presentationTimesUs}",
+                    track.presentationTimesUs.all { it < expectedDurationUs }
+                )
+                assertFalse("$label must not introduce audio absent from the deterministic video-only fixture", hasTrack(file, "audio/"))
+
+                val rendered = decodeFirstFrame(file)
+                try {
+                    assertEquals("$label decoded frame width", 1_280, rendered.width)
+                    assertEquals("$label decoded frame height", 720, rendered.height)
+                    val scaledSource = Bitmap.createScaledBitmap(original, rendered.width, rendered.height, true)
+                    try {
+                        val rows = rendered.height * 4 / 45 until rendered.height - rendered.height * 4 / 45
+                        val keyColumns = rendered.width * 3 / 40 until rendered.width * 2 / 3 - rendered.width / 20
+                        var changedKeyPixels = 0
+                        var wallpaperMatchedPixels = 0
+                        for (y in rows) {
+                            for (x in keyColumns) {
+                                val before = scaledSource.getPixel(x, y)
+                                val after = rendered.getPixel(x, y)
+                                if (rgbL1Distance(before, after) >= 80) changedKeyPixels++
+                                if (rgbL1Distance(after, Color.BLUE) <= 80) wallpaperMatchedPixels++
+                            }
+                        }
+                        val keyRegionPixels = rows.count() * keyColumns.count()
+                        val sourceReferenceKeyPixels = (height - 32).toLong() * (width * 2 / 3 - 40)
+                        val scaledMinimumChangedPixels =
+                            ((keyRegionPixels.toLong() * 500L + sourceReferenceKeyPixels - 1L) /
+                                sourceReferenceKeyPixels).toInt()
+                        val minimumChangedPixels = maxOf(500, scaledMinimumChangedPixels)
+                        assertTrue(
+                            "$label changed $changedKeyPixels key-region pixels; require >=$minimumChangedPixels " +
+                                "at RGB L1 distance >=80 (resolution-scaled from the 500-pixel source gate)",
+                            changedKeyPixels >= minimumChangedPixels
+                        )
+                        assertTrue(
+                            "$label wallpaper region matched blue in $wallpaperMatchedPixels/$keyRegionPixels pixels",
+                            wallpaperMatchedPixels >= keyRegionPixels * 3 / 4
+                        )
+
+                        val foregroundColumns = rendered.width * 2 / 3 + rendered.width / 20 until
+                            rendered.width - rendered.width * 3 / 40
+                        var retainedForegroundPixels = 0
+                        for (y in rows) {
+                            for (x in foregroundColumns) {
+                                if (rgbL1Distance(rendered.getPixel(x, y), scaledSource.getPixel(x, y)) <= 60) {
+                                    retainedForegroundPixels++
+                                }
+                            }
+                        }
+                        val foregroundRegionPixels = rows.count() * foregroundColumns.count()
+                        assertTrue(
+                            "$label retained only $retainedForegroundPixels/$foregroundRegionPixels foreground pixels " +
+                                "within RGB L1 distance 60; require >=90%",
+                            retainedForegroundPixels >= foregroundRegionPixels * 9 / 10
+                        )
+                    } finally {
+                        if (scaledSource !== original) scaledSource.recycle()
+                    }
+                } finally {
+                    rendered.recycle()
+                }
+            }
 
             val rows = 16 until height - 16
             val keyColumns = 24 until width * 2 / 3 - 16
@@ -2485,15 +2602,31 @@ class ExportTimestampParityInstrumentedTest {
                 "At least 90% of the foreground must remain within RGB L1 distance 60 of the source; retained=$retainedForegroundPixels/$foregroundRegionPixels",
                 retainedForegroundPixels >= foregroundRegionPixels * 9 / 10
             )
+
+            assertFinalExportPreservesChroma("Selected-clip export", requireNotNull(selectedOutput))
+            assertFinalExportPreservesChroma("Whole-project export", requireNotNull(projectOutput))
         } finally {
+            listOf(selectedEngine, projectEngine).forEach { engine ->
+                try { engine.cancelExportAndAwait() } catch (_: Exception) { }
+            }
+            instrumentation.runOnMainSync {
+                selectedEngine.release()
+                projectEngine.release()
+            }
             sourceFrame?.recycle()
             bakedFrame?.recycle()
             sourceBitmap.recycle()
             wallpaperBitmap.recycle()
             sourceFile?.delete()
             bakedFile?.delete()
+            selectedOutput?.delete()
+            projectOutput?.delete()
             outputFile.delete()
             wallpaperFile.delete()
+            File(exportOutputDir, selectedOutputName).delete()
+            File(exportOutputDir, projectOutputName).delete()
+            File(exportOutputDir, selectedOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
+            File(exportOutputDir, projectOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
             root.deleteRecursively()
         }
     }

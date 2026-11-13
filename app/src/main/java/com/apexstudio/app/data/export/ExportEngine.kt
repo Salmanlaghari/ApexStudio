@@ -2404,14 +2404,22 @@ class ExportEngine(private val context: Context) {
         _exportState.value = ExportProgressState()
     }
 
-    /** Dedicated comparison engines must stop and drain their writer before deleting owned outputs. */
-    internal suspend fun cancelProjectExportAndAwait() {
+    /** Dedicated comparison engines must stop and drain active writers before deleting owned outputs. */
+    internal suspend fun cancelExportAndAwait() {
         withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
-            val writer = synchronized(projectRunLock) { projectExportJob }
+            val writers = listOfNotNull(
+                progressJob,
+                exportPreparationJob,
+                postMixJob,
+                synchronized(projectRunLock) { projectExportJob }
+            ).distinct()
             cancelExport()
-            writer?.join()
+            writers.forEach { it.join() }
         }
     }
+
+    /** Backwards-compatible name for existing project-export comparison tests. */
+    internal suspend fun cancelProjectExportAndAwait() = cancelExportAndAwait()
 
     fun release() {
         cancelExport()

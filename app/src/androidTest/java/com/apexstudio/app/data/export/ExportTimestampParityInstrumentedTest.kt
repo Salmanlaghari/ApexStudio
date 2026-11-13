@@ -1679,10 +1679,11 @@ class ExportTimestampParityInstrumentedTest {
 
             val catalogAsset = ShortsMusicRepository.loadCatalog(context).first { it.id == template.musicAssetId }
             source.copyTo(music, overwrite = true)
+            // Expected metadata comes from the original fixture, independently of the owned copy.
             val musicAsset = catalogAsset.copy(
                 fileName = music.name,
-                bytes = music.length(),
-                sha256 = sha256(music),
+                bytes = source.length(),
+                sha256 = sha256(source),
                 durationMs = requireNotNull(readVideoTrack(music).audioDurationUs) / 1_000L,
                 attribution = "${catalogAsset.artist} — ${catalogAsset.trackTitle} (offline AAC fixture)",
                 changes = "Project mix trims this offline AAC fixture to the retained 1.8 s video duration."

@@ -45,6 +45,9 @@ internal fun workspacePreviewState(
     return saved.copy(project = project.copy(clips = clips, durationMs = duration), durationMs = duration)
 }
 
+internal const val WORKSPACE_STALE_TARGET_REASON =
+    "This clip changed or is no longer selected. Close and reopen the workspace."
+
 /** Mirrors the commit boundary so the UI explains an invalid target before Apply is tapped. */
 internal fun workspaceApplyTargetReason(
     projectId: String,
@@ -59,7 +62,7 @@ internal fun workspaceApplyTargetReason(
         originalClip.uri.isNotBlank()
     return when {
         !isMainVideo -> "Only a main-track video with a valid source can receive these effects."
-        !targetCurrent -> "This clip changed or is no longer selected. Close and reopen the workspace."
+        !targetCurrent -> WORKSPACE_STALE_TARGET_REASON
         else -> null
     }
 }

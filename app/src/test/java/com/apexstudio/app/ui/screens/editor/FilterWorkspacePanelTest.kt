@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -128,12 +129,117 @@ class FilterWorkspacePanelTest {
 
     @Test fun `selection changes disable stale drafts instead of editing another clip`() {
         val vm = editor(); val before = vm.state.value.project
-        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}) }
+        var recoveries = 0
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}, onReopen = { recoveries++ }) }
         choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
         compose.runOnIdle { vm._state.value = vm.state.value.copy(selectedClipId = "another") }
         compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
         compose.onNodeWithText("This clip changed", substring = true).assertExists()
-        compose.runOnIdle { assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty()) }
+        compose.onNodeWithText("Close Filters").assertIsDisplayed()
+        compose.onNodeWithTag("filter-reopen").assertIsDisplayed().assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(1, recoveries)
+            assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun `changed saved snapshot offers restart without applying the stale draft`() {
+        val vm = editor()
+        val changed = clip.copy(trimEndMs = 3500L)
+        val updatedProject = requireNotNull(vm.state.value.project).copy(clips = listOf(changed))
+        var recoveries = 0
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}, onReopen = { recoveries++ }) }
+        choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(project = updatedProject) }
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        compose.onNodeWithText("This clip changed", substring = true).assertExists()
+        compose.onNodeWithText("Restart Filters").assertIsDisplayed()
+        compose.onNodeWithTag("filter-reopen").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(1, recoveries)
+            assertEquals(updatedProject, vm.state.value.project); assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun `valid targets do not show recovery even with an unsaved preview`() {
+        val vm = editor()
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}, onReopen = {}) }
+        compose.onNodeWithTag("filter-reopen").assertDoesNotExist()
+        choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.onNodeWithTag("filter-apply").assertIsEnabled()
+        compose.onNodeWithTag("filter-reopen").assertDoesNotExist()
+    }
+
+    @Test fun `invalid sources never offer stale-target restart`() {
+        val invalid = clip.copy(uri = "")
+        val vm = editor(invalid)
+        compose.setContent { FilterWorkspacePanel("p", invalid, vm, false, {}, {}, {}, {}, onReopen = {}) }
+        compose.onNodeWithText("Only a main-track video", substring = true).assertExists()
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("filter-reopen").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "w700dp-h900dp")
+    fun `wide workspace keeps explicit stale recovery visible`() {
+        val vm = editor(); val before = vm.state.value.project
+        var recoveries = 0
+        compose.setContent { FilterWorkspacePanel("p", clip, vm, false, {}, {}, {}, {}, onReopen = { recoveries++ }) }
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(selectedClipId = null) }
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("filter-reopen").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(1, recoveries)
+            assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty())
+        }
+    }
+
+    @Test fun `host restart discards old draft and applies only a fresh selected-video draft`() {
+        val other = clip.copy(id = "other", name = "Other", uri = "file:///other.mp4")
+        val vm = editor()
+        vm._state.value = vm.state.value.copy(project = requireNotNull(vm.state.value.project)
+            .copy(clips = listOf(clip, other), durationMs = 6000L))
+        val before = vm.state.value.project
+        val captured = mutableStateOf<MediaClip?>(clip)
+        var preview: MediaClip? = null
+        val dismiss: () -> Unit = { captured.value = null; preview = null }
+        compose.setContent {
+            captured.value?.let { source ->
+                ClipEffectWorkspaceHost(
+                    filters = true, projectId = "p", originalClip = source, vm = vm, isPlaying = false,
+                    onPreviewClip = { preview = it }, onSeekSource = {}, onTogglePlayback = {},
+                    onDismiss = dismiss,
+                    onReopenFilters = {
+                        restartFilterWorkspace("p", vm.state.value, dismiss) { fresh ->
+                            captured.value = fresh
+                            preview = fresh
+                        }
+                    },
+                )
+            }
+        }
+        choose(WorkspaceEffectPresets.FILTER_SOFT_WARM)
+        compose.runOnIdle { vm._state.value = vm.state.value.copy(selectedClipId = other.id) }
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        compose.onNodeWithTag("filter-reopen").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(other, captured.value); assertEquals(other, preview)
+            assertEquals(before, vm.state.value.project); assertTrue(vm.undoStack.isEmpty())
+        }
+        compose.onNodeWithTag("filter-reopen").assertDoesNotExist()
+        compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
+        choose(WorkspaceEffectPresets.FILTER_COOL)
+        compose.runOnIdle {
+            assertEquals(other.id, preview!!.id)
+            assertEquals(WorkspaceEffectPresets.FILTER_COOL, preview!!.workspaceEffects.single().id)
+        }
+        compose.onNodeWithTag("filter-apply").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            val clips = vm.state.value.project!!.clips
+            assertTrue(clips.first { it.id == clip.id }.workspaceEffects.isEmpty())
+            assertEquals(WorkspaceEffectPresets.FILTER_COOL, clips.first { it.id == other.id }.workspaceEffects.single().id)
+            assertEquals(1, vm.undoStack.size); assertNull(captured.value)
+        }
     }
     @Test fun `preview errors are warnings and do not block saving a valid filter for export`() {
         val vm = editor(); val before = vm.state.value.project

@@ -22,10 +22,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,8 +92,10 @@ fun AnimatedTextOverlayView(
 
     // Compute animated attributes
     val displayAlpha = (overlay.opacity * (kfTransform?.opacity ?: 1f) * anim.alpha * captionFrame.alpha).coerceIn(0f, 1f)
-    val scaleXAnim = currentScale * (kfTransform?.scale ?: 1f) * anim.scaleX
-    val scaleYAnim = currentScale * (kfTransform?.scale ?: 1f) * anim.scaleY
+    val transformScaleX = (kfTransform?.scale ?: 1f) * anim.scaleX
+    val transformScaleY = (kfTransform?.scale ?: 1f) * anim.scaleY
+    val scaleXAnim = currentScale * transformScaleX
+    val scaleYAnim = currentScale * transformScaleY
     val offsetXPx = (kfTransform?.translateX ?: 0f) * containerWidthPx + anim.transXFrac * containerWidthPx
     val offsetYPx = (kfTransform?.translateY ?: 0f) * containerHeightPx + anim.transYFrac * containerHeightPx
     val rotationZAnim = overlay.rotationDeg + (kfTransform?.rotationDeg ?: 0f) + anim.rotZDeg
@@ -134,32 +138,71 @@ fun AnimatedTextOverlayView(
         } else null
     }
 
-    val fontSizeSp = (20f * ((scaleXAnim + scaleYAnim) / 2f)).coerceIn(10f, 80f)
+    val fontSizeSp = (20f * currentScale).coerceIn(10f, 80f)
     val karaokeRange = if (captionStyle != null) captionFrame.highlightRange else TextOverlayKaraoke.validRange(overlay)
-    val bounceBaselineShift = with(density) {
+
+    fun baselineShiftFor(sizeSp: Float): Float = with(density) {
         if (captionFrame.verticalOffsetFraction == 0f) 0f
-        else (-captionFrame.verticalOffsetFraction * containerHeightPx) / fontSizeSp.sp.toPx().coerceAtLeast(1f)
+        else (-captionFrame.verticalOffsetFraction * containerHeightPx) / sizeSp.sp.toPx().coerceAtLeast(1f)
     }
-    val karaokeText = remember(displayText, karaokeRange, overlay.highlightColorArgb, overlay.text,
-        captionStyle?.id, captionFrame.scale, bounceBaselineShift, fontSizeSp) {
-        buildAnnotatedString {
-            append(displayText)
-            if (karaokeRange != null && karaokeRange.endUtf16Exclusive <= displayText.length) {
-                val span = when (captionStyle?.wordAnimation) {
-                    CaptionWordAnimation.WORD_POP -> SpanStyle(
-                        color = Color(overlay.highlightColorArgb.toInt()),
-                        fontSize = (fontSizeSp * captionFrame.scale).sp
-                    )
-                    CaptionWordAnimation.BOUNCE -> SpanStyle(
-                        color = Color(overlay.highlightColorArgb.toInt()),
-                        baselineShift = BaselineShift(bounceBaselineShift)
-                    )
-                    CaptionWordAnimation.KARAOKE_FILL -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
-                    else -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
-                }
-                addStyle(span, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive)
+    fun buildKaraokeText(sizeSp: Float, baselineShift: Float) = buildAnnotatedString {
+        append(displayText)
+        if (karaokeRange != null && karaokeRange.endUtf16Exclusive <= displayText.length) {
+            val span = when (captionStyle?.wordAnimation) {
+                CaptionWordAnimation.WORD_POP -> SpanStyle(
+                    color = Color(overlay.highlightColorArgb.toInt()),
+                    fontSize = (sizeSp * captionFrame.scale).sp
+                )
+                CaptionWordAnimation.BOUNCE -> SpanStyle(
+                    color = Color(overlay.highlightColorArgb.toInt()),
+                    baselineShift = BaselineShift(baselineShift)
+                )
+                CaptionWordAnimation.KARAOKE_FILL -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
+                else -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
             }
+            addStyle(span, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive)
         }
+    }
+
+    val baseBounceBaselineShift = baselineShiftFor(fontSizeSp)
+    val baseKaraokeText = remember(displayText, karaokeRange, overlay.highlightColorArgb, overlay.text,
+        captionStyle?.id, captionStyle?.wordAnimation, captionFrame.scale, baseBounceBaselineShift, fontSizeSp) {
+        buildKaraokeText(fontSizeSp, baseBounceBaselineShift)
+    }
+    val textFontWeight = if (overlay.captionFontWeight != null) FontWeight.Normal
+        else if (!isBundledFont && overlay.isBold) FontWeight.Bold else FontWeight.Normal
+    val textFontStyle = if (!isBundledFont && overlay.isItalic) FontStyle.Italic else FontStyle.Normal
+    val textLetterSpacing = overlay.letterSpacingEm.coerceIn(-0.2f, 1f).sp
+    val measurementStyle = TextStyle(
+        fontSize = fontSizeSp.sp,
+        fontWeight = textFontWeight,
+        fontStyle = textFontStyle,
+        fontFamily = fontFam,
+        letterSpacing = textLetterSpacing
+    )
+    val textMeasurer = rememberTextMeasurer()
+    val naturalTextWidthPx = remember(baseKaraokeText, measurementStyle) {
+        textMeasurer.measure(
+            text = baseKaraokeText,
+            style = measurementStyle,
+            softWrap = false,
+            maxLines = 2
+        ).size.width.toFloat()
+    }
+    // The outer drag margin (10dp) and text-box padding (12dp) consume 44dp total.
+    val horizontalChromePx = with(density) { 44.dp.toPx() }
+    val maxPreviewTextWidthPx = minOf(
+        containerWidthPx * 0.9f,
+        (containerWidthPx - horizontalChromePx).coerceAtLeast(1f)
+    )
+    val textFitScale = if (naturalTextWidthPx > maxPreviewTextWidthPx && naturalTextWidthPx > 0f) {
+        (maxPreviewTextWidthPx * 0.98f) / naturalTextWidthPx
+    } else 1f
+    val fittedFontSizeSp = fontSizeSp * textFitScale
+    val bounceBaselineShift = baselineShiftFor(fittedFontSizeSp)
+    val karaokeText = remember(displayText, karaokeRange, overlay.highlightColorArgb, overlay.text,
+        captionStyle?.id, captionStyle?.wordAnimation, captionFrame.scale, bounceBaselineShift, fittedFontSizeSp) {
+        buildKaraokeText(fittedFontSizeSp, bounceBaselineShift)
     }
     val blurDp = with(density) { (anim.blurFrac * containerHeightPx).toDp() }
 
@@ -220,8 +263,8 @@ fun AnimatedTextOverlayView(
                     rotationX = anim.rotXDeg
                     rotationY = anim.rotYDeg
                     rotationZ = rotationZAnim
-                    scaleX = scaleXAnim
-                    scaleY = scaleYAnim
+                    scaleX = transformScaleX
+                    scaleY = transformScaleY
                     cameraDistance = cameraDistAnim
                     shadowElevation = if (anim.rotXDeg != 0f || anim.rotYDeg != 0f) 8f else 0f
                 }
@@ -245,18 +288,20 @@ fun AnimatedTextOverlayView(
             Text(
                 text = karaokeText.ifEmpty { androidx.compose.ui.text.AnnotatedString(" ") },
                 color = if (gradientBrush == null) textColor else Color.Unspecified,
-                fontSize = fontSizeSp.sp,
+                fontSize = fittedFontSizeSp.sp,
                 // TextFontRegistry resolves captionFontWeight into the single
                 // Typeface-backed family; avoid asking Compose to synthesize it again.
-                fontWeight = if (overlay.captionFontWeight != null) FontWeight.Normal
-                    else if (!isBundledFont && overlay.isBold) FontWeight.Bold else FontWeight.Normal,
-                fontStyle = if (!isBundledFont && overlay.isItalic) FontStyle.Italic else FontStyle.Normal,
+                fontWeight = textFontWeight,
+                fontStyle = textFontStyle,
                 fontFamily = fontFam,
                 style = TextStyle(
                     brush = gradientBrush,
                     shadow = shadow,
-                    letterSpacing = overlay.letterSpacingEm.coerceIn(-0.2f, 1f).sp
+                    letterSpacing = textLetterSpacing
                 ),
+                softWrap = false,
+                maxLines = 2,
+                overflow = TextOverflow.Clip,
                 onTextLayout = { textWidthPx = it.size.width.toFloat() }
             )
         }

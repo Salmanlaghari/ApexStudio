@@ -30,12 +30,17 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** In-memory undo unit: preserve every project lane plus editor-only layer flags. */
+/** In-memory undo unit: preserve project lanes, editor-only layers, and resettable LUT-panel values. */
 internal data class EditorUndoSnapshot(
     val project: Project,
     val hiddenVideoLayers: Set<Int>,
     val lockedVideoLayers: Set<Int>,
     val extraVideoLayers: Set<Int>,
+    val lutContrast: Float = 1f,
+    val lutSaturation: Float = 1f,
+    val lutTemperature: Float = 5000f,
+    val lutTint: Float = 0f,
+    val lutCompareMode: Boolean = false,
 ) : List<MediaClip> by project.clips
 
 

@@ -99,7 +99,8 @@ fun ColorGradingLutPanel(
     onGalleryViewModeChange: (LutGalleryViewMode) -> Unit = {},
     onRefreshThumbnails: () -> Unit = {},
     onReset: () -> Unit,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    onIntensityChangeFinished: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -599,6 +600,7 @@ fun ColorGradingLutPanel(
                 filterName = activePreset.name,
                 intensity = intensity,
                 onIntensityChange = onIntensityChange,
+                onIntensityChangeFinished = onIntensityChangeFinished,
                 onRemove = { onSelectFilter(null) },
                 onDone = onClose
             )
@@ -696,6 +698,7 @@ private fun FilterDetailStrip(
     filterName: String,
     intensity: Float,
     onIntensityChange: (Float) -> Unit,
+    onIntensityChangeFinished: () -> Unit,
     onRemove: () -> Unit,
     onDone: () -> Unit
 ) {
@@ -720,6 +723,7 @@ private fun FilterDetailStrip(
         Slider(
             value = intensity,
             onValueChange = onIntensityChange,
+            onValueChangeFinished = onIntensityChangeFinished,
             valueRange = 0f..1f,
             colors = SliderDefaults.colors(
                 thumbColor = ApexPalette.NeonCyan,

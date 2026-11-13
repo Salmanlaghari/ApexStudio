@@ -172,6 +172,8 @@ internal fun EditorViewModel.loadProject() {
             it.copy(
                 project = updatedP,
                 adjustments = updatedP.videoAdjustments,
+                activeFilterId = null,
+                filterIntensity = 1f,
                 activeFxId = null,
                 fxIntensity = 1f,
                 fxSpeed = 1f,
@@ -231,8 +233,8 @@ internal fun EditorViewModel.loadProject() {
         // catalog to be in the StateFlow before we can resolve
         // the template by id. Falls back silently if the saved
         // id no longer matches a live template (e.g. the
-        // template was removed from the catalog). The manual FX-only
-        // override is restored afterward so filters/transitions remain.
+        // template was removed from the catalog). Manual FX and LUT
+        // overrides are restored afterward so the user's edits remain.
         val savedTemplateId = updatedP.lastTransmissionTemplateId
         if (savedTemplateId != null) {
             val template = _transmissionTemplates.value.firstOrNull { it.id == savedTemplateId }
@@ -256,6 +258,21 @@ internal fun EditorViewModel.loadProject() {
                     activeFxId = normalizedFx.effectId,
                     fxIntensity = normalizedFx.intensity,
                     fxSpeed = normalizedFx.speed
+                )
+            }
+        }
+
+        // A saved manual LUT choice supersedes only the template filter.
+        // A non-null override with filterId=null is an explicit Original.
+        updatedP.manualLutOverride?.let { savedLut ->
+            val normalizedLut = savedLut.copy(
+                intensity = savedLut.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+            )
+            _state.update { state ->
+                state.copy(
+                    project = state.project?.copy(manualLutOverride = normalizedLut),
+                    activeFilterId = normalizedLut.filterId,
+                    filterIntensity = normalizedLut.intensity
                 )
             }
         }

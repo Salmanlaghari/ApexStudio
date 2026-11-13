@@ -153,6 +153,54 @@ fun EditorViewModel.setActiveFilter(id: String?) = _state.update { it.copy(activ
 
 fun EditorViewModel.setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
+/** Applies a catalog LUT as a project edit; imported custom LUTs remain transient until their assets are persisted too. */
+fun EditorViewModel.applyManualLutFilter(id: String?) {
+    val before = _state.value
+    _state.update { it.copy(activeFilterId = id) }
+    if (id != null && before.customImportedLuts.any { it.id == id }) return
+    commitManualLutSettings()
+}
+
+/** Commits the live LUT selection/intensity once, e.g. when an intensity slider gesture ends. */
+fun EditorViewModel.commitManualLutSettings() = commitManualLutSettings(recordUndo = true)
+
+private fun EditorViewModel.commitManualLutSettings(recordUndo: Boolean) {
+    val snapshot = _state.value
+    val filterId = snapshot.activeFilterId
+    if (filterId != null && snapshot.customImportedLuts.any { it.id == filterId }) return
+    val project = snapshot.project ?: return
+    val intensity = snapshot.filterIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+    val next = com.apexstudio.app.domain.model.ProjectLutSettings(filterId, intensity)
+    val effectiveBefore = effectiveProjectLutSettings(project)
+    if (effectiveBefore == next) return
+
+    if (recordUndo) pushUndo()
+    _state.update { state ->
+        val currentProject = state.project ?: return@update state
+        state.copy(project = currentProject.copy(manualLutOverride = next))
+    }
+    persistProject()
+}
+
+private fun EditorViewModel.effectiveProjectLutSettings(
+    project: com.apexstudio.app.domain.model.Project
+): com.apexstudio.app.domain.model.ProjectLutSettings {
+    val template = project.lastTransmissionTemplateId?.let { templateId ->
+        _transmissionTemplates.value.firstOrNull { it.id == templateId }
+    }
+    return project.manualLutOverride?.let { saved ->
+        com.apexstudio.app.domain.model.ProjectLutSettings(
+            saved.filterId,
+            saved.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+        )
+    } ?: template?.let { applied ->
+        com.apexstudio.app.domain.model.ProjectLutSettings(
+            applied.filterId,
+            applied.filterIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+        )
+    } ?: com.apexstudio.app.domain.model.ProjectLutSettings()
+}
+
 
 // Professional Color Grading LUTs Panel (GPUImage-powered)
 fun EditorViewModel.openColorGradingLutPanel() {
@@ -184,16 +232,27 @@ fun EditorViewModel.setLutTemperature(value: Float) = _state.update { it.copy(lu
 
 fun EditorViewModel.setLutTint(value: Float) = _state.update { it.copy(lutTint = value.coerceIn(-100f, 100f)) }
 
-fun EditorViewModel.resetLutGrading() = _state.update {
-    it.copy(
-        activeFilterId = null,
-        filterIntensity = 1.0f,
-        lutContrast = 1.0f,
-        lutSaturation = 1.0f,
-        lutTemperature = 5000f,
-        lutTint = 0f,
-        lutCompareMode = false
-    )
+fun EditorViewModel.resetLutGrading() {
+    val before = _state.value
+    val resetSettings = com.apexstudio.app.domain.model.ProjectLutSettings()
+    val projectNeedsReset = before.project?.let { effectiveProjectLutSettings(it) != resetSettings } == true
+    val panelNeedsReset = before.activeFilterId != null || before.filterIntensity != 1f ||
+        before.lutContrast != 1f || before.lutSaturation != 1f ||
+        before.lutTemperature != 5000f || before.lutTint != 0f || before.lutCompareMode
+    if (!projectNeedsReset && !panelNeedsReset) return
+    pushUndo()
+    _state.update {
+        it.copy(
+            activeFilterId = null,
+            filterIntensity = 1.0f,
+            lutContrast = 1.0f,
+            lutSaturation = 1.0f,
+            lutTemperature = 5000f,
+            lutTint = 0f,
+            lutCompareMode = false
+        )
+    }
+    commitManualLutSettings(recordUndo = false)
 }
 
 fun EditorViewModel.importCustomCubeLut(name: String, inputStream: java.io.InputStream): com.apexstudio.app.data.filter.FilterPreset? {

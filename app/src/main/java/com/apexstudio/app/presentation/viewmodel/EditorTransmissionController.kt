@@ -40,7 +40,7 @@ fun EditorViewModel.applyTransmissionTemplate(id: String?) {
                 lastTransitionType = null,
                 lastTransitionDurationMs = 500L,
                 playbackSpeed = 1.0f,
-                project = it.project?.copy(manualFxOverride = null)
+                project = it.project?.copy(manualFxOverride = null, manualLutOverride = null)
             )
         }
         persistTransmissionTemplate(
@@ -76,7 +76,9 @@ internal fun EditorViewModel.applyTransmissionTemplateInternal(
     val targetSpeed = if (template.isSlowMotion && template.playbackSpeed > 0f) template.playbackSpeed else 1.0f
     _state.update {
         it.copy(
-            project = if (persistTemplateMetadata) it.project?.copy(manualFxOverride = null) else it.project,
+            project = if (persistTemplateMetadata) {
+                it.project?.copy(manualFxOverride = null, manualLutOverride = null)
+            } else it.project,
             activeFilterId = template.filterId,
             filterIntensity = template.filterIntensity.coerceIn(0f, 1f),
             activeFxId = template.fxPresetId,
@@ -115,7 +117,7 @@ internal fun EditorViewModel.applyTransmissionTemplateInternal(
 /**
  * Save the chosen transmission template id + transition hint on
  * the current project and write it through the shared autosave path.
- * Manual template selection clears any previous FX-only override;
+ * Manual template selection clears previous FX/LUT overrides;
  * project-open auto-apply skips this write to preserve saved overrides.
  */
 internal fun EditorViewModel.persistTransmissionTemplate(
@@ -128,13 +130,15 @@ internal fun EditorViewModel.persistTransmissionTemplate(
     if (!force && snapshot.lastTransmissionTemplateId == id &&
         snapshot.lastTransitionType == transitionType &&
         snapshot.lastTransitionDurationMs == transitionDurationMs &&
-        snapshot.manualFxOverride == null
+        snapshot.manualFxOverride == null &&
+        snapshot.manualLutOverride == null
     ) return
     val updated = snapshot.copy(
         lastTransmissionTemplateId = id,
         lastTransitionType = transitionType,
         lastTransitionDurationMs = transitionDurationMs,
-        manualFxOverride = null
+        manualFxOverride = null,
+        manualLutOverride = null
     )
     _state.update { it.copy(project = updated) }
     persistProject()

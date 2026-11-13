@@ -852,7 +852,12 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
 
 
 private fun EditorViewModel.undoSnapshot(): EditorUndoSnapshot? = _state.value.let { s ->
-    s.project?.let { EditorUndoSnapshot(it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers) }
+    s.project?.let {
+        EditorUndoSnapshot(
+            it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers,
+            s.lutContrast, s.lutSaturation, s.lutTemperature, s.lutTint, s.lutCompareMode
+        )
+    }
 }
 
 private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
@@ -866,9 +871,36 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
                 it.trackIndex == 0 && it.type == ClipType.VIDEO
             }
         val restoredFilter = activeClip?.gpuFilterConfig ?: com.apexstudio.app.data.filter.GpuFilterConfig()
+        val manualLut = snapshot.project.manualLutOverride
+        val templateLut = snapshot.project.lastTransmissionTemplateId?.let { templateId ->
+            _transmissionTemplates.value.firstOrNull { it.id == templateId }
+        }
+        val restoreGlobalLut = state.project?.manualLutOverride != snapshot.project.manualLutOverride ||
+            state.project?.lastTransmissionTemplateId != snapshot.project.lastTransmissionTemplateId
+        val restoredGlobalFilterId = if (!restoreGlobalLut) {
+            state.activeFilterId
+        } else if (manualLut != null) {
+            manualLut.filterId
+        } else {
+            templateLut?.filterId
+        }
+        val restoredGlobalFilterIntensity = if (!restoreGlobalLut) {
+            state.filterIntensity
+        } else if (manualLut != null) {
+            manualLut.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+        } else {
+            templateLut?.filterIntensity?.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
+        }
         state.copy(
             project = snapshot.project,
             activeGpuFilterConfig = restoredFilter,
+            activeFilterId = restoredGlobalFilterId,
+            filterIntensity = restoredGlobalFilterIntensity,
+            lutContrast = snapshot.lutContrast,
+            lutSaturation = snapshot.lutSaturation,
+            lutTemperature = snapshot.lutTemperature,
+            lutTint = snapshot.lutTint,
+            lutCompareMode = snapshot.lutCompareMode,
             durationMs = duration,
             playerPositionMs = position,
             currentTimeMs = position,
@@ -1481,7 +1513,10 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
 internal fun EditorViewModel.pushUndo() {
     val state = _state.value
     val project = state.project ?: return
-    val current = EditorUndoSnapshot(project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers)
+    val current = EditorUndoSnapshot(
+        project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers,
+        state.lutContrast, state.lutSaturation, state.lutTemperature, state.lutTint, state.lutCompareMode
+    )
     undoStack.addLast(current)
     if (undoStack.size > 50) undoStack.removeFirst()
     redoStack.clear()

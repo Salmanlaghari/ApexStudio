@@ -399,17 +399,41 @@ private fun EditorState.withManualFxOverride(): EditorState = copy(
     )
 )
 
-fun EditorViewModel.setActiveFx(id: String?) {
+private fun EditorViewModel.commitFxSelection(
+    id: String?,
+    downloaded: com.apexstudio.app.data.fx.DownloadedFxEffect?,
+    intensity: Float?
+) {
     val preset = FxPreset.byId(id)
-    val downloaded = if (id != null && preset == null)
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
-    if (id != null && preset == null && downloaded == null) return
     _state.update { state ->
-        state.copy(activeFxId = id, fxSpeed = preset?.defaultSpeed ?: downloaded?.defaultSpeed ?: state.fxSpeed)
+        val selected = state.copy(
+            activeFxId = id,
+            fxSpeed = preset?.defaultSpeed ?: downloaded?.defaultSpeed ?: state.fxSpeed
+        )
+        (intensity?.let { selected.copy(fxIntensity = it.coerceIn(0f, 1f)) } ?: selected)
             .withManualFxOverride()
     }
     persistProject()
 }
+
+private fun EditorViewModel.selectFxAfterVerification(id: String?, intensity: Float?) {
+    val request = ++activeFxSelectionRequest
+    val projectId = _state.value.project?.id
+    val preset = FxPreset.byId(id)
+    if (id == null || preset != null) {
+        commitFxSelection(id, downloaded = null, intensity = intensity)
+        return
+    }
+
+    viewModelScope.launch {
+        val downloaded = com.apexstudio.app.data.fx.DownloadedEffectRepository.findVerified(id)
+            ?: return@launch
+        if (request != activeFxSelectionRequest || _state.value.project?.id != projectId) return@launch
+        commitFxSelection(id, downloaded, intensity)
+    }
+}
+
+fun EditorViewModel.setActiveFx(id: String?) = selectFxAfterVerification(id, intensity = null)
 
 fun EditorViewModel.setFxIntensity(v: Float) = _state.update {
     it.copy(fxIntensity = v.coerceIn(0f, 1f)).withManualFxOverride()
@@ -419,21 +443,8 @@ fun EditorViewModel.setFxSpeed(v: Float) = _state.update {
     it.copy(fxSpeed = v.coerceIn(0.1f, 4f)).withManualFxOverride()
 }
 
-fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) {
-    val preset = FxPreset.byId(id)
-    val downloaded = if (id != null && preset == null)
-        com.apexstudio.app.data.fx.DownloadedEffectRepository.find(id) else null
-    if (id != null && preset == null && downloaded == null) return
-    _state.update { state ->
-        val presetSpeed = (preset?.defaultSpeed ?: downloaded?.defaultSpeed)?.coerceIn(0.1f, 4f)
-        state.copy(
-            activeFxId = id,
-            fxIntensity = intensity.coerceIn(0f, 1f),
-            fxSpeed = presetSpeed ?: state.fxSpeed
-        ).withManualFxOverride()
-    }
-    persistProject()
-}
+fun EditorViewModel.selectFx(id: String?, intensity: Float = 0.85f) =
+    selectFxAfterVerification(id, intensity)
 
 fun EditorViewModel.selectFilter(id: String?, intensity: Float = 0.85f) = _state.update {
     it.copy(activeFilterId = id, filterIntensity = intensity.coerceIn(0f, 1f))

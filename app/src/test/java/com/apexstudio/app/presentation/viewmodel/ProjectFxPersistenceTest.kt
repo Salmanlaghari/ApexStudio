@@ -458,6 +458,9 @@ class ProjectFxPersistenceTest {
             var savedAt = firstOpen.state.value.lastAutoSaveMs
             delay(2L)
             firstOpen.selectFx(effectId, intensity = 0.37f)
+            withTimeout(20_000L) {
+                firstOpen.state.first { it.activeFxId == effectId && it.fxIntensity == 0.37f }
+            }
             awaitSaved(firstOpen, savedAt)
             savedAt = firstOpen.state.value.lastAutoSaveMs
             delay(2L)
@@ -485,7 +488,8 @@ class ProjectFxPersistenceTest {
                     resolution = "1080p", frameRate = 30, aspectRatio = "16:9", bitrateMbps = 12
                 )
             )
-            assertEquals(effectId, exportConfig.downloadedFxEffect?.id)
+            assertEquals(effectId, exportConfig.downloadedFxEffectId)
+            assertNull(exportConfig.downloadedFxEffect)
             assertEquals(0.37f, exportConfig.fxIntensity, 0.0001f)
             assertEquals(1.8f, exportConfig.fxSpeed, 0.0001f)
 

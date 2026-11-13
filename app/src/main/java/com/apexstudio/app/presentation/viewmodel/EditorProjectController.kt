@@ -91,6 +91,7 @@ internal fun recoverCachedSfxTrack(context: android.content.Context, track: Audi
 
 internal fun EditorViewModel.loadProject() {
     viewModelScope.launch {
+        activeFxSelectionRequest++
         // Prefer the persistent DataStore copy over the in-memory
         // MediaRepository stub. The two stay in sync because every
         // mutation auto-saves back to DataStore.
@@ -167,6 +168,7 @@ internal fun EditorViewModel.loadProject() {
 
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
+        activeFxSelectionRequest++
         _state.update {
             val validSelectedClipIds = it.selectedClipIds.intersect(updatedP.clips.map { clip -> clip.id }.toSet())
             it.copy(
@@ -248,6 +250,7 @@ internal fun EditorViewModel.loadProject() {
         // A manual FX choice overrides only the template's FX, retaining its
         // filter and transition. Non-null with a null effect id is an explicit clear.
         updatedP.manualFxOverride?.let { savedFx ->
+            activeFxSelectionRequest++
             val normalizedFx = savedFx.copy(
                 intensity = savedFx.intensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f,
                 speed = savedFx.speed.takeIf { it.isFinite() }?.coerceIn(0.1f, 4f) ?: 1f

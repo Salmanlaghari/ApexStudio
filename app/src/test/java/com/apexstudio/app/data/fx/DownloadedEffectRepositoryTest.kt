@@ -81,6 +81,9 @@ class DownloadedEffectRepositoryTest {
             assertEquals(families.size, DownloadedEffectRepository.refreshInstalled(context, catalog))
             val effectId = "dl_${pack.id}_sample_prism"
             assertNotNull(DownloadedEffectRepository.find(effectId))
+            val verifiedEffect = requireNotNull(DownloadedEffectRepository.findVerified(effectId))
+            assertEquals(verifiedEffect, DownloadedEffectRepository.resolveVerifiedForRender(effectId, null))
+            assertEquals(verifiedEffect, DownloadedEffectRepository.resolveVerifiedForRender(null, verifiedEffect))
 
             val tampered = bytes.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 1).toByte() }
             File(root, pack.entry).writeBytes(tampered)
@@ -91,6 +94,13 @@ class DownloadedEffectRepositoryTest {
                 DownloadedEffectRepository.find(effectId)
             )
             assertEquals(families.size, DownloadedEffectRepository.effects.value.size)
+            var exportRejected = false
+            try {
+                DownloadedEffectRepository.resolveVerifiedForRender(effectId, verifiedEffect)
+            } catch (_: IllegalStateException) {
+                exportRejected = true
+            }
+            assertTrue("Export must reject a profile whose installed source changed", exportRejected)
             // The explicit verified lookup is the only path that rechecks the
             // installed entry digest — and it fails closed on tampering.
             assertNull(

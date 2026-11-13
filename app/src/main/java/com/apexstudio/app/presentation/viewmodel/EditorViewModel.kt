@@ -100,6 +100,9 @@ class EditorViewModel(
     internal var localAnalysisJob: Job? = null
     internal var localAnalysisToken: AiCancellationToken? = null
 
+    /** Monotonic guard against stale asynchronous verification of downloaded FX selections. */
+    internal var activeFxSelectionRequest: Long = 0L
+
     /** Sparse offline face-track suggestions are review-only and separate from protected AI actions. */
     internal val _faceTrackReview = MutableStateFlow(FaceTrackReviewUiState())
     val faceTrackReview: StateFlow<FaceTrackReviewUiState> = _faceTrackReview.asStateFlow()

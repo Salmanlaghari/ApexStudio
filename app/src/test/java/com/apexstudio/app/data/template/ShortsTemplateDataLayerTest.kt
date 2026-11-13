@@ -6,9 +6,14 @@ import com.apexstudio.app.domain.model.Project
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 import java.security.MessageDigest
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ShortsTemplateDataLayerTest {
     @Test fun `catalog has exactly ten unique requested recipes`() {
         val expected = setOf(

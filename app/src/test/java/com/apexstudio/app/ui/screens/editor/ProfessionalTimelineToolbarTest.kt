@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -42,7 +43,7 @@ class ProfessionalTimelineToolbarTest {
                     focused = focused,
                     onToggleFocus = { focused = !focused },
                     onToggleSnapping = { state = state.copy(magneticSnapping = !state.magneticSnapping) },
-                    onZoomOut = { state = state.copy(timelineZoom = 0.5f) },
+                    onZoomOut = { state = state.copy(timelineZoom = TIMELINE_MIN_ZOOM) },
                     onZoomIn = { state = state.copy(timelineZoom = 1.5f) },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -55,6 +56,8 @@ class ProfessionalTimelineToolbarTest {
         compose.onNodeWithContentDescription("Magnetic snapping enabled").performClick()
         compose.onNodeWithContentDescription("Magnetic snapping disabled").assertIsDisplayed()
 
+        compose.onNodeWithContentDescription("Zoom timeline out").performClick()
+        compose.onNodeWithText("0.01x").assertIsDisplayed()
         compose.onNodeWithContentDescription("Zoom timeline in").performClick()
         compose.onNodeWithText("1.5x").assertIsDisplayed()
         compose.onNodeWithContentDescription("Expand timeline to full height").performClick()

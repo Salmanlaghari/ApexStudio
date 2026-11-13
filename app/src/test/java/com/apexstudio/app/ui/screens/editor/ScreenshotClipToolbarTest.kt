@@ -87,6 +87,15 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
+    fun selectedPhotoExposesKeyframeActionAndInvokesItsCallback() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(calls, selectionKind = ToolbarSelectionKind.PHOTO) }
+
+        composeRule.onNodeWithText("Keyframe").assertIsDisplayed().performClick()
+        assertEquals("Photo keyframe action must keep its callback", 1, calls["keyframe"] ?: 0)
+    }
+
+    @Test
     @Config(qualifiers = "w375dp-h800dp-mdpi")
     fun allSixScreenshotVideoActionsFitAtStandardPhoneWidth() {
         val calls = mutableMapOf<String, Int>()

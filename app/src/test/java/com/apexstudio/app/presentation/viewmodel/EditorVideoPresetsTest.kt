@@ -90,6 +90,67 @@ class EditorVideoPresetsTest {
     }
 
     @Test
+    fun `clip LUT undo redo restores clip recipe without mutating global LUT or stacking`() {
+        data class Case(
+            val globalId: String?,
+            val globalIntensity: Float,
+            val clipId: String,
+            val clipIntensity: Float,
+        )
+
+        val cases = listOf(
+            Case(null, 0.61f, "clip-lut", 0.37f),
+            Case("global-lut", 0.73f, "clip-lut", 0.37f),
+            // An equal preset id is still two explicit layers; strength differs
+            // so undo must not infer that the clip/global layers are duplicates.
+            Case("stacked-lut", 0.23f, "stacked-lut", 0.89f),
+        )
+
+        cases.forEach { case ->
+            val selected = videoClip(id = "selected").copy(
+                gpuFilterConfig = GpuFilterConfig(filterPresetId = "before-lut", filterIntensity = 0.19f)
+            )
+            val other = videoClip(id = "other", uri = "file:///other.mp4").copy(
+                gpuFilterConfig = GpuFilterConfig(filterPresetId = "other-lut", filterIntensity = 0.47f)
+            )
+            val vm = EditorViewModel().also { editor ->
+                editor._state.value = editor.state.value.copy(
+                    project = Project("project", "Project", 20_000L, clips = listOf(selected, other)),
+                    selectedClipId = selected.id,
+                    activeFilterId = case.globalId,
+                    filterIntensity = case.globalIntensity,
+                    activeGpuFilterConfig = selected.gpuFilterConfig,
+                )
+            }
+            val beforeOther = vm.state.value.project!!.clips.first { it.id == other.id }
+            val next = GpuFilterConfig(
+                filterPresetId = case.clipId,
+                filterIntensity = case.clipIntensity,
+            )
+
+            vm.pushUndo()
+            vm.setGpuFilterConfig(next)
+            vm.applyGpuFilterToSelectedClip()
+
+            assertEquals(next, vm.state.value.project!!.clips.first { it.id == selected.id }.gpuFilterConfig)
+            assertEquals(beforeOther, vm.state.value.project!!.clips.first { it.id == other.id })
+            vm.undo()
+            assertEquals(selected.gpuFilterConfig, vm.state.value.project!!.clips.first { it.id == selected.id }.gpuFilterConfig)
+            assertEquals(selected.gpuFilterConfig, vm.state.value.activeGpuFilterConfig)
+            assertEquals(beforeOther, vm.state.value.project!!.clips.first { it.id == other.id })
+            assertEquals(case.globalId, vm.state.value.activeFilterId)
+            assertEquals(case.globalIntensity, vm.state.value.filterIntensity, 0f)
+
+            vm.redo()
+            assertEquals(next, vm.state.value.project!!.clips.first { it.id == selected.id }.gpuFilterConfig)
+            assertEquals(next, vm.state.value.activeGpuFilterConfig)
+            assertEquals(beforeOther, vm.state.value.project!!.clips.first { it.id == other.id })
+            assertEquals(case.globalId, vm.state.value.activeFilterId)
+            assertEquals(case.globalIntensity, vm.state.value.filterIntensity, 0f)
+        }
+    }
+
+    @Test
     fun `effect matrices are fixed finite safe and resolved for shared rendering`() {
         (ProjectVideoPresets.effects + ProjectVideoPresets.videoEnhancements).forEach { effect ->
             val matrix = effect.colorMatrix().array

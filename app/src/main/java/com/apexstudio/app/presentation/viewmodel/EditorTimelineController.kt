@@ -869,8 +869,6 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
         state.copy(
             project = snapshot.project,
             activeGpuFilterConfig = restoredFilter,
-            activeFilterId = restoredFilter.filterPresetId,
-            filterIntensity = restoredFilter.filterIntensity,
             durationMs = duration,
             playerPositionMs = position,
             currentTimeMs = position,

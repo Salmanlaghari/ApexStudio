@@ -2404,14 +2404,29 @@ class ExportEngine(private val context: Context) {
         _exportState.value = ExportProgressState()
     }
 
-    /** Dedicated comparison engines must stop and drain their writer before deleting owned outputs. */
-    internal suspend fun cancelProjectExportAndAwait() {
+    /**
+     * Cancels exports and joins coroutine-backed writers.
+     *
+     * @return true only when no Media3 Transformer was active at cancellation time. Media3 does not
+     * guarantee a terminal listener callback after cancellation, so callers must not delete files
+     * owned by this engine when this returns false.
+     */
+    internal suspend fun cancelExportAndAwait(): Boolean =
         withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main.immediate) {
-            val writer = synchronized(projectRunLock) { projectExportJob }
+            val hadActiveTransformer = transformer != null || overlayAudioTransformer != null
+            val writers = listOfNotNull(
+                progressJob,
+                exportPreparationJob,
+                postMixJob,
+                synchronized(projectRunLock) { projectExportJob }
+            ).distinct()
             cancelExport()
-            writer?.join()
+            writers.forEach { it.join() }
+            !hadActiveTransformer
         }
-    }
+
+    /** Backwards-compatible name for existing project-export comparison tests. */
+    internal suspend fun cancelProjectExportAndAwait(): Boolean = cancelExportAndAwait()
 
     fun release() {
         cancelExport()

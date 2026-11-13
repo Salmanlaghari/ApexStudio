@@ -1042,8 +1042,8 @@ class ExportTimestampParityInstrumentedTest {
                     complete = true
                     return output
                 } finally {
-                    withContext(NonCancellable) { passEngine.cancelProjectExportAndAwait() }
-                    if (!complete) destination.delete()
+                    val safeToDelete = withContext(NonCancellable) { passEngine.cancelAndCheckSafeToDelete() }
+                    if (!complete && safeToDelete) destination.delete()
                 }
             }
 
@@ -1555,17 +1555,25 @@ class ExportTimestampParityInstrumentedTest {
             verify("selected route", 0, 1)
             verify("whole-project route", 2, 3)
         } finally {
+            var safeToDeleteOutputs = true
             withContext(NonCancellable) {
-                try { closeEditor() } finally {
-                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                try {
+                    for (engine in engines) {
+                        val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                        safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+                    }
+                } finally {
+                    try { closeEditor() } finally {
                         instrumentation.runOnMainSync { engines.forEach { it.release() } }
                         try { DownloadedEffectRepository.refreshInstalled(context, PackManifestRepo.PackManifestFile()) }
                         finally {
-                            names.forEach { name ->
-                                File(outputDir, name).delete()
-                                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                            if (safeToDeleteOutputs) {
+                                names.forEach { name ->
+                                    File(outputDir, name).delete()
+                                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                                }
+                                root.deleteRecursively()
                             }
-                            root.deleteRecursively()
                         }
                     }
                 }
@@ -1880,13 +1888,21 @@ class ExportTimestampParityInstrumentedTest {
                 } finally { frames.forEach { it.recycle() } }
             }
         } finally {
+            var safeToDeleteOutputs = true
             withContext(NonCancellable) {
-                try { closeEditor() } finally {
-                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                try {
+                    for (engine in engines) {
+                        val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                        safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+                    }
+                } finally {
+                    try { closeEditor() } finally {
                         instrumentation.runOnMainSync { engines.forEach { it.release() } }
                         try { repository.deleteProject(id) } finally {
-                            names.forEach { File(outputDir, it).delete(); File(outputDir, it.removeSuffix(".mp4") + "_music.mp4").delete() }
-                            root.deleteRecursively()
+                            if (safeToDeleteOutputs) {
+                                names.forEach { File(outputDir, it).delete(); File(outputDir, it.removeSuffix(".mp4") + "_music.mp4").delete() }
+                                root.deleteRecursively()
+                            }
                         }
                     }
                 }
@@ -2099,20 +2115,24 @@ class ExportTimestampParityInstrumentedTest {
             assertPreviewParity("selected-clip export", requireNotNull(outputs[0]), requireNotNull(outputs[1]), commonSampleTime(0, 1))
             assertPreviewParity("whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3))
         } finally {
+            var safeToDeleteOutputs = true
+            for (engine in engines) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+            }
             httpFixture?.close()
             gallerySource?.recycle()
-            engines.forEach { engine ->
-                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
-            }
             instrumentation.runOnMainSync { engines.forEach { it.release() } }
-            names.forEach { name ->
-                File(outputDir, name).delete()
-                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            if (safeToDeleteOutputs) {
+                names.forEach { name ->
+                    File(outputDir, name).delete()
+                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                }
             }
             FilterManifest.resetForTesting()
             FilterThumbnailGenerator.invalidateDynamicCache()
             LutBitmapCache.clear()
-            root.deleteRecursively()
+            if (safeToDeleteOutputs) root.deleteRecursively()
         }
     }
 
@@ -2266,20 +2286,24 @@ class ExportTimestampParityInstrumentedTest {
                 "whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3)
             )
         } finally {
-            engines.forEach { engine ->
-                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
+            var safeToDeleteOutputs = true
+            for (engine in engines) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
             }
             instrumentation.runOnMainSync { engines.forEach { it.release() } }
-            names.forEach { name ->
-                File(outputDir, name).delete()
-                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            if (safeToDeleteOutputs) {
+                names.forEach { name ->
+                    File(outputDir, name).delete()
+                    File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                }
+                root.deleteRecursively()
             }
-            root.deleteRecursively()
         }
     }
 
     @Test
-    fun chromaKeyWallpaperReplacementProducesDecodedPixelsInBakedMp4() = runBlocking {
+    fun bakedChromaWallpaperReplacementSurvivesSelectedAndProjectExports() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val baseContext = instrumentation.targetContext
         val id = UUID.randomUUID().toString()
@@ -2307,8 +2331,15 @@ class ExportTimestampParityInstrumentedTest {
         }
         val wallpaperFile = File(context.cacheDir, "wallpaper-$id.png")
         val outputFile = File(context.cacheDir, "baked-$id.mp4")
+        val exportOutputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val selectedOutputName = "chroma-selected-$id.mp4"
+        val projectOutputName = "chroma-project-$id.mp4"
+        val selectedEngine = ExportEngine(context)
+        val projectEngine = ExportEngine(context)
         var sourceFile: File? = null
         var bakedFile: File? = null
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
         var sourceFrame: Bitmap? = null
         var bakedFrame: Bitmap? = null
 
@@ -2321,19 +2352,21 @@ class ExportTimestampParityInstrumentedTest {
             }
             val source = withTimeout(120_000L) {
                 requireNotNull(PhotoVideoEncoder.encodeStillImage(
-                    context = context,
-                    bitmap = sourceBitmap,
-                    durationMs = 1_000L,
-                    frameRate = 10
-                )) { "The deterministic green-screen MP4 fixture must encode." }
+                context = context,
+                bitmap = sourceBitmap,
+                durationMs = 1_000L,
+                frameRate = 30
+            )) { "The deterministic green-screen MP4 fixture must encode." }
             }
             sourceFile = source
             val sourceUri = Uri.fromFile(source).toString()
             val sourceTrack = readVideoTrack(source)
+            assertFalse("The deterministic still-video fixture must not contain audio", hasTrack(source, "audio/"))
             assertTrue(
                 "The source fixture should retain approximately one second of video",
                 abs(sourceTrack.videoTrackDurationUs - 1_000_000L) <= 200_000L
             )
+            assertEquals("The 30fps source fixture must contain all 30 encoded samples", 30, sourceTrack.presentationTimesUs.size)
             assertTrue("The source fixture must contain multiple encoded frames", sourceTrack.presentationTimesUs.size >= 2)
 
             val wallpaperPath = wallpaperFile.canonicalPath
@@ -2379,29 +2412,29 @@ class ExportTimestampParityInstrumentedTest {
             assertTrue("The background-replacement encoder must produce a non-empty MP4", baked.isFile && baked.length() > 0L)
             assertTrue("The baked output must contain a video track", hasTrack(baked, "video/"))
 
-            val track = readVideoTrack(baked)
-            assertEquals("The baked video width must be retained", width, track.videoWidth)
-            assertEquals("The baked video height must be retained", height, track.videoHeight)
-            assertFalse("The baked video must contain encoded samples", track.presentationTimesUs.isEmpty())
-            assertTrue("The baked video track must report a positive duration", track.videoTrackDurationUs > 0L)
+            val bakedTrack = readVideoTrack(baked)
+            assertEquals("The baked video width must be retained", width, bakedTrack.videoWidth)
+            assertEquals("The baked video height must be retained", height, bakedTrack.videoHeight)
+            assertFalse("The baked video must contain encoded samples", bakedTrack.presentationTimesUs.isEmpty())
+            assertTrue("The baked video track must report a positive duration", bakedTrack.videoTrackDurationUs > 0L)
             assertEquals(
                 "Background replacement must retain every source frame",
                 sourceTrack.presentationTimesUs.size,
-                track.presentationTimesUs.size
+                bakedTrack.presentationTimesUs.size
             )
             assertTrue(
                 "The encoded video track duration must stay within 150 ms of the source",
-                abs(track.videoTrackDurationUs - sourceTrack.videoTrackDurationUs) <= 150_000L
+                abs(bakedTrack.videoTrackDurationUs - sourceTrack.videoTrackDurationUs) <= 150_000L
             )
             assertOutputTiming(
                 "Chroma Key background replacement",
-                track,
+                bakedTrack,
                 expectedDurationUs = sourceTrack.videoTrackDurationUs,
                 expectedSourceAnchorsUs = sourceTrack.presentationTimesUs,
-                requestedFps = 10
+                requestedFps = 30
             )
 
-            val bakedDurationMs = (track.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)
+            val bakedDurationMs = (bakedTrack.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)
             val bakedClip = MediaClip(
                 id = "chroma-key-$id",
                 name = "Chroma Key encoded fixture",
@@ -2413,6 +2446,40 @@ class ExportTimestampParityInstrumentedTest {
             assertNull(
                 "The real baked MP4 must pass project-export preflight",
                 projectCompositionUnsupportedReason(listOf(bakedClip), ExportEngine.ExportConfig())
+            )
+
+            val exportConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                aspectRatio = "16:9",
+                bitrateMbps = 8
+            )
+            // Keep the selected route's endpoint explicit instead of relying only on the final input sample PTS.
+            val selectedConfig = exportConfig.copy(trimEndMs = bakedDurationMs)
+            selectedEngine.startExport(Uri.fromFile(baked).toString(), selectedConfig, selectedOutputName)
+            val selectedResult = awaitTerminalState(selectedEngine)
+            assertNull("Selected export of the baked chroma clip must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path))
+            assertTrue("Selected export must contain an encoded MP4", selectedOutput!!.isFile && selectedOutput!!.length() > 0L)
+            assertEquals(
+                "Selected export must publish to its requested destination",
+                File(exportOutputDir, selectedOutputName).canonicalFile,
+                selectedOutput!!.canonicalFile
+            )
+
+            projectEngine.startProjectExport(
+                clips = listOf(bakedClip),
+                config = exportConfig,
+                outputFileName = projectOutputName
+            )
+            val projectResult = awaitTerminalState(projectEngine)
+            assertNull("Whole-project export of the baked chroma clip must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(requireNotNull(projectResult.outputUri)).path))
+            assertTrue("Whole-project export must contain an encoded MP4", projectOutput!!.isFile && projectOutput!!.length() > 0L)
+            assertEquals(
+                "Whole-project export must publish to its requested destination",
+                File(exportOutputDir, projectOutputName).canonicalFile,
+                projectOutput!!.canonicalFile
             )
 
             fun decodeFirstFrame(file: File): Bitmap {
@@ -2448,6 +2515,110 @@ class ExportTimestampParityInstrumentedTest {
                 "The encoded source must retain a recognizably red foreground region",
                 rgbL1Distance(original.getPixel(width * 5 / 6, height / 2), Color.RED) < 80
             )
+
+            fun assertFinalExportPreservesChroma(label: String, file: File) {
+                val expectedDurationUs = bakedDurationMs * 1_000L
+                val track = readVideoTrack(file)
+                assertEquals("$label output width", 1_280, track.videoWidth)
+                assertEquals("$label output height", 720, track.videoHeight)
+                val sourceAnchorsUs = bakedTrack.presentationTimesUs.sorted()
+                val outputAnchorsUs = track.presentationTimesUs.sorted()
+                val expectedInteriorAnchorsUs = sourceAnchorsUs.dropLast(2)
+                val anchorToleranceUs = 5_000L
+                assertOutputTiming(
+                    label = label,
+                    output = track,
+                    expectedDurationUs = expectedDurationUs,
+                    // Media3 may omit the last two frame anchors at EOS; duration and exclusive end remain checked separately.
+                    expectedSourceAnchorsUs = expectedInteriorAnchorsUs,
+                    requestedFps = 30
+                )
+                var nextOutputIndex = 0
+                expectedInteriorAnchorsUs.forEach { expectedUs ->
+                    while (nextOutputIndex < outputAnchorsUs.size &&
+                        outputAnchorsUs[nextOutputIndex] < expectedUs - anchorToleranceUs
+                    ) {
+                        nextOutputIndex++
+                    }
+                    assertTrue(
+                        "$label must retain each interior source PTS in order within ${anchorToleranceUs}us; " +
+                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}",
+                        nextOutputIndex < outputAnchorsUs.size &&
+                            abs(outputAnchorsUs[nextOutputIndex] - expectedUs) <= anchorToleranceUs
+                    )
+                    if (nextOutputIndex < outputAnchorsUs.size) nextOutputIndex++
+                }
+                assertTrue(
+                    "$label must not introduce output PTS unrelated to any source frame anchor within ${anchorToleranceUs}us; " +
+                        "output PTS=${track.presentationTimesUs}; source PTS=$sourceAnchorsUs",
+                    track.presentationTimesUs.all { outputUs ->
+                        sourceAnchorsUs.any { sourceUs -> abs(sourceUs - outputUs) <= anchorToleranceUs }
+                    }
+                )
+                assertTrue(
+                    "$label must keep every encoded video PTS before the exclusive ${expectedDurationUs}us end; " +
+                        "video PTS=${track.presentationTimesUs}",
+                    track.presentationTimesUs.all { it < expectedDurationUs }
+                )
+                assertFalse("$label must not introduce audio absent from the deterministic video-only fixture", hasTrack(file, "audio/"))
+
+                val rendered = decodeFirstFrame(file)
+                try {
+                    assertEquals("$label decoded frame width", 1_280, rendered.width)
+                    assertEquals("$label decoded frame height", 720, rendered.height)
+                    val scaledSource = Bitmap.createScaledBitmap(original, rendered.width, rendered.height, true)
+                    try {
+                        val rows = rendered.height * 4 / 45 until rendered.height - rendered.height * 4 / 45
+                        val keyColumns = rendered.width * 3 / 40 until rendered.width * 2 / 3 - rendered.width / 20
+                        var changedKeyPixels = 0
+                        var wallpaperMatchedPixels = 0
+                        for (y in rows) {
+                            for (x in keyColumns) {
+                                val before = scaledSource.getPixel(x, y)
+                                val after = rendered.getPixel(x, y)
+                                if (rgbL1Distance(before, after) >= 80) changedKeyPixels++
+                                if (rgbL1Distance(after, Color.BLUE) <= 80) wallpaperMatchedPixels++
+                            }
+                        }
+                        val keyRegionPixels = rows.count() * keyColumns.count()
+                        val sourceReferenceKeyPixels = (height - 32).toLong() * (width * 2 / 3 - 40)
+                        val scaledMinimumChangedPixels =
+                            ((keyRegionPixels.toLong() * 500L + sourceReferenceKeyPixels - 1L) /
+                                sourceReferenceKeyPixels).toInt()
+                        val minimumChangedPixels = maxOf(500, scaledMinimumChangedPixels)
+                        assertTrue(
+                            "$label changed $changedKeyPixels key-region pixels; require >=$minimumChangedPixels " +
+                                "at RGB L1 distance >=80 (resolution-scaled from the 500-pixel source gate)",
+                            changedKeyPixels >= minimumChangedPixels
+                        )
+                        assertTrue(
+                            "$label wallpaper region matched blue in $wallpaperMatchedPixels/$keyRegionPixels pixels",
+                            wallpaperMatchedPixels >= keyRegionPixels * 3 / 4
+                        )
+
+                        val foregroundColumns = rendered.width * 2 / 3 + rendered.width / 20 until
+                            rendered.width - rendered.width * 3 / 40
+                        var retainedForegroundPixels = 0
+                        for (y in rows) {
+                            for (x in foregroundColumns) {
+                                if (rgbL1Distance(rendered.getPixel(x, y), scaledSource.getPixel(x, y)) <= 60) {
+                                    retainedForegroundPixels++
+                                }
+                            }
+                        }
+                        val foregroundRegionPixels = rows.count() * foregroundColumns.count()
+                        assertTrue(
+                            "$label retained only $retainedForegroundPixels/$foregroundRegionPixels foreground pixels " +
+                                "within RGB L1 distance 60; require >=90%",
+                            retainedForegroundPixels >= foregroundRegionPixels * 9 / 10
+                        )
+                    } finally {
+                        if (scaledSource !== original) scaledSource.recycle()
+                    }
+                } finally {
+                    rendered.recycle()
+                }
+            }
 
             val rows = 16 until height - 16
             val keyColumns = 24 until width * 2 / 3 - 16
@@ -2485,22 +2656,49 @@ class ExportTimestampParityInstrumentedTest {
                 "At least 90% of the foreground must remain within RGB L1 distance 60 of the source; retained=$retainedForegroundPixels/$foregroundRegionPixels",
                 retainedForegroundPixels >= foregroundRegionPixels * 9 / 10
             )
+
+            assertFinalExportPreservesChroma("Selected-clip export", requireNotNull(selectedOutput))
+            assertFinalExportPreservesChroma("Whole-project export", requireNotNull(projectOutput))
         } finally {
+            var safeToDeleteOutputs = true
+            for (engine in listOf(selectedEngine, projectEngine)) {
+                val safeToDelete = engine.cancelAndCheckSafeToDelete()
+                safeToDeleteOutputs = safeToDeleteOutputs && safeToDelete
+            }
+            instrumentation.runOnMainSync {
+                selectedEngine.release()
+                projectEngine.release()
+            }
             sourceFrame?.recycle()
             bakedFrame?.recycle()
             sourceBitmap.recycle()
             wallpaperBitmap.recycle()
-            sourceFile?.delete()
-            bakedFile?.delete()
-            outputFile.delete()
-            wallpaperFile.delete()
-            root.deleteRecursively()
+            if (safeToDeleteOutputs) {
+                sourceFile?.delete()
+                bakedFile?.delete()
+                selectedOutput?.delete()
+                projectOutput?.delete()
+                outputFile.delete()
+                wallpaperFile.delete()
+                File(exportOutputDir, selectedOutputName).delete()
+                File(exportOutputDir, projectOutputName).delete()
+                File(exportOutputDir, selectedOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
+                File(exportOutputDir, projectOutputName.removeSuffix(".mp4") + "_music.mp4").delete()
+                root.deleteRecursively()
+            }
         }
     }
 
     private suspend fun awaitTerminalState(engine: ExportEngine): ExportEngine.ExportProgressState =
         withTimeout(180_000L) {
             engine.exportState.first { it.error != null || it.outputUri != null }
+        }
+
+    private suspend fun ExportEngine.cancelAndCheckSafeToDelete(): Boolean =
+        try {
+            cancelExportAndAwait()
+        } catch (_: Exception) {
+            false
         }
 
     private fun assertOutputTiming(

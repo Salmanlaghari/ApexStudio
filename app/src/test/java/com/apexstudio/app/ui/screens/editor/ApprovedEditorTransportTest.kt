@@ -27,14 +27,15 @@ class ApprovedEditorTransportTest {
     @get:Rule val compose = createComposeRule()
     private val video = MediaClip(id = "video", name = "Video", uri = "file:///video.mp4", durationMs = 5000L, trimEndMs = 5000L)
 
-    @Test fun keyframeControlTargetsOnlySelectedVideoNotAnUnderlyingSelection() {
+    @Test fun keyframeControlTargetsOnlySelectedVideoOrPhotoNotAnUnderlyingSelection() {
         val state = EditorState(project = Project(id = "p", name = "Project", durationMs = 5000L, clips = listOf(video)), selectedClipId = video.id)
         assertEquals(video, selectedKeyframeVideo(state))
         assertNull(selectedKeyframeVideo(state.copy(selectedClipId = null)))
         assertNull(selectedKeyframeVideo(state.copy(selectedTextOverlayId = "text")))
         assertNull(selectedKeyframeVideo(state.copy(selectedStickerId = "sticker")))
         assertNull(selectedKeyframeVideo(state.copy(selectedAudioTrackId = "audio")))
-        assertNull(selectedKeyframeVideo(state.copy(project = state.project!!.copy(clips = listOf(video.copy(type = ClipType.IMAGE))))))
+        val photo = video.copy(type = ClipType.IMAGE)
+        assertEquals(photo, selectedKeyframeVideo(state.copy(project = state.project!!.copy(clips = listOf(photo)))))
     }
 
     @Test fun previewFollowsProjectClockAcrossClipBoundariesWithoutChangingSelection() {

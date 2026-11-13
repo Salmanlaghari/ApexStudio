@@ -1247,7 +1247,7 @@ class ExportTimestampParityInstrumentedTest {
             )
             repository.saveProject(Project(
                 id = id, name = "FX round-trip", durationMs = 1_800L, clips = listOf(clip),
-                resolution = "720p", fps = 30, videoAspectRatio = "16:9"
+                resolution = "720p", fps = 30, videoAspectRatio = 16f / 9f
             ))
             val first = openEditor()
             withTimeout(20_000L) { first.state.first { it.project?.id == id && it.project?.clips?.singleOrNull()?.id == clip.id } }

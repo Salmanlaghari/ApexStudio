@@ -2,21 +2,27 @@ package com.apexstudio.app.presentation.viewmodel
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.ui.components.mapProjectTextLayers
+import com.apexstudio.app.ui.screens.editor.AnimatedTextOverlayView
 import com.apexstudio.app.ui.screens.editor.ScreenWordingObjects
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -91,6 +97,59 @@ class TextOverlayWorkflowTest {
         compose.onAllNodesWithContentDescription("Duplicate Text").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("Resize Text Size").assertCountEquals(0)
         compose.onAllNodesWithContentDescription("Edit Text Content").assertCountEquals(0)
+    }
+
+    @Test
+    fun largeTitleAutoFitsOnOneLineInNarrowPreview() {
+        val titleLayouts = mutableListOf<TextLayoutResult>()
+        compose.setContent {
+            Box(Modifier.size(160.dp, 320.dp)) {
+                AnimatedTextOverlayView(
+                    overlay = TextOverlay(id = "mum-title", text = "Mum", sizeScale = 4f),
+                    isSelected = false,
+                    containerWidth = 160.dp,
+                    containerHeight = 320.dp,
+                    currentTimeMs = 0L,
+                    isPlaying = false,
+                    onSelect = {},
+                    onPositionChange = { _, _ -> }
+                )
+            }
+        }
+
+        compose.onNodeWithText("Mum").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getResult ->
+            assertTrue(getResult(titleLayouts))
+        }
+
+        assertEquals(1, titleLayouts.size)
+        assertEquals(1, titleLayouts.single().lineCount)
+        assertFalse(titleLayouts.single().didOverflowWidth)
+    }
+
+    @Test
+    fun userSizeScaleIsAppliedOnlyOnceToPreviewText() {
+        val overlayState = mutableStateOf(TextOverlay(id = "scaled-title", text = "Mum", sizeScale = 1f))
+        compose.setContent {
+            Box(Modifier.size(640.dp, 320.dp)) {
+                AnimatedTextOverlayView(
+                    overlay = overlayState.value,
+                    isSelected = false,
+                    containerWidth = 640.dp,
+                    containerHeight = 320.dp,
+                    currentTimeMs = 0L,
+                    isPlaying = false,
+                    onSelect = {},
+                    onPositionChange = { _, _ -> }
+                )
+            }
+        }
+
+        val baseWidth = compose.onNodeWithText("Mum").fetchSemanticsNode().boundsInRoot.width
+        compose.runOnIdle { overlayState.value = overlayState.value.copy(sizeScale = 2f) }
+        compose.waitForIdle()
+        val doubledWidth = compose.onNodeWithText("Mum").fetchSemanticsNode().boundsInRoot.width
+
+        assertEquals(2f, doubledWidth / baseWidth, 0.2f)
     }
 
     @Test

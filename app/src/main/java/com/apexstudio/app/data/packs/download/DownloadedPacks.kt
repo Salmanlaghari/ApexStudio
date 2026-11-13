@@ -17,8 +17,12 @@ object DownloadedPacks {
     private const val TAG = "DownloadedPacks"
 
     /** Called after the install registry is committed, before the UI state flips to Downloaded. */
-    suspend fun onPackInstalled(context: Context, packId: String): Boolean {
-        val manifest = PackManifestRepo.fetchManifest(context)
+    suspend fun onPackInstalled(
+        context: Context,
+        packId: String,
+        suppliedManifest: PackManifestRepo.PackManifestFile? = null
+    ): Boolean {
+        val manifest = suppliedManifest ?: PackManifestRepo.fetchManifest(context)
         val pack = manifest.packs.firstOrNull { it.id == packId } ?: return false
         return when (pack.category) {
             "filters" -> {

@@ -254,12 +254,8 @@ object PackManager {
 
     private fun startDownload(appContext: Context, pack: PackManifestRepo.RemotePack) {
         val packId = pack.id
-        val dir = packDir(appContext, packId)
-        val fileName = DownloadEngine.fileNameFor(pack.url, packId)
-        val destFile = File(dir, fileName)
 
         jobs[packId] = scope.launch {
-            withContext(Dispatchers.IO) { dir.mkdirs() }
             updateItem(packId) { it.copy(state = PackState.Downloading(0, pack.sizeBytes)) }
 
             // Throttle progress emissions: the engine calls back per 8KB
@@ -268,72 +264,74 @@ object PackManager {
             // directly — no per-callback coroutine launch.
             var lastEmitMs = 0L
             var lastPct = -1
-            val result = DownloadEngine.download(
-                url = pack.url,
-                destFile = destFile,
-                expectedSha256 = pack.sha256
-            ) { done, total ->
-                val pct = if (total > 0) (done * 100 / total).toInt() else -1
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (pct != lastPct && (now - lastEmitMs >= 250 || done >= total)) {
-                    lastPct = pct
-                    lastEmitMs = now
-                    // StateFlow is thread-safe: update directly, no coroutine hop.
-                    updateItem(packId) {
-                        if (it.state is PackState.Downloading)
-                            it.copy(state = PackState.Downloading(done, total))
-                        else it
+            val catalog = PackManifestRepo.PackManifestFile(packs = _packsState.value.map { it.pack })
+            val installedState = try {
+                downloadAndInstall(appContext, pack, catalog) { done, total ->
+                    val pct = if (total > 0) (done * 100 / total).toInt() else -1
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (pct != lastPct && (now - lastEmitMs >= 250 || done >= total)) {
+                        lastPct = pct
+                        lastEmitMs = now
+                        // StateFlow is thread-safe: update directly, no coroutine hop.
+                        updateItem(packId) {
+                            if (it.state is PackState.Downloading)
+                                it.copy(state = PackState.Downloading(done, total))
+                            else it
+                        }
                     }
                 }
+            } finally {
+                jobs.remove(packId)
             }
+            updateItem(packId) { it.copy(state = installedState) }
+        }
+    }
 
-            jobs.remove(packId)
-            when (result) {
-                is DownloadEngine.Result.Success -> {
-                    var installFailure: String? = null
-                    val ok = withContext(Dispatchers.IO) {
-                        try {
-                            // Graceful validation only: a malformed pack fails the
-                            // install with a reason — it never throws out of the
-                            // download coroutine (fix-forward for PR #230's Kilo
-                            // CRITICAL: no require()/check() in this path).
-                            installFailure = packSizeFailure(pack.sizeBytes, destFile.length())
-                            // Unpack zips; single files are used as-is.
-                            if (installFailure == null && destFile.extension.equals("zip", ignoreCase = true)) {
-                                if (unzip(destFile, dir)) {
-                                    destFile.delete()
-                                } else {
-                                    installFailure = "Pack archive contains an unsafe entry path"
-                                }
+    /** Shared verified download/install path used by the Packs UI and integration tests. */
+    internal suspend fun downloadAndInstall(
+        context: Context,
+        pack: PackManifestRepo.RemotePack,
+        catalog: PackManifestRepo.PackManifestFile,
+        onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }
+    ): PackState {
+        val appContext = context.applicationContext
+        val packId = pack.id
+        val dir = packDir(appContext, packId)
+        val destFile = File(dir, DownloadEngine.fileNameFor(pack.url, packId))
+        withContext(Dispatchers.IO) { dir.mkdirs() }
+
+        return when (val result = DownloadEngine.download(pack.url, destFile, pack.sha256, onProgress)) {
+            is DownloadEngine.Result.Failed -> PackState.Failed(result.reason)
+            is DownloadEngine.Result.Success -> {
+                var installFailure: String? = null
+                val installed = withContext(Dispatchers.IO) {
+                    try {
+                        // Graceful validation only: malformed pack data yields a visible failure.
+                        installFailure = packSizeFailure(pack.sizeBytes, destFile.length())
+                        if (installFailure == null && destFile.extension.equals("zip", ignoreCase = true)) {
+                            if (unzip(destFile, dir)) destFile.delete()
+                            else installFailure = "Pack archive contains an unsafe entry path"
+                        }
+                        if (installFailure == null) {
+                            recordInstalledPack(appContext, packId, pack.version, pack.sha256)
+                            if (!DownloadedPacks.onPackInstalled(appContext, packId, catalog)) {
+                                installFailure = "Pack content did not pass its feature validation"
                             }
-                            if (installFailure == null) {
-                                recordInstalledPack(appContext, packId, pack.version, pack.sha256)
-                                // Let feature repositories verify the installed content. FX
-                                // payloads must parse into at least one pinned profile before
-                                // the pack can be reported as installed.
-                                if (!DownloadedPacks.onPackInstalled(appContext, packId)) {
-                                    installFailure = "Pack content did not pass its feature validation"
-                                }
-                            }
-                            if (installFailure == null) {
-                                true
-                            } else {
-                                rejectInstalledPack(appContext, packId, dir)
-                                false
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Pack install failed: $packId", e)
-                            installFailure = e.message ?: e.javaClass.simpleName
+                        }
+                        if (installFailure == null) true
+                        else {
                             rejectInstalledPack(appContext, packId, dir)
                             false
                         }
-                    }
-                    updateItem(packId) {
-                        it.copy(state = if (ok) PackState.Downloaded else PackState.Failed(installFailure ?: "Install failed"))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Pack install failed: $packId", e)
+                        installFailure = e.message ?: e.javaClass.simpleName
+                        rejectInstalledPack(appContext, packId, dir)
+                        false
                     }
                 }
-                is DownloadEngine.Result.Failed ->
-                    updateItem(packId) { it.copy(state = PackState.Failed(result.reason)) }
+                if (installed) PackState.Downloaded
+                else PackState.Failed(installFailure ?: "Install failed")
             }
         }
     }

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlinx.coroutines.Dispatchers
@@ -640,6 +641,7 @@ private fun IllustrativeTransitionFallback(
     clipBBitmap: android.graphics.Bitmap?,
     modifier: Modifier = Modifier
 ) {
+    val theme = ApexThemeTokens.current
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
@@ -710,11 +712,11 @@ private fun IllustrativeTransitionFallback(
                     if (p < 0.5f) {
                         val flash = p * 2f
                         drawClipA()
-                        drawRect(color = ApexPalette.TextPrimary, alpha = flash)
+                        drawRect(color = theme.textPrimary, alpha = flash)
                     } else {
                         val flash = (1f - (p - 0.5f) * 2f)
                         drawClipB()
-                        drawRect(color = ApexPalette.TextPrimary, alpha = flash)
+                        drawRect(color = theme.textPrimary, alpha = flash)
                     }
                 }
 
@@ -877,7 +879,7 @@ private fun IllustrativeTransitionFallback(
                         for (i in 0 until 7) {
                             val y = h * (i + 1) / 8f
                             drawLine(
-                                color = ApexPalette.TextPrimary.copy(alpha = 0.08f * blurAmt),
+                                color = theme.textPrimary.copy(alpha = 0.08f * blurAmt),
                                 start = Offset(0f, y),
                                 end = Offset(w, y),
                                 strokeWidth = 2f + 6f * blurAmt

@@ -37,7 +37,6 @@ import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.editor.thumbnail.TimelineThumbnailBackfill
 import com.apexstudio.editor.thumbnail.TimelineThumbnailSourceKey
 import com.apexstudio.editor.thumbnail.TimelineThumbnailRequestPass
-import com.apexstudio.app.ui.theme.ApexPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -489,14 +488,14 @@ fun BottomTimelineActionRow(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (!canEditKeyframe) EditorPalette.BgElevated else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan.copy(alpha = 0.18f) else EditorPalette.BgElevated)
+                        .background(if (!canEditKeyframe) EditorPalette.BgElevated else if (hasKeyframeAtPlayhead) EditorPalette.NeonCyan.copy(alpha = 0.18f) else EditorPalette.BgElevated)
                         .clickable(enabled = canEditKeyframe, onClick = onToggleKeyframe, role = Role.Button)
                         .semantics { contentDescription = if (!canEditKeyframe) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe at playhead" else "Add keyframe at playhead" },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = if (hasKeyframeAtPlayhead) "−KF" else "+KF",
-                        color = if (!canEditKeyframe) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) ApexPalette.NeonCyan else EditorPalette.TextPrimary,
+                        color = if (!canEditKeyframe) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) EditorPalette.NeonCyan else EditorPalette.TextPrimary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )

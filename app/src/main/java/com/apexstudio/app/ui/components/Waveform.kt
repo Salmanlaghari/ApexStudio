@@ -12,7 +12,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.WaveformGenerator
 
 @Composable
@@ -139,6 +140,7 @@ fun WaveformCurve(
     color: Color = ApexPalette.NeonCyan,
     fillColor: Color = ApexPalette.NeonCyan.copy(alpha = 0.18f)
 ) {
+    val theme = ApexThemeTokens.current
     Canvas(modifier = modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
@@ -171,7 +173,7 @@ fun WaveformCurve(
         drawPath(
             path,
             brush = Brush.linearGradient(
-                listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
+                listOf(theme.primary, theme.secondary)
             ),
             style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round)
         )

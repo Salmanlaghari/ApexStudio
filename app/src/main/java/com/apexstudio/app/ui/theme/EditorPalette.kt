@@ -1,36 +1,77 @@
 package com.apexstudio.app.ui.theme
 
-/** Editor-shell palette aligned with the original PR169/170 ApexStudio chrome. */
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+
+/** Composition-scoped editor palette aligned with the user's selected app theme. */
 object EditorPalette {
-    val BgDeep = ApexPalette.BgDeep
-    val BgBase = ApexPalette.BgBase
-    val BgSurface = ApexPalette.BgSurface
-    val BgElevated = ApexPalette.BgElevated
-    val BgGlass = ApexPalette.BgGlass
-    val BgGlassSoft = ApexPalette.BgGlassSoft
-    val NeonCyan = ApexPalette.NeonCyan
-    val NeonCyanGlow = ApexPalette.NeonCyanGlow
-    val NeonPurple = ApexPalette.NeonPurple
-    val NeonPurpleGlow = ApexPalette.NeonPurpleGlow
+    private val selected: ApexThemePalette
+        @Composable @ReadOnlyComposable get() = ApexThemeTokens.current
+
+    val BgDeep: Color
+        @Composable @ReadOnlyComposable get() = selected.bgDeep
+    val BgBase: Color
+        @Composable @ReadOnlyComposable get() = selected.bgBase
+    val BgSurface: Color
+        @Composable @ReadOnlyComposable get() = selected.bgSurface
+    val BgElevated: Color
+        @Composable @ReadOnlyComposable get() = selected.bgElevated
+    val BgGlass: Color
+        @Composable @ReadOnlyComposable get() = selected.bgSurface.copy(alpha = 0xCC / 255f)
+    val BgGlassSoft: Color
+        @Composable @ReadOnlyComposable get() = selected.bgSurface.copy(alpha = 0x80 / 255f)
+
+    val NeonCyan: Color
+        @Composable @ReadOnlyComposable get() = selected.primary
+    val NeonCyanGlow: Color
+        @Composable @ReadOnlyComposable get() = selected.primaryGlow
+    val NeonPurple: Color
+        @Composable @ReadOnlyComposable get() = selected.secondary
+    val NeonPurpleGlow: Color
+        @Composable @ReadOnlyComposable get() = selected.secondaryGlow
+
+    // Semantic/status and timeline colors intentionally remain consistent across themes.
     val NeonEmerald = ApexPalette.NeonEmerald
     val NeonPink = ApexPalette.NeonPink
     val NeonAmber = ApexPalette.NeonAmber
     val TrackBlue = ApexPalette.TrackBlue
-    val TextPrimary = ApexPalette.TextPrimary
-    val TextSecondary = ApexPalette.TextSecondary
-    val TextTertiary = ApexPalette.TextTertiary
-    val TextMuted = ApexPalette.TextMuted
+
+    val TextPrimary: Color
+        @Composable @ReadOnlyComposable get() = selected.textPrimary
+    val TextSecondary: Color
+        @Composable @ReadOnlyComposable get() = selected.textSecondary
+    val TextTertiary: Color
+        @Composable @ReadOnlyComposable get() = selected.textTertiary
+    val TextMuted: Color
+        @Composable @ReadOnlyComposable get() = selected.textMuted
+
     val Success = ApexPalette.Success
     val Warning = ApexPalette.Warning
     val Danger = ApexPalette.Danger
-    val Divider = ApexPalette.Divider
-    val BorderGlass = ApexPalette.BorderGlass
+    val Divider: Color
+        @Composable @ReadOnlyComposable get() = selected.divider
+    val BorderGlass: Color
+        @Composable @ReadOnlyComposable get() = selected.border
+
     val TrackVideo = ApexPalette.TrackVideo
     val TrackAudio = ApexPalette.TrackAudio
     val TrackOverlay = ApexPalette.TrackOverlay
     val TrackSfx = ApexPalette.TrackSfx
-    val GradientPrimary = ApexPalette.GradientPrimary
-    val GradientSurface = ApexPalette.GradientSurface
+
+    val GradientPrimary: Brush
+        @Composable @ReadOnlyComposable get() = Brush.linearGradient(
+            listOf(selected.primary, selected.secondary)
+        )
+    val GradientSurface: Brush
+        @Composable @ReadOnlyComposable get() = Brush.verticalGradient(
+            listOf(selected.bgSurface, selected.bgDeep)
+        )
+    // Neutral specular sheen intentionally stays theme-independent; its surface is theme-aware.
     val GradientGlass = ApexPalette.GradientGlass
-    val GradientAccent = ApexPalette.GradientAccent
+    val GradientAccent: Brush
+        @Composable @ReadOnlyComposable get() = Brush.linearGradient(
+            listOf(selected.secondary, selected.primary)
+        )
 }

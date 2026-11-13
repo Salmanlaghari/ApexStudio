@@ -149,8 +149,8 @@ import com.apexstudio.app.presentation.viewmodel.AudioTrackPlacement
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MAX_ZOOM
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
-import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.ui.theme.EditorPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
@@ -313,7 +313,7 @@ private fun FixedTimelineIdentityRail(
         }
         if (hasMainVideo) {
             Box(Modifier.fillMaxWidth().height((10 + MAIN_VIDEO_LANE_HEIGHT_DP).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
-                TimelineLaneIdentity("V1 · Main", ApexPalette.NeonCyan)
+                TimelineLaneIdentity("V1 · Main", EditorPalette.NeonCyan)
             }
         }
         if (showWaveformStrip) {
@@ -331,7 +331,7 @@ private fun FixedTimelineIdentityRail(
         ) {
             overlayLayers.forEach { layer ->
                 Box(Modifier.fillMaxWidth().height(OVERLAY_LAYER_HEIGHT_DP.dp), contentAlignment = Alignment.CenterStart) {
-                    TimelineLaneIdentity("V${layer + 1} · Overlay", ApexPalette.NeonCyan)
+                    TimelineLaneIdentity("V${layer + 1} · Overlay", EditorPalette.NeonCyan)
                 }
             }
             if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = textLaneHeight)
@@ -1766,6 +1766,7 @@ private fun TimelineTimeRuler(
     onDoubleTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val theme = ApexThemeTokens.current
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
@@ -1848,7 +1849,7 @@ private fun TimelineTimeRuler(
                 // Half-second tick (15 frames at 30fps)
                 val halfXPx = ((secStartMs + 500L) * msToDp).dp.toPx()
                 drawLine(
-                    color = if (secondWidthDp >= 180.dp) ApexPalette.NeonCyan.copy(alpha = 0.8f) else Color(0xFF64748B),
+                    color = if (secondWidthDp >= 180.dp) theme.primary.copy(alpha = 0.8f) else Color(0xFF64748B),
                     start = Offset(halfXPx, h - if (secondWidthDp >= 180.dp) 8f else 6f),
                     end = Offset(halfXPx, h),
                     strokeWidth = if (secondWidthDp >= 180.dp) 1.5f else 1f
@@ -1882,7 +1883,7 @@ private fun TimelineTimeRuler(
                         lineTo(beatXPx - 3.5f, h - 6f)
                         close()
                     }
-                    drawPath(diamond, color = ApexPalette.NeonCyan)
+                    drawPath(diamond, color = theme.primary)
                 }
             }
         }
@@ -2129,8 +2130,8 @@ private fun TimelineVideoLayerRow(
                             .border(
                                 width = if (isSelected || isMultiSelected || isDragging) 1.5.dp else 1.dp,
                                 color = if (isSelected) Color(0xFF00A99D)
-                                else if (isDragging) ApexPalette.NeonCyan
-                                else ApexPalette.NeonCyan.copy(alpha = 0.5f),
+                                else if (isDragging) EditorPalette.NeonCyan
+                                else EditorPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(7.dp)
                             )
                             .pointerInput(clip, isLocked, msToDp, density.density) {
@@ -2316,7 +2317,7 @@ private fun TimelineVideoLayerRow(
                         onSeekToKeyframe = onSeekToKeyframe,
                         onMoveKeyframe = { id, time -> onMoveKeyframe(clip.id, id, time) },
                         onAddAtPlayhead = { onToggleKeyframeAtPlayhead(clip.id) },
-                        accentColor = ApexPalette.NeonCyan,
+                        accentColor = EditorPalette.NeonCyan,
                         showLaneBackground = false,
                         markerTagPrefix = "overlay-${clip.id}",
                         addButtonAlignment = Alignment.BottomEnd,
@@ -2330,7 +2331,7 @@ private fun TimelineVideoLayerRow(
                 }
             }
             Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
-                TimelineLaneIdentity("PiP overlay · V${layerIndex + 1}", ApexPalette.NeonCyan)
+                TimelineLaneIdentity("PiP overlay · V${layerIndex + 1}", EditorPalette.NeonCyan)
             }
         }
     }
@@ -2451,7 +2452,7 @@ private fun TimelineTextLane(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        Icon(Icons.Default.Title, contentDescription = null, tint = ApexPalette.NeonPink, modifier = Modifier.size(11.dp))
+                        Icon(Icons.Default.Title, contentDescription = null, tint = EditorPalette.NeonPink, modifier = Modifier.size(11.dp))
                         Text(
                             textOverlay.text.ifEmpty { "Title" },
                             color = Color.White,
@@ -2473,7 +2474,7 @@ private fun TimelineTextLane(
                     onAddAtPlayhead = {
                         if (ownerClipId != null) onToggleTextKeyframeAtPlayhead(ownerClipId, textOverlay.id)
                     },
-                    accentColor = ApexPalette.NeonPink,
+                    accentColor = EditorPalette.NeonPink,
                     showLaneBackground = false,
                     markerTagPrefix = "text-${textOverlay.id}",
                     modifier = Modifier
@@ -2831,7 +2832,7 @@ private fun TimelineVideoTrack(
                             .width(4.dp)
                             .fillMaxHeight()
                             .clip(RoundedCornerShape(2.dp))
-                            .background(ApexPalette.NeonCyan)
+                            .background(EditorPalette.NeonCyan)
                     )
                 }
 
@@ -2866,9 +2867,9 @@ private fun TimelineVideoTrack(
                         )
                         .border(
                             width = if (isBeingDragged) 2.5.dp else if (isSelected || isMultiSelected) 2.dp else 1.dp,
-                            color = if (isBeingDragged) ApexPalette.NeonCyan
-                            else if (isMultiSelected) ApexPalette.NeonAmber
-                            else if (isSelected) ApexPalette.NeonCyan
+                            color = if (isBeingDragged) EditorPalette.NeonCyan
+                            else if (isMultiSelected) EditorPalette.NeonAmber
+                            else if (isSelected) EditorPalette.NeonCyan
                             else Color(0xFF178B9B).copy(alpha = 0.75f),
                             shape = RoundedCornerShape(7.dp)
                         )
@@ -3034,7 +3035,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 6.dp, height = 30.dp)
-                                    .background(Brush.verticalGradient(listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan)), RoundedCornerShape(3.dp))
+                                    .background(Brush.verticalGradient(listOf(EditorPalette.NeonPurple, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
                             )
                         }
                         // Right grip: trim end
@@ -3087,7 +3088,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 6.dp, height = 30.dp)
-                                    .background(Brush.verticalGradient(listOf(ApexPalette.NeonPurple, ApexPalette.NeonCyan)), RoundedCornerShape(3.dp))
+                                    .background(Brush.verticalGradient(listOf(EditorPalette.NeonPurple, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
                             )
                         }
                     }
@@ -3113,7 +3114,7 @@ private fun TimelineVideoTrack(
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(ApexPalette.NeonCyan.copy(alpha = 0.9f))
+                                .background(EditorPalette.NeonCyan.copy(alpha = 0.9f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text("REORDER", color = Color.Black, fontSize = 8.sp, fontWeight = FontWeight.Black)
@@ -3230,11 +3231,11 @@ private fun TimelineVideoTrack(
                         .width(4.dp)
                         .fillMaxHeight()
                         .clip(RoundedCornerShape(2.dp))
-                        .background(ApexPalette.NeonCyan)
+                        .background(EditorPalette.NeonCyan)
                 )
             }
         Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 3.dp).zIndex(5f)) {
-            TimelineLaneIdentity("Main video · V1", ApexPalette.NeonCyan)
+            TimelineLaneIdentity("Main video · V1", EditorPalette.NeonCyan)
         }
     }
 }
@@ -3503,12 +3504,12 @@ private fun TimelineFxTrack(
                         .size(24.dp)
                         .clip(CircleShape)
                         .background(Color(0xFF12243A))
-                        .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.7f), CircleShape)
+                        .border(1.dp, EditorPalette.NeonCyan.copy(alpha = 0.7f), CircleShape)
                         .clickable(onClick = onOpenFxPanel)
                         .semantics { contentDescription = "Add effect" },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("+", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("+", color = EditorPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
                 // x chip: clears the whole lane (FX + LUT filter + adjustments).
                 Box(
@@ -3543,7 +3544,7 @@ private fun TimelineFxTrack(
                                 .offset(x = diamondXdp)
                                 .size(8.dp)
                                 .graphicsLayer { rotationZ = 45f }
-                                .background(ApexPalette.NeonAmber, RoundedCornerShape(1.dp))
+                                .background(EditorPalette.NeonAmber, RoundedCornerShape(1.dp))
                                 .border(0.5.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(1.dp))
                                 .clickable { onSeekToKeyframe(kf.timeMs) }
                         )
@@ -3553,8 +3554,8 @@ private fun TimelineFxTrack(
                             .align(Alignment.CenterEnd)
                             .size(12.dp)
                             .clip(CircleShape)
-                            .background(ApexPalette.NeonAmber.copy(alpha = 0.25f))
-                            .border(1.dp, ApexPalette.NeonAmber, CircleShape)
+                            .background(EditorPalette.NeonAmber.copy(alpha = 0.25f))
+                            .border(1.dp, EditorPalette.NeonAmber, CircleShape)
                             .clickable(onClick = onToggleKeyframeAtPlayhead),
                         contentAlignment = Alignment.Center
                     ) {
@@ -3697,7 +3698,7 @@ private fun TimelineAudioTrack(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFF0D1727))
-            .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+            .border(1.dp, EditorPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
             .padding(vertical = 3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
@@ -3811,7 +3812,7 @@ private fun AudioTrackLaneRow(
                 .padding(vertical = 3.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .background(if (isSelected) Color(0xFF102A35) else Color(0xFF101D2B))
-                .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) ApexPalette.NeonCyan else accent.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                .border(if (isSelected) 1.5.dp else 1.dp, if (isSelected) EditorPalette.NeonCyan else accent.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
                 .testTag("timeline-audio-track-${track.id}")
                 .semantics { selected = isSelected }
                 .clickable(onClick = onSelect)
@@ -3957,9 +3958,10 @@ private fun AudioWaveformBars(
     playheadMsProvider: () -> Long = { 0L },
     beatMarkersMs: List<Long>,
     isMuted: Boolean,
-    barColor: Color = ApexPalette.NeonCyan,
+    barColor: Color = EditorPalette.NeonCyan,
     modifier: Modifier = Modifier
 ) {
+    val theme = ApexThemeTokens.current
     // Beat bars: the old per-bar window check (±1.2 bar widths) lit up
     // to ~3 bars per marker — precompute the same set once here.
     val beatBars = remember(beatMarkersMs, durationMs) {
@@ -3993,7 +3995,7 @@ private fun AudioWaveformBars(
                 val x = i * slotW + (slotW - barW) / 2f
                 val color = when {
                     isMuted -> Color(0xFF64748B)
-                    i in beatBars -> ApexPalette.NeonCyan
+                    i in beatBars -> theme.primary
                     barFrac <= progress -> Color(0xFF225E65)
                     else -> Color(0xFF26D7C8).copy(alpha = 0.9f)
                 }
@@ -4187,7 +4189,7 @@ private fun TimelineZoomHud(
             .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp)),
         color = Color(0xF00F131D),
-        border = BorderStroke(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.5f))
+        border = BorderStroke(1.dp, EditorPalette.NeonCyan.copy(alpha = 0.5f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -4198,7 +4200,7 @@ private fun TimelineZoomHud(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(ApexPalette.NeonCyan)
+                    .background(EditorPalette.NeonCyan)
             )
 
             Text(
@@ -4341,7 +4343,7 @@ private fun TimelineToggleRow(
         Text(label, color = Color(0xFFE4EDF7), fontSize = 12.sp, modifier = Modifier.weight(1f))
         Text(
             if (enabled) "On" else "Off",
-            color = if (enabled) ApexPalette.NeonCyan else Color(0xFF7C8AA0),
+            color = if (enabled) EditorPalette.NeonCyan else Color(0xFF7C8AA0),
             fontSize = 11.sp
         )
     }

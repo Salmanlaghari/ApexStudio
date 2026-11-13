@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.vendor.visualizer.visualizer.BarVisualizer
 import com.apexstudio.app.vendor.visualizer.visualizer.CircleLineVisualizer
 import com.apexstudio.app.vendor.visualizer.base.BaseVisualizer
@@ -51,6 +51,7 @@ fun MixerVisualizer(
 ) {
     var style by remember { mutableIntStateOf(0) } // 0 = bars, 1 = circle
     val context = LocalContext.current
+    val themeAccent = ApexPalette.NeonCyan
 
     Column(modifier = modifier) {
         Row(
@@ -99,17 +100,17 @@ fun MixerVisualizer(
                 .fillMaxWidth()
                 .height(110.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF0B0E14))
+                .background(ApexPalette.BgBase)
                 .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             if (audioSessionId != 0) {
-                // Key on style so switching recreates the view cleanly.
-                androidx.compose.runtime.key(style) {
+                // Key on style/accent so switching or changing theme recreates the view cleanly.
+                androidx.compose.runtime.key(style, themeAccent) {
                     val view = remember {
                         (if (style == 0) BarVisualizer(context)
                         else CircleLineVisualizer(context)).apply {
-                            setColor(ApexPalette.NeonCyan.toArgb())
+                            setColor(themeAccent.toArgb())
                             setDensity(0.8f)
                         }
                     }

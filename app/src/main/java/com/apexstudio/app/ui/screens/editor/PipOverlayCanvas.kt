@@ -73,7 +73,7 @@ import com.apexstudio.app.data.effect.VideoCropGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
 import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin

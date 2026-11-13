@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import kotlin.math.roundToInt
 
 /** Local draft only: Cancel and sheet disposal cannot alter the project or its history. */
@@ -27,6 +28,7 @@ fun ManualCropPanel(
     onApply: (VideoCropSettings) -> Unit,
     onCancel: () -> Unit
 ) {
+    val theme = ApexThemeTokens.current
     var draft by remember(initialCrop) { mutableStateOf(initialCrop.sanitized()) }
     var control by remember { mutableStateOf("Left") }
     val currentDraft = rememberUpdatedState(draft)
@@ -52,11 +54,11 @@ fun ManualCropPanel(
                     }
                 }
             }) {
-            drawRect(ApexPalette.BgElevated)
+            drawRect(theme.bgElevated)
             val origin = Offset(draft.left * size.width, draft.top * size.height)
             val area = Size(draft.width * size.width, draft.height * size.height)
-            drawRect(ApexPalette.NeonCyan.copy(alpha = .18f), origin, area)
-            drawRect(ApexPalette.NeonCyan, origin, area, style = Stroke(2.dp.toPx()))
+            drawRect(theme.primary.copy(alpha = .18f), origin, area)
+            drawRect(theme.primary, origin, area, style = Stroke(2.dp.toPx()))
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(controls) { label ->

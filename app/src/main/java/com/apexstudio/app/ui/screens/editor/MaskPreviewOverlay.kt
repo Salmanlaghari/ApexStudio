@@ -31,7 +31,8 @@ import com.apexstudio.app.domain.model.VideoMask
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskPoint
 import com.apexstudio.app.domain.model.resolveMaskAt
-import com.apexstudio.app.ui.theme.ApexPalette
+import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 
 /**
  * Modifier that clips content to a [VideoMask]'s kept region with a
@@ -278,6 +279,7 @@ private fun MaskPreviewOverlayResolved(
     val latestMask by rememberUpdatedState(mask)
     var canvasW by remember { mutableFloatStateOf(0f) }
     var canvasH by remember { mutableFloatStateOf(0f) }
+    val theme = ApexThemeTokens.current
 
     /** Resize-handle centre in px for the current geometry. */
     fun handlePos(): Offset {
@@ -449,9 +451,9 @@ private fun MaskPreviewOverlayResolved(
         }
 
         if (editMode) {
-            drawPath(shapePath(), ApexPalette.NeonCyan, style = Stroke(width = 2.dp.toPx()))
+            drawPath(shapePath(), theme.primary, style = Stroke(width = 2.dp.toPx()))
             val hp = handlePos()
-            drawCircle(ApexPalette.NeonCyan, radius = 9.dp.toPx(), center = hp)
+            drawCircle(theme.primary, radius = 9.dp.toPx(), center = hp)
             drawCircle(Color.Black, radius = 9.dp.toPx(), center = hp, style = Stroke(width = 2.dp.toPx()))
         }
     }

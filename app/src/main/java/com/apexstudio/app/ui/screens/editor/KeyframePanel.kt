@@ -42,6 +42,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,17 +72,30 @@ import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.AnimatedTransform
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+import com.apexstudio.app.ui.theme.ApexThemeTokens
 import com.apexstudio.app.util.TimeFormat
 
-enum class KeyframePropertyFilter(val label: String, val color: Color) {
-    ALL("All", ApexPalette.NeonCyan),
-    POSITION("Position", ApexPalette.NeonCyan),
-    SCALE("Scale", ApexPalette.TrackVideo),
-    ROTATION("Rotation", ApexPalette.NeonPurple),
-    OPACITY("Opacity", ApexPalette.NeonEmerald),
-    VOLUME("Volume", Color(0xFF10B981)),
-    EFFECT("FX / Filter", Color(0xFFF59E0B)),
-    SATURATION("Saturation", Color(0xFF22D3EE))
+enum class KeyframePropertyFilter(val label: String) {
+    ALL("All"),
+    POSITION("Position"),
+    SCALE("Scale"),
+    ROTATION("Rotation"),
+    OPACITY("Opacity"),
+    VOLUME("Volume"),
+    EFFECT("FX / Filter"),
+    SATURATION("Saturation");
+
+    @Composable
+    @ReadOnlyComposable
+    fun color(): Color = when (this) {
+        ALL, POSITION -> ApexPalette.NeonCyan
+        SCALE -> ApexPalette.TrackVideo
+        ROTATION -> ApexPalette.NeonPurple
+        OPACITY -> ApexPalette.NeonEmerald
+        VOLUME -> Color(0xFF10B981)
+        EFFECT -> Color(0xFFF59E0B)
+        SATURATION -> Color(0xFF22D3EE)
+    }
 }
 
 /**
@@ -123,6 +137,7 @@ fun KeyframePanel(
     onPreviewCurve: (Keyframe) -> Unit = {},
     onCommitCurve: ((Keyframe, Keyframe) -> Unit)? = null
 ) {
+    val theme = ApexThemeTokens.current
     val sorted = remember(track) { track.sorted().keyframes }
     var copiedKeyframe by remember { mutableStateOf<Keyframe?>(null) }
     var selectedKeyframeId by remember(sorted, selectedKeyframeTimeMs) {
@@ -193,12 +208,12 @@ fun KeyframePanel(
                 val active = propertyFilter == filter
                 Box(
                     modifier = Modifier.clip(RoundedCornerShape(7.dp))
-                        .background(if (active) filter.color.copy(alpha = 0.22f) else ApexPalette.BgBase)
-                        .border(1.dp, if (active) filter.color else ApexPalette.BorderGlass, RoundedCornerShape(7.dp))
+                        .background(if (active) filter.color().copy(alpha = 0.22f) else ApexPalette.BgBase)
+                        .border(1.dp, if (active) filter.color() else ApexPalette.BorderGlass, RoundedCornerShape(7.dp))
                         .clickable { propertyFilter = filter }
                         .padding(horizontal = 9.dp, vertical = 4.dp)
                 ) {
-                    Text(filter.label, color = if (active) filter.color else ApexPalette.TextSecondary,
+                    Text(filter.label, color = if (active) filter.color() else ApexPalette.TextSecondary,
                         fontSize = 10.sp, fontWeight = if (active) FontWeight.Bold else FontWeight.Normal)
                 }
             }
@@ -227,13 +242,13 @@ fun KeyframePanel(
                         var t = 0L
                         while (t <= effectiveDuration) {
                             val x = (t.toFloat() / effectiveDuration) * size.width
-                            drawLine(ApexPalette.TextPrimary.copy(alpha = 0.12f), Offset(x, 0f), Offset(x, size.height), 1f)
+                            drawLine(theme.textPrimary.copy(alpha = 0.12f), Offset(x, 0f), Offset(x, size.height), 1f)
                             t += 1000L
                         }
                     }
                     val playheadX = (playheadMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f) * rulerWidthPx
                     Canvas(modifier = Modifier.fillMaxSize()) {
-                        drawLine(ApexPalette.NeonCyan, Offset(playheadX, 0f), Offset(playheadX, size.height), 2f)
+                        drawLine(theme.primary, Offset(playheadX, 0f), Offset(playheadX, size.height), 2f)
                     }
                     sorted.forEach { kf ->
                         val isSelected = kf.id == selectedKeyframeId
@@ -256,7 +271,7 @@ fun KeyframePanel(
                             contentAlignment = Alignment.Center
                         ) {
                             Box(modifier = Modifier.size(if (isSelected) 14.dp else 10.dp).graphicsLayer(rotationZ = 45f)
-                                .background(if (isSelected) ApexPalette.NeonCyan else propertyFilter.color)
+                                .background(if (isSelected) ApexPalette.NeonCyan else propertyFilter.color())
                                 .border(if (isSelected) 2.dp else 1.dp, if (isSelected) Color.White else Color.Black.copy(alpha = 0.5f), RoundedCornerShape(2.dp)))
                         }
                     }
@@ -384,8 +399,8 @@ fun KeyframePanel(
                                 val px = t * w; val py = h - eased * h
                                 if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
                             }
-                            drawPath(path, ApexPalette.NeonCyan, style = Stroke(width = 2.5f))
-                            drawCircle(ApexPalette.TextPrimary, 4f, Offset(0f, h)); drawCircle(ApexPalette.NeonCyan, 4f, Offset(w, 0f))
+                            drawPath(path, theme.primary, style = Stroke(width = 2.5f))
+                            drawCircle(theme.textPrimary, 4f, Offset(0f, h)); drawCircle(theme.primary, 4f, Offset(w, 0f))
                         }
                         Text("Tap to edit curve", color = ApexPalette.TextSecondary, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
                     }
@@ -419,6 +434,7 @@ private fun CurveEditorBottomSheet(
     onCancel: (Keyframe) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val theme = ApexThemeTokens.current
     val original = remember(keyframe.id) { keyframe }
     var editing by remember(keyframe.id) { mutableStateOf(keyframe) }
     var activeHandle by remember(keyframe.id) { mutableStateOf(0) }
@@ -512,7 +528,7 @@ private fun CurveEditorBottomSheet(
                     val viewport = CurveGraphViewport(size.width, size.height, graphPaddingPx, graphPaddingPx)
                     val bottomLeft = viewport.point(0f, 0f)
                     val topRight = viewport.point(1f, 1f)
-                    val gridColor = ApexPalette.BorderGlass.copy(alpha = 0.55f)
+                    val gridColor = theme.border.copy(alpha = 0.55f)
                     for (index in 0..4) {
                         val fraction = index / 4f
                         val x = viewport.point(fraction, 0f).x
@@ -520,8 +536,8 @@ private fun CurveEditorBottomSheet(
                         drawLine(gridColor, Offset(x, topRight.y), Offset(x, bottomLeft.y), 1f)
                         drawLine(gridColor, Offset(viewport.left, y), Offset(viewport.right, y), 1f)
                     }
-                    drawLine(ApexPalette.TextSecondary.copy(alpha = 0.7f), Offset(viewport.left, bottomLeft.y), Offset(viewport.right, bottomLeft.y), 1.4f)
-                    drawLine(ApexPalette.TextSecondary.copy(alpha = 0.7f), Offset(viewport.left, topRight.y), Offset(viewport.right, topRight.y), 1.4f)
+                    drawLine(theme.textSecondary.copy(alpha = 0.7f), Offset(viewport.left, bottomLeft.y), Offset(viewport.right, bottomLeft.y), 1.4f)
+                    drawLine(theme.textSecondary.copy(alpha = 0.7f), Offset(viewport.left, topRight.y), Offset(viewport.right, topRight.y), 1.4f)
 
                     val path = Path()
                     for (index in 0..80) {
@@ -529,19 +545,19 @@ private fun CurveEditorBottomSheet(
                         val point = viewport.point(t, curveProgress(editing, t))
                         if (index == 0) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
                     }
-                    drawPath(path, ApexPalette.NeonCyan, style = Stroke(width = 3f))
+                    drawPath(path, theme.primary, style = Stroke(width = 3f))
 
                     if (editing.curve == KeyframeCurve.BEZIER) {
                         val controls = editing.bezierControls()
                         val cp1 = viewport.point(controls.cp1X, controls.cp1Y)
                         val cp2 = viewport.point(controls.cp2X, controls.cp2Y)
-                        drawLine(ApexPalette.NeonPurple.copy(alpha = 0.85f), bottomLeft, cp1, 1.5f)
+                        drawLine(theme.secondary.copy(alpha = 0.85f), bottomLeft, cp1, 1.5f)
                         drawLine(ApexPalette.NeonEmerald.copy(alpha = 0.85f), topRight, cp2, 1.5f)
-                        drawCircle(ApexPalette.NeonPurple, handleRadiusPx, cp1)
+                        drawCircle(theme.secondary, handleRadiusPx, cp1)
                         drawCircle(ApexPalette.NeonEmerald, handleRadiusPx, cp2)
                     }
                     drawCircle(Color.White, 5.dp.toPx(), bottomLeft)
-                    drawCircle(ApexPalette.NeonCyan, 5.dp.toPx(), topRight)
+                    drawCircle(theme.primary, 5.dp.toPx(), topRight)
                 }
             }
             Text(
@@ -673,6 +689,7 @@ private fun KeyframeAction(label: String, enabled: Boolean, onClick: () -> Unit)
     }
 }
 
+@Composable
 private fun Modifier.keyframePanelCard(): Modifier = this
     .clip(RoundedCornerShape(11.dp))
     .background(ApexPalette.BgBase)

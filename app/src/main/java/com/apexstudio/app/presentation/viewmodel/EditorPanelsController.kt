@@ -4,21 +4,30 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 
-
 fun EditorViewModel.openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
 
-fun EditorViewModel.closeAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = false) }
+fun EditorViewModel.closeAdjustmentsPanel() {
+    _state.update { it.copy(adjustmentsPanelOpen = false) }
+    flushProject()
+}
 
 fun EditorViewModel.updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
-    _state.update { it.copy(adjustments = transform(it.adjustments)) }
+    _state.update { state ->
+        val updated = transform(state.adjustments)
+        state.copy(
+            adjustments = updated,
+            project = state.project?.copy(videoAdjustments = updated)
+        )
+    }
+    persistProject()
 }
 
 fun EditorViewModel.resetAdjustments() {
-    _state.update { it.copy(adjustments = VideoAdjustments()) }
+    updateAdjustments { VideoAdjustments() }
 }
 
 fun EditorViewModel.resetAllAdjustments() {
-    _state.update { it.copy(adjustments = VideoAdjustments()) }
+    updateAdjustments { VideoAdjustments() }
 }
 
 
@@ -195,7 +204,10 @@ fun EditorViewModel.closeEditPackPanel() = _state.update { it.copy(editPackPanel
 
 fun EditorViewModel.openAdjustPackPanel() = _state.update { it.copy(adjustPackPanelOpen = true) }
 
-fun EditorViewModel.closeAdjustPackPanel() = _state.update { it.copy(adjustPackPanelOpen = false) }
+fun EditorViewModel.closeAdjustPackPanel() {
+    _state.update { it.copy(adjustPackPanelOpen = false) }
+    flushProject()
+}
 
 fun EditorViewModel.openColorScopesPanel() = _state.update { it.copy(colorScopesPanelOpen = true) }
 

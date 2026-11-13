@@ -171,6 +171,7 @@ internal fun EditorViewModel.loadProject() {
             val validSelectedClipIds = it.selectedClipIds.intersect(updatedP.clips.map { clip -> clip.id }.toSet())
             it.copy(
                 project = updatedP,
+                adjustments = updatedP.videoAdjustments,
                 activeFxId = null,
                 fxIntensity = 1f,
                 fxSpeed = 1f,
@@ -703,12 +704,14 @@ fun EditorViewModel.deleteSavedProject(projectId: String) {
 
 /** Phase 3: opens a saved project/draft in the editor. */
 fun EditorViewModel.openSavedProject(project: com.apexstudio.app.domain.model.Project) {
-    _state.update {
-        it.copy(project = project.copy(clips = normalizeOverlayTrackIndices(project.clips)).syncSharedTimeline(
-            importLegacyAnimation = true,
-            refreshLegacyClipFields = true
-        ))
-    }
+    flushProject()
+    val normalizedProject = project.copy(
+        clips = normalizeOverlayTrackIndices(project.clips)
+    ).syncSharedTimeline(
+        importLegacyAnimation = true,
+        refreshLegacyClipFields = true
+    )
+    _state.update { it.copy(project = normalizedProject, adjustments = normalizedProject.videoAdjustments) }
     persistProject()
 }
 

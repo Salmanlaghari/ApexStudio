@@ -45,6 +45,23 @@ class EditorProjectExportControllerTest {
         assertEquals(0f, buildProjectExportConfig(state, AudioStudioState(isMuted = true), settings).volume, 0f)
     }
 
+    @Test fun `project adjustments restore into editor state and reach project export config`() {
+        val persisted = VideoAdjustments(brightness = .27f, sharpness = .68f, contrast = 1.14f)
+        val updated = persisted.copy(brightness = .36f, sharpness = .82f)
+        val viewModel = EditorViewModel()
+        viewModel.openSavedProject(
+            Project("adjustment-project", "Adjusted", 5_000L, clips = listOf(first), videoAdjustments = persisted)
+        )
+
+        assertEquals(persisted, viewModel.state.value.adjustments)
+        viewModel.updateAdjustments { updated }
+
+        assertEquals(updated, viewModel.state.value.adjustments)
+        assertEquals(updated, viewModel.state.value.project?.videoAdjustments)
+        assertEquals(updated, buildProjectExportConfig(viewModel.state.value, AudioStudioState(), settings).adjustments)
+        viewModel.flushProject()
+    }
+
     @Test fun `historical 8K settings stay 8K and fail closed before a device plan exists`() {
         val settings8k = settings.copy(resolution = "8K Ultra HD")
         val config = buildProjectExportConfig(

@@ -15,6 +15,7 @@ import com.apexstudio.app.domain.model.Signature
 import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingPoint
 import com.apexstudio.app.domain.model.VideoDrawingStroke
+import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.domain.model.timeline.VideoTrack
 import com.apexstudio.app.domain.model.timeline.AudioTrack as SharedAudioTrack
 import com.apexstudio.app.domain.model.timeline.BlendMode
@@ -113,6 +114,28 @@ class ProjectRepositoryMigrationTest {
             val reopenedClear = ProjectRepository(context).findById(id)!!
             assertEquals(explicitClear, reopenedClear.manualFxOverride)
             assertNull(reopenedClear.manualFxOverride?.effectId)
+        } finally {
+            repository.deleteProject(id)
+        }
+    }
+
+    @Test
+    fun `project-wide video adjustments survive save and reopen while legacy JSON defaults cleanly`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = ProjectRepository(context)
+        val id = "video-adjustments-${UUID.randomUUID()}"
+        val adjustments = VideoAdjustments(brightness = .27f, sharpness = .68f, contrast = 1.14f)
+        try {
+            repository.saveProject(legacyProject(id).copy(videoAdjustments = adjustments))
+
+            val reopened = ProjectRepository(context).findById(id)
+            assertNotNull(reopened)
+            assertEquals(adjustments, reopened!!.videoAdjustments)
+
+            val legacy = repository.decode(
+                """[{"id":"legacy-adjustments","name":"Legacy","durationMs":1000}]"""
+            ).single()
+            assertEquals(VideoAdjustments(), legacy.videoAdjustments)
         } finally {
             repository.deleteProject(id)
         }

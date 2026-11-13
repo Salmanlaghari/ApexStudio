@@ -125,6 +125,5 @@ fun EditorViewModel.applyEditPackZoom(clipId: String, zoomIn: Boolean) {
 fun EditorViewModel.applyAdjustPackPreset(
     adjustments: com.apexstudio.app.domain.model.VideoAdjustments
 ) {
-    _state.update { it.copy(adjustments = adjustments) }
-    persistProject()
+    updateAdjustments { adjustments }
 }

@@ -1063,7 +1063,9 @@ data class Project(
     /** Optional branding layer; missing in older projects and therefore omitted by default. */
     val signature: Signature? = null,
     /** Explicit FX-only override; null follows the template/default, while effectId=null clears it. */
-    val manualFxOverride: ProjectFxSettings? = null
+    val manualFxOverride: ProjectFxSettings? = null,
+    /** Project-wide video color/detail adjustments; absent in legacy JSON means no adjustments. */
+    val videoAdjustments: VideoAdjustments = VideoAdjustments()
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {

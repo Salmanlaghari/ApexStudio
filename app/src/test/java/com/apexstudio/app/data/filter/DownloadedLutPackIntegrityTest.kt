@@ -33,6 +33,14 @@ class DownloadedLutPackIntegrityTest {
         assertEquals(pack.sizeBytes, archive.length())
         assertEquals(pack.sha256, sha256(archive.readBytes()))
 
+        val instrumentedFixture = File(
+            repoRoot,
+            "app/src/androidTest/assets/downloadable-packs/lut-filters-vol-01.zip"
+        )
+        assertTrue("instrumented download fixture must be present", instrumentedFixture.isFile)
+        assertEquals(pack.sizeBytes, instrumentedFixture.length())
+        assertEquals(pack.sha256, sha256(instrumentedFixture.readBytes()))
+
         ZipFile(archive).use { zip ->
             val archiveManifest = zip.getInputStream(zip.getEntry(pack.entry)).bufferedReader().use { it.readText() }
             val payload = org.json.JSONObject(archiveManifest)

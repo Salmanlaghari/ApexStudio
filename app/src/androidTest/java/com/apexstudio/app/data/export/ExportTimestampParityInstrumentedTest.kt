@@ -21,7 +21,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
+import com.apexstudio.app.data.filter.DownloadedLutFilterRepository
 import com.apexstudio.app.data.filter.FilterManifest
+import com.apexstudio.app.data.filter.FilterThumbnailGenerator
+import com.apexstudio.app.data.filter.LutBitmapCache
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.fx.DownloadedEffectRepository
 import com.apexstudio.app.data.fx.DownloadedFxEffect
@@ -1880,6 +1883,225 @@ class ExportTimestampParityInstrumentedTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test
+    fun downloadedLutPackInstallsAllFiltersShowsRealSamplesAndRoundTripsBothExportRoutes() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val id = UUID.randomUUID().toString()
+        val root = File(instrumentation.targetContext.cacheDir, "lut-roundtrip-$id").apply { mkdirs() }
+        val context = object : ContextWrapper(instrumentation.targetContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File {
+                val base = File(root, "external")
+                return (if (type == null) base else File(base, type)).apply { mkdirs() }
+            }
+        }
+        val packId = "lut-filters-vol-01"
+        val source = File(context.cacheDir, "source.mp4")
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val names = listOf("selected-base", "selected-lut", "project-base", "project-lut")
+            .map { "$it-$id.mp4" }
+        val engines = List(4) { ExportEngine(context) }
+        val outputs = arrayOfNulls<File>(4)
+        var httpFixture: LocalLutArchiveServer? = null
+        var gallerySource: Bitmap? = null
+
+        fun frameAt(file: File, timeUs: Long): Bitmap {
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(file.absolutePath)
+                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
+            } finally {
+                retriever.release()
+            }
+        }
+
+        FilterManifest.resetForTesting()
+        FilterThumbnailGenerator.invalidateDynamicCache()
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val archive = instrumentation.context.assets
+                .open("downloadable-packs/lut-filters-vol-01.zip").use { it.readBytes() }
+            val archiveSha256 = MessageDigest.getInstance("SHA-256").digest(archive)
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            val server = LocalLutArchiveServer(archive)
+            httpFixture = server
+            val pack = PackManifestRepo.RemotePack(
+                id = packId,
+                name = "Verified 30 LUT test pack",
+                category = "filters",
+                version = 1,
+                sizeBytes = archive.size.toLong(),
+                url = server.url,
+                sha256 = archiveSha256,
+                entry = "manifest.json",
+                itemCount = 30,
+                payloadType = DownloadedLutFilterRepository.PAYLOAD_TYPE
+            )
+            val catalog = PackManifestRepo.PackManifestFile(packs = listOf(pack))
+
+            assertEquals(
+                "The production download/install path must validate the ZIP and register its filter pack",
+                PackManager.PackState.Downloaded,
+                PackManager.downloadAndInstall(context, pack, catalog)
+            )
+            server.awaitServed()
+            server.close()
+            httpFixture = null
+            assertTrue("The verified pack must be recorded as installed", PackManager.isDownloaded(context, packId))
+            assertEquals(archiveSha256, PackManager.installedPackSha256(context, packId))
+            assertEquals(30, DownloadedLutFilterRepository.refreshInstalled(context, catalog))
+
+            val presets = FilterManifest.downloadedPresets()
+            assertEquals("All 30 manifest entries must be registered", 30, presets.size)
+            val presetIds = presets.map { it.id }.toSet()
+            assertEquals("Every downloaded LUT must have a unique registered id", 30, presetIds.size)
+            presets.forEach { preset ->
+                assertTrue(
+                    "${preset.id} must load from its verified installed cube",
+                    DownloadedLutFilterRepository.loadVerifiedLut(context, preset) != null
+                )
+            }
+
+            val sourceTrack = readVideoTrack(source)
+            assertTrue("The fixture must cover the 1.8-second export window", sourceTrack.videoTrackDurationUs >= 1_800_000L)
+            gallerySource = frameAt(source, 600_000L)
+            val gallery = FilterThumbnailGenerator.generateDynamicThumbnails(
+                context = context,
+                source = requireNotNull(gallerySource),
+                manifest = FilterManifest(categories = emptyList(), filters = emptyList()),
+                customPresets = presets,
+                cacheKey = "downloaded-lut-roundtrip-$id"
+            )
+            assertTrue("The original sample must be present", gallery.containsKey(null))
+            assertEquals("Every downloaded preset must produce its own real-LUT sample", presetIds, gallery.keys.filterNotNull().toSet())
+            presets.forEach { preset ->
+                val image = gallery[preset.id]
+                assertTrue("${preset.id} must have a rendered 120px sample", image != null && image.width == 120 && image.height == 120)
+            }
+
+            val selectedPreset = requireNotNull(presets.firstOrNull { it.id == "dl_${packId}_amber-drift" })
+            val lutTexture = requireNotNull(LutBitmapCache.getOrLoad(context, selectedPreset))
+            val clip = MediaClip(
+                id = "lut-clip-$id",
+                name = "Downloaded LUT fixture",
+                uri = Uri.fromFile(source).toString(),
+                durationMs = sourceTrack.videoTrackDurationUs / 1_000L,
+                trimEndMs = 1_800L
+            )
+            val clips = listOf(clip)
+            val baseConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                quality = "high",
+                aspectRatio = "16:9",
+                bitrateMbps = 8,
+                trimEndMs = 1_800L
+            )
+            val lutConfig = baseConfig.copy(filterPreset = selectedPreset, filterIntensity = 1f)
+
+            suspend fun export(index: Int, config: ExportEngine.ExportConfig, project: Boolean): File {
+                if (project) engines[index].startProjectExport(clips, config, names[index])
+                else engines[index].startExport(Uri.fromFile(source).toString(), config, names[index])
+                val terminal = awaitTerminalState(engines[index])
+                assertNull("${names[index]} must finish without error", terminal.error)
+                val result = File(requireNotNull(Uri.parse(requireNotNull(terminal.outputUri)).path))
+                assertTrue("${names[index]} must contain an encoded MP4", result.isFile && result.length() > 0L)
+                return result
+            }
+
+            outputs[0] = export(0, baseConfig, project = false)
+            outputs[1] = export(1, lutConfig, project = false)
+            outputs[2] = export(2, baseConfig, project = true)
+            outputs[3] = export(3, lutConfig, project = true)
+
+            val sourceAnchors = sourceTrack.presentationTimesUs.filter { it < 1_800_000L }
+            val tracks = outputs.map { readVideoTrack(requireNotNull(it)) }
+            fun commonSampleTime(baselineIndex: Int, lutIndex: Int): Long {
+                val common = commonRetainedFrameTimesUs(
+                    referenceTimesUs = sourceAnchors,
+                    encodedTimesByLabel = mapOf(
+                        "baseline" to tracks[baselineIndex].presentationTimesUs,
+                        "downloaded-lut" to tracks[lutIndex].presentationTimesUs
+                    )
+                )
+                return common.minByOrNull { abs(it - 700_000L) }
+                    ?: error("No source frame was retained by both LUT round-trip outputs")
+            }
+
+            fun changedPixels(first: Bitmap, second: Bitmap): Int {
+                assertEquals(first.width, second.width)
+                assertEquals(first.height, second.height)
+                val firstPixels = IntArray(first.width * first.height)
+                val secondPixels = IntArray(second.width * second.height)
+                first.getPixels(firstPixels, 0, first.width, 0, 0, first.width, first.height)
+                second.getPixels(secondPixels, 0, second.width, 0, 0, second.width, second.height)
+                return firstPixels.indices.count { index ->
+                    val a = firstPixels[index]
+                    val b = secondPixels[index]
+                    abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) +
+                        abs(Color.blue(a) - Color.blue(b)) >= 80
+                }
+            }
+
+            fun meanRgbError(expected: Bitmap, actual: Bitmap): Double {
+                assertEquals(expected.width, actual.width)
+                assertEquals(expected.height, actual.height)
+                val expectedPixels = IntArray(expected.width * expected.height)
+                val actualPixels = IntArray(actual.width * actual.height)
+                expected.getPixels(expectedPixels, 0, expected.width, 0, 0, expected.width, expected.height)
+                actual.getPixels(actualPixels, 0, actual.width, 0, 0, actual.width, actual.height)
+                val total = expectedPixels.indices.sumOf { index ->
+                    val a = expectedPixels[index]
+                    val b = actualPixels[index]
+                    (abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) +
+                        abs(Color.blue(a) - Color.blue(b))).toLong()
+                }
+                return total.toDouble() / (expectedPixels.size * 3.0)
+            }
+
+            fun assertPreviewParity(label: String, baseline: File, filtered: File, timeUs: Long) {
+                val baseFrame = frameAt(baseline, timeUs)
+                val filteredFrame = frameAt(filtered, timeUs)
+                var expectedPreview: Bitmap? = null
+                try {
+                    assertEquals(1_280, filteredFrame.width)
+                    assertEquals(720, filteredFrame.height)
+                    val changed = changedPixels(baseFrame, filteredFrame)
+                    assertTrue("$label LUT output changed $changed pixels; require >=500 at RGB distance >=80", changed >= 500)
+                    expectedPreview = LutBitmapCache.applyToBitmap(baseFrame, lutTexture, 1f)
+                    val error = meanRgbError(expectedPreview, filteredFrame)
+                    assertTrue("$label decoded export differs from the real-LUT preview (mean RGB error=$error)", error <= 24.0)
+                } finally {
+                    baseFrame.recycle()
+                    filteredFrame.recycle()
+                    expectedPreview?.recycle()
+                }
+            }
+
+            assertPreviewParity("selected-clip export", requireNotNull(outputs[0]), requireNotNull(outputs[1]), commonSampleTime(0, 1))
+            assertPreviewParity("whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3))
+        } finally {
+            httpFixture?.close()
+            gallerySource?.recycle()
+            engines.forEach { engine ->
+                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
+            }
+            instrumentation.runOnMainSync { engines.forEach { it.release() } }
+            names.forEach { name ->
+                File(outputDir, name).delete()
+                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            }
+            FilterManifest.resetForTesting()
+            FilterThumbnailGenerator.invalidateDynamicCache()
+            LutBitmapCache.clear()
+            root.deleteRecursively()
         }
     }
 

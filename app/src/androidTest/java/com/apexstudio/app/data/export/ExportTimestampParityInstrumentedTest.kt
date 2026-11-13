@@ -1,5 +1,6 @@
 package com.apexstudio.app.data.export
 
+import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.MediaExtractor
@@ -10,21 +11,37 @@ import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.GLES20
 import android.opengl.GLUtils
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
+import com.apexstudio.app.data.fx.DownloadedEffectRepository
 import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxGlEffect
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.data.packs.download.PackManager
+import com.apexstudio.app.data.packs.download.PackManifestRepo
+import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.stickers.LottieFrameCache
 import com.apexstudio.app.data.stickers.StickerAssetResolver
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
+import com.apexstudio.app.domain.model.ExportSettings
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.ProjectFxSettings
 import com.apexstudio.app.domain.model.StickerOverlay
+import com.apexstudio.app.presentation.state.AudioStudioState
+import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.buildProjectExportConfig
+import com.apexstudio.app.presentation.viewmodel.flushProject
+import com.apexstudio.app.presentation.viewmodel.selectFx
+import com.apexstudio.app.presentation.viewmodel.setFxSpeed
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -1101,6 +1118,220 @@ class ExportTimestampParityInstrumentedTest {
             File(outputDir, projectName).delete()
             File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
             File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
+    @Test
+    fun downloadedAnimatedFxSurvivesEditorReopenAndChangesBothEncodedExportRoutes() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val id = UUID.randomUUID().toString()
+        val root = File(instrumentation.targetContext.cacheDir, "fx-roundtrip-$id").apply { mkdirs() }
+        val context = object : ContextWrapper(instrumentation.targetContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File =
+                File(root, "external").let { base ->
+                    (if (type == null) base else File(base, type)).apply { mkdirs() }
+                }
+        }
+        val source = File(context.cacheDir, "source.mp4")
+        val packId = "roundtrip-fx-$id"
+        val effectId = "dl_${packId}_tidal_ripple"
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val names = listOf("selected-baseline", "selected-fx", "project-baseline", "project-fx")
+            .map { "$it-$id.mp4" }
+        val engines = List(4) { ExportEngine(context) }
+        val outputs = arrayOfNulls<File>(4)
+        val repository = ProjectRepository(context)
+        val store = ViewModelStore()
+        val editorJobs = mutableListOf<Job>()
+
+        fun openEditor(): EditorViewModel {
+            lateinit var editor: EditorViewModel
+            instrumentation.runOnMainSync {
+                editor = EditorViewModel(context = context, projectId = id)
+                store.put("fx-editor", editor)
+                editor.viewModelScope.coroutineContext[Job]?.let(editorJobs::add)
+            }
+            return editor
+        }
+
+        suspend fun closeEditor() {
+            instrumentation.runOnMainSync { store.clear() }
+            withTimeout(20_000L) { editorJobs.forEach { it.join() } }
+            editorJobs.clear()
+        }
+
+        suspend fun awaitSavedFx(): Project = withTimeout(20_000L) {
+            val expected = ProjectFxSettings(effectId, 0.73f, 1.8f)
+            var saved = repository.findById(id)
+            while (saved?.manualFxOverride != expected) {
+                delay(50L)
+                saved = repository.findById(id)
+            }
+            requireNotNull(saved)
+        }
+
+        fun frameAt(file: File, timeMs: Long): Bitmap {
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(file.absolutePath)
+                requireNotNull(retriever.getFrameAtTime(timeMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST))
+            } finally { retriever.release() }
+        }
+
+        fun pixels(bitmap: Bitmap): IntArray = IntArray(bitmap.width * bitmap.height).also {
+            bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        }
+
+        fun changedPixels(first: IntArray, second: IntArray): Int = first.indices.count { index ->
+            val a = first[index]; val b = second[index]
+            abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) +
+                abs(Color.blue(a) - Color.blue(b)) >= 80
+        }
+
+        fun animationChangedPixels(
+            early: IntArray, earlyBaseline: IntArray, later: IntArray, laterBaseline: IntArray
+        ): Int = early.indices.count { index ->
+            val a = early[index]; val ab = earlyBaseline[index]
+            val b = later[index]; val bb = laterBaseline[index]
+            abs((Color.red(a) - Color.red(ab)) - (Color.red(b) - Color.red(bb))) +
+                abs((Color.green(a) - Color.green(ab)) - (Color.green(b) - Color.green(bb))) +
+                abs((Color.blue(a) - Color.blue(ab)) - (Color.blue(b) - Color.blue(bb))) >= 80
+        }
+
+        suspend fun exportPass(index: Int, config: ExportEngine.ExportConfig, clips: List<MediaClip>?): File {
+            if (clips == null) engines[index].startExport(Uri.fromFile(source).toString(), config, names[index])
+            else engines[index].startProjectExport(clips, config, names[index])
+            val terminal = awaitTerminalState(engines[index])
+            assertNull("${names[index]} must complete: ${terminal.error}", terminal.error)
+            assertFalse("${names[index]} must reach a terminal state", terminal.isExporting)
+            return File(requireNotNull(Uri.parse(requireNotNull(terminal.outputUri)).path)).also {
+                assertEquals(File(outputDir, names[index]).canonicalPath, it.canonicalPath)
+                assertTrue("${names[index]} must contain encoded bytes", it.isFile && it.length() > 0L)
+            }
+        }
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertTrue("Fixture must contain the retained 1.8-second span", sourceTrack.videoTrackDurationUs >= 1_800_000L)
+            val bytes = instrumentation.context.assets.open("fx_profiles.json").use { it.readBytes() }
+            val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            File(PackManager.packDir(context, packId), "fx_profiles.json").apply {
+                parentFile?.mkdirs()
+                writeBytes(bytes)
+            }
+            val manifest = PackManifestRepo.PackManifestFile(packs = listOf(
+                PackManifestRepo.RemotePack(
+                    id = packId, name = "Offline FX round-trip fixture", category = "effects", version = 1,
+                    sizeBytes = bytes.size.toLong(), url = "https://example.invalid/$packId/fx_profiles.json",
+                    sha256 = hash, entry = "fx_profiles.json", itemCount = 30,
+                    payloadType = DownloadedEffectRepository.PAYLOAD_TYPE, entrySha256 = hash
+                )
+            ))
+            PackManager.recordInstalledPack(context, packId, 1, hash)
+            assertEquals(30, DownloadedEffectRepository.refreshInstalled(context, manifest))
+            val effect = requireNotNull(DownloadedEffectRepository.findVerified(effectId))
+            assertEquals(effectId, effect.id)
+            assertEquals("RIPPLE", effect.family)
+            assertTrue("Published tidal_ripple must be animated", effect.isAnimated)
+
+            val clip = MediaClip(
+                id = "fx-clip-$id", name = "FX fixture", uri = Uri.fromFile(source).toString(),
+                durationMs = sourceTrack.videoTrackDurationUs / 1_000L, trimEndMs = 1_800L
+            )
+            repository.saveProject(Project(
+                id = id, name = "FX round-trip", durationMs = 1_800L, clips = listOf(clip),
+                resolution = "720p", fps = 30, videoAspectRatio = "16:9"
+            ))
+            val first = openEditor()
+            withTimeout(20_000L) { first.state.first { it.project?.id == id && it.project?.clips?.singleOrNull()?.id == clip.id } }
+            instrumentation.runOnMainSync {
+                first.selectFx(effect.id, intensity = 0.73f)
+                first.setFxSpeed(1.8f)
+                first.flushProject()
+            }
+            assertEquals(ProjectFxSettings(effectId, 0.73f, 1.8f), awaitSavedFx().manualFxOverride)
+            closeEditor()
+
+            val reopened = openEditor()
+            val restored = withTimeout(20_000L) {
+                reopened.state.first {
+                    it.project?.id == id && it.activeFxId == effectId &&
+                        it.fxIntensity == 0.73f && it.fxSpeed == 1.8f
+                }
+            }
+            assertEquals(ProjectFxSettings(effectId, 0.73f, 1.8f), restored.project?.manualFxOverride)
+            assertEquals(effect, DownloadedEffectRepository.findVerified(restored.activeFxId))
+            val clips = requireNotNull(restored.project).clips
+            assertEquals(1, clips.size)
+            val plan = ProjectCompositionTimeline.build(clips)
+            assertEquals(1_800L, plan.durationMs)
+            val config = buildProjectExportConfig(
+                restored, AudioStudioState(),
+                ExportSettings(resolution = "720p", frameRate = 30, aspectRatio = "16:9", bitrateMbps = 0)
+            )
+            assertNull(config.fxPreset)
+            assertEquals(effectId, config.downloadedFxEffect?.id)
+            assertEquals(0.73f, config.fxIntensity, 0f)
+            assertEquals(1.8f, config.fxSpeed, 0f)
+            closeEditor()
+
+            val baseline = config.copy(fxPreset = null, downloadedFxEffect = null, fxIntensity = 0f, fxSpeed = 1f)
+            // One engine per pass: terminal publication can precede a previous writer's cleanup.
+            outputs[0] = exportPass(0, baseline.copy(trimEndMs = 1_800L), null)
+            outputs[1] = exportPass(1, config.copy(trimEndMs = 1_800L), null)
+            outputs[2] = exportPass(2, baseline, clips)
+            outputs[3] = exportPass(3, config, clips)
+
+            fun verify(label: String, baselineFile: File, fxFile: File) {
+                assertOutputTiming("$label baseline", readVideoTrack(baselineFile), plan.durationMs * 1_000L, emptyList(), 30)
+                assertOutputTiming("$label FX", readVideoTrack(fxFile), plan.durationMs * 1_000L, emptyList(), 30)
+                assertTrue("$label baseline must retain AAC audio", hasTrack(baselineFile, "audio/mp4a-latm"))
+                assertTrue("$label FX must retain AAC audio", hasTrack(fxFile, "audio/mp4a-latm"))
+                val frames = mutableListOf<Bitmap>()
+                try {
+                    listOf(400L, 1_400L).forEach { time ->
+                        frames += frameAt(baselineFile, time)
+                        frames += frameAt(fxFile, time)
+                    }
+                    frames.forEach {
+                        assertEquals("$label frame width", 1_280, it.width)
+                        assertEquals("$label frame height", 720, it.height)
+                    }
+                    val baselineEarly = pixels(frames[0]); val fxEarly = pixels(frames[1])
+                    val baselineLater = pixels(frames[2]); val fxLater = pixels(frames[3])
+                    val earlyChanged = changedPixels(baselineEarly, fxEarly)
+                    val laterChanged = changedPixels(baselineLater, fxLater)
+                    val animatedChanged = animationChangedPixels(fxEarly, baselineEarly, fxLater, baselineLater)
+                    assertTrue("$label early FX changed $earlyChanged pixels; need >=500", earlyChanged >= 500)
+                    assertTrue("$label later FX changed $laterChanged pixels; need >=500", laterChanged >= 500)
+                    assertTrue("$label animated delta changed $animatedChanged pixels; need >=100", animatedChanged >= 100)
+                } finally { frames.forEach { it.recycle() } }
+            }
+            verify("selected route", requireNotNull(outputs[0]), requireNotNull(outputs[1]))
+            verify("whole-project route", requireNotNull(outputs[2]), requireNotNull(outputs[3]))
+        } finally {
+            withContext(NonCancellable) {
+                try { closeEditor() } finally {
+                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                        instrumentation.runOnMainSync { engines.forEach { it.release() } }
+                        try { DownloadedEffectRepository.refreshInstalled(context, PackManifestRepo.PackManifestFile()) }
+                        finally {
+                            names.forEach { name ->
+                                File(outputDir, name).delete()
+                                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+                            }
+                            root.deleteRecursively()
+                        }
+                    }
+                }
+            }
         }
     }
 

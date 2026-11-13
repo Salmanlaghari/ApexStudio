@@ -126,7 +126,7 @@ class EditorSpecialistThemeTest {
     }
 
     @Test
-    fun trimFilmstripPlaceholderUsesSelectedThemeSurface() {
+    fun trimFilmstripUsesSelectedThemeGlassSurface() {
         val selectedTheme = mutableStateOf(ApexThemeOption.NEON)
         val rootView = AtomicReference<View?>()
         val clip = MediaClip(
@@ -153,7 +153,7 @@ class EditorSpecialistThemeTest {
             }
         }
         assertThemeColors(rootView, selectedTheme, "trim-filmstrip", "Trim filmstrip") { theme ->
-            listOf(theme.palette.bgElevated)
+            listOf(theme.palette.bgSurface.copy(alpha = 0xCC / 255f))
         }
     }
 
@@ -219,7 +219,7 @@ class EditorSpecialistThemeTest {
                         blueDistance * blueDistance
                 if (
                     rgbDistanceSquared <= MAX_RGB_DISTANCE * MAX_RGB_DISTANCE &&
-                    actual.alpha >= 0.98f
+                    kotlin.math.abs(actual.alpha - expected.alpha) <= 0.02f
                 ) {
                     matchingPixels++
                 }

@@ -45,6 +45,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.ProjectFxSettings
 import com.apexstudio.app.domain.model.StickerOverlay
+import com.apexstudio.app.domain.model.VideoAdjustments
 import com.apexstudio.app.presentation.state.AudioStudioState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.buildProjectExportConfig
@@ -2104,6 +2105,145 @@ class ExportTimestampParityInstrumentedTest {
             FilterManifest.resetForTesting()
             FilterThumbnailGenerator.invalidateDynamicCache()
             LutBitmapCache.clear()
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun projectAdjustmentsAreBakedIntoSelectedAndWholeProjectExports() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val id = UUID.randomUUID().toString()
+        val root = File(instrumentation.targetContext.cacheDir, "adjustments-roundtrip-$id").apply { mkdirs() }
+        val context = object : ContextWrapper(instrumentation.targetContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File {
+                val base = File(root, "external")
+                return (if (type == null) base else File(base, type)).apply { mkdirs() }
+            }
+        }
+        val source = File(context.cacheDir, "source.mp4")
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val names = listOf("selected-base", "selected-adjusted", "project-base", "project-adjusted")
+            .map { "$it-$id.mp4" }
+        val engines = List(4) { ExportEngine(context) }
+        val outputs = arrayOfNulls<File>(4)
+
+        fun frameAt(file: File, timeUs: Long): Bitmap {
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(file.absolutePath)
+                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
+            } finally {
+                retriever.release()
+            }
+        }
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            val sourceTrack = readVideoTrack(source)
+            assertTrue("The fixture must cover the 1.8-second export window", sourceTrack.videoTrackDurationUs >= 1_800_000L)
+            val clip = MediaClip(
+                id = "adjustment-clip-$id",
+                name = "Video adjustment fixture",
+                uri = Uri.fromFile(source).toString(),
+                durationMs = sourceTrack.videoTrackDurationUs / 1_000L,
+                trimEndMs = 1_800L
+            )
+            val clips = listOf(clip)
+            val baseConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                quality = "high",
+                aspectRatio = "16:9",
+                bitrateMbps = 8,
+                trimEndMs = 1_800L
+            )
+            val adjustments = VideoAdjustments(brightness = .28f, sharpness = .65f)
+            val adjustedConfig = baseConfig.copy(adjustments = adjustments)
+            // Project exports take clip trims from MediaClip; ExportConfig trim fields remain unset.
+            val projectBaseConfig = baseConfig.copy(trimStartMs = 0L, trimEndMs = 0L)
+            val projectAdjustedConfig = projectBaseConfig.copy(adjustments = adjustments)
+
+            suspend fun export(index: Int, config: ExportEngine.ExportConfig, project: Boolean): File {
+                if (project) engines[index].startProjectExport(clips, config, names[index])
+                else engines[index].startExport(Uri.fromFile(source).toString(), config, names[index])
+                val terminal = awaitTerminalState(engines[index])
+                assertNull("${names[index]} must finish without error", terminal.error)
+                val result = File(requireNotNull(Uri.parse(requireNotNull(terminal.outputUri)).path))
+                assertTrue("${names[index]} must contain an encoded MP4", result.isFile && result.length() > 0L)
+                return result
+            }
+
+            outputs[0] = export(0, baseConfig, project = false)
+            outputs[1] = export(1, adjustedConfig, project = false)
+            outputs[2] = export(2, projectBaseConfig, project = true)
+            outputs[3] = export(3, projectAdjustedConfig, project = true)
+
+            val sourceAnchors = sourceTrack.presentationTimesUs.filter { it < 1_800_000L }
+            val tracks = outputs.map { readVideoTrack(requireNotNull(it)) }
+            fun commonSampleTime(baselineIndex: Int, adjustedIndex: Int): Long {
+                val common = commonRetainedFrameTimesUs(
+                    referenceTimesUs = sourceAnchors,
+                    encodedTimesByLabel = mapOf(
+                        "baseline" to tracks[baselineIndex].presentationTimesUs,
+                        "adjusted" to tracks[adjustedIndex].presentationTimesUs
+                    )
+                )
+                return common.minByOrNull { abs(it - 700_000L) }
+                    ?: error("No source frame was retained by both adjustment round-trip outputs")
+            }
+
+            fun changedPixels(first: Bitmap, second: Bitmap): Int {
+                assertEquals(first.width, second.width)
+                assertEquals(first.height, second.height)
+                val firstPixels = IntArray(first.width * first.height)
+                val secondPixels = IntArray(second.width * second.height)
+                first.getPixels(firstPixels, 0, first.width, 0, 0, first.width, first.height)
+                second.getPixels(secondPixels, 0, second.width, 0, 0, second.width, second.height)
+                return firstPixels.indices.count { index ->
+                    val a = firstPixels[index]
+                    val b = secondPixels[index]
+                    abs(Color.red(a) - Color.red(b)) + abs(Color.green(a) - Color.green(b)) +
+                        abs(Color.blue(a) - Color.blue(b)) >= 80
+                }
+            }
+
+            fun assertAdjustmentsBaked(label: String, baseline: File, adjusted: File, timeUs: Long) {
+                val baselineFrame = frameAt(baseline, timeUs)
+                val adjustedFrame = frameAt(adjusted, timeUs)
+                try {
+                    assertEquals("$label output width", 1_280, adjustedFrame.width)
+                    assertEquals("$label output height", 720, adjustedFrame.height)
+                    val changed = changedPixels(baselineFrame, adjustedFrame)
+                    assertTrue(
+                        "$label adjustment output changed $changed pixels; require >=500 at RGB distance >=80",
+                        changed >= 500
+                    )
+                } finally {
+                    baselineFrame.recycle()
+                    adjustedFrame.recycle()
+                }
+            }
+
+            assertAdjustmentsBaked(
+                "selected-clip export", requireNotNull(outputs[0]), requireNotNull(outputs[1]), commonSampleTime(0, 1)
+            )
+            assertAdjustmentsBaked(
+                "whole-project export", requireNotNull(outputs[2]), requireNotNull(outputs[3]), commonSampleTime(2, 3)
+            )
+        } finally {
+            engines.forEach { engine ->
+                try { engine.cancelProjectExportAndAwait() } catch (_: Exception) { }
+            }
+            instrumentation.runOnMainSync { engines.forEach { it.release() } }
+            names.forEach { name ->
+                File(outputDir, name).delete()
+                File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
+            }
             root.deleteRecursively()
         }
     }

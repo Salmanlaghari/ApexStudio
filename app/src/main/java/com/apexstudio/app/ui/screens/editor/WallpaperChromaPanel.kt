@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -82,8 +83,8 @@ fun WallpaperChromaPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .background(Color(0xFF141420))
-            .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
             .verticalScroll(scrollState)
     ) {
@@ -97,7 +98,7 @@ fun WallpaperChromaPanel(
                 Text("Green/Blue Screen", color = ApexPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
             IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.75f))
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = ApexPalette.TextSecondary.copy(alpha = 0.75f))
             }
         }
 
@@ -109,13 +110,13 @@ fun WallpaperChromaPanel(
         Spacer(Modifier.height(12.dp))
 
         if (!targetAvailable) {
-            Text("Select a video clip on the timeline to use chroma key.", color = Color(0xFFFFC36B), fontSize = 12.sp)
+            Text("Select a video clip on the timeline to use chroma key.", color = ApexPalette.Warning, fontSize = 12.sp)
             Spacer(Modifier.height(10.dp))
         }
 
         Row(
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF1C1C2E)).padding(horizontal = 14.dp, vertical = 9.dp),
+                .background(ApexPalette.BgElevated).padding(horizontal = 14.dp, vertical = 9.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -147,8 +148,8 @@ fun WallpaperChromaPanel(
                     val selected = settings.keyColorArgb == argb
                     Row(
                         modifier = Modifier.weight(1f).clip(RoundedCornerShape(9.dp))
-                            .background(if (selected) swatch.copy(alpha = 0.22f) else Color(0xFF1E1E2C))
-                            .border(if (selected) 1.5.dp else 1.dp, if (selected) swatch else Color(0xFF2F2F44), RoundedCornerShape(9.dp))
+                            .background(if (selected) swatch.copy(alpha = 0.22f) else ApexPalette.BgElevated)
+                            .border(if (selected) 1.5.dp else 1.dp, if (selected) swatch else ApexPalette.BorderGlass, RoundedCornerShape(9.dp))
                             .clickable(enabled = targetAvailable && !busy) { onUpdate(settings.copy(keyColorArgb = argb)) }
                             .padding(horizontal = 5.dp, vertical = 9.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -186,7 +187,7 @@ fun WallpaperChromaPanel(
                         val selected = wallpaper.asset.id == selectedId
                         Column(
                             modifier = Modifier.width(132.dp).clip(RoundedCornerShape(10.dp))
-                                .border(if (selected) 2.dp else 1.dp, if (selected) ApexPalette.NeonCyan else Color(0xFF303044), RoundedCornerShape(10.dp))
+                                .border(if (selected) 2.dp else 1.dp, if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
                                 .clickable(enabled = targetAvailable && !busy) {
                                     onUpdate(settings.copy(backgroundType = wallpaper.asset.id, customBackgroundUri = null))
                                 }
@@ -197,7 +198,7 @@ fun WallpaperChromaPanel(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxWidth().height(78.dp)
                             )
-                            Column(Modifier.fillMaxWidth().background(Color(0xFF1B1B2B)).padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Column(Modifier.fillMaxWidth().background(ApexPalette.BgElevated).padding(horizontal = 8.dp, vertical = 6.dp)) {
                                 Text(wallpaper.asset.name, color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
                                 Text(wallpaper.asset.category, color = ApexPalette.TextPrimary.copy(alpha = 0.6f), fontSize = 9.sp, maxLines = 1)
                             }
@@ -212,10 +213,10 @@ fun WallpaperChromaPanel(
                 Spacer(Modifier.height(5.dp))
                 Text(ui.message, color = ApexPalette.TextPrimary.copy(alpha = 0.76f), fontSize = 11.sp)
             } else if (ui.phase == BackgroundPhase.FAILED) {
-                Text(ui.message, color = Color(0xFFFF9B8E), fontSize = 11.sp)
+                Text(ui.message, color = ApexPalette.Danger, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
             } else if (ui.phase == BackgroundPhase.DONE) {
-                Text(ui.message, color = Color(0xFF7FE0A2), fontSize = 11.sp)
+                Text(ui.message, color = ApexPalette.Success, fontSize = 11.sp)
                 Spacer(Modifier.height(6.dp))
             }
 
@@ -223,7 +224,7 @@ fun WallpaperChromaPanel(
                 onClick = { onApply(settings.copy(backgroundType = selectedWallpaper?.asset?.id ?: settings.backgroundType)) },
                 enabled = targetAvailable && !busy && settings.enabled && selectedWallpaper != null,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = ApexPalette.NeonCyan, contentColor = Color(0xFF071018))
+                colors = ButtonDefaults.buttonColors(containerColor = ApexPalette.NeonCyan, contentColor = MaterialTheme.colorScheme.onPrimary)
             ) {
                 Text("Apply key & wallpaper", fontWeight = FontWeight.Bold)
             }
@@ -233,12 +234,12 @@ fun WallpaperChromaPanel(
                     onClick = onRestoreOriginal,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF29293B), contentColor = ApexPalette.TextPrimary)
+                    colors = ButtonDefaults.buttonColors(containerColor = ApexPalette.BgElevated, contentColor = ApexPalette.TextPrimary)
                 ) { Text("Restore original clip") }
             }
         } else if (isApplied) {
             Spacer(Modifier.height(10.dp))
-            Text("A chroma-key version is applied to this clip.", color = Color(0xFF7FE0A2), fontSize = 11.sp)
+            Text("A chroma-key version is applied to this clip.", color = ApexPalette.Success, fontSize = 11.sp)
             Button(onClick = onRestoreOriginal, modifier = Modifier.fillMaxWidth(), enabled = !busy) {
                 Text("Restore original clip")
             }
@@ -267,11 +268,11 @@ private fun WallpaperPackState(
             Text("Downloading wallpapers ${if (packState.fraction >= 0f) "${(packState.fraction * 100).toInt()}%" else "…"}", color = ApexPalette.TextPrimary.copy(alpha = 0.72f), fontSize = 11.sp)
         }
         packState is PackManager.PackState.Failed -> {
-            Text("Wallpaper download failed: ${packState.reason}", color = Color(0xFFFF9B8E), fontSize = 11.sp)
+            Text("Wallpaper download failed: ${packState.reason}", color = ApexPalette.Danger, fontSize = 11.sp)
             Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Retry download") }
         }
         packState is PackManager.PackState.Downloaded && installedCount < catalogItemCount -> {
-            Text("Some files failed their integrity check; they are not selectable.", color = Color(0xFFFFC36B), fontSize = 11.sp)
+            Text("Some files failed their integrity check; they are not selectable.", color = ApexPalette.Warning, fontSize = 11.sp)
             Button(onClick = onRepair, modifier = Modifier.fillMaxWidth()) { Text("Repair wallpaper pack") }
         }
         downloadReady -> {
@@ -288,7 +289,7 @@ private fun WallpaperPackState(
                     Text("Loading wallpaper catalog…", color = ApexPalette.TextPrimary.copy(alpha = 0.7f), fontSize = 11.sp)
                 }
             } else {
-                Text(packError ?: "Wallpaper catalog is unavailable.", color = Color(0xFFFFC36B), fontSize = 11.sp)
+                Text(packError ?: "Wallpaper catalog is unavailable.", color = ApexPalette.Warning, fontSize = 11.sp)
                 Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Retry catalog") }
             }
         }
@@ -314,7 +315,7 @@ private fun SliderRow(
             onValueChange = onValueChange,
             enabled = enabled,
             valueRange = range,
-            colors = SliderDefaults.colors(thumbColor = ApexPalette.NeonCyan, activeTrackColor = ApexPalette.NeonCyan, inactiveTrackColor = Color(0xFF2A2A3E))
+            colors = SliderDefaults.colors(thumbColor = ApexPalette.NeonCyan, activeTrackColor = ApexPalette.NeonCyan, inactiveTrackColor = ApexPalette.Divider)
         )
     }
 }

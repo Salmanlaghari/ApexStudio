@@ -138,7 +138,7 @@ fun TransitionPickerSheet(
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.25f))
+                .background(ApexPalette.TextMuted.copy(alpha = 0.65f))
                 .align(Alignment.CenterHorizontally)
         )
         Spacer(Modifier.height(12.dp))
@@ -170,7 +170,7 @@ fun TransitionPickerSheet(
                 val clipB = toClip?.name?.ifEmpty { "Clip B" } ?: "Clip B"
                 Text(
                     text = "Between: $clipA ➔ $clipB",
-                    color = Color(0xFF94A3B8),
+                    color = ApexPalette.TextSecondary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(top = 2.dp)
@@ -188,12 +188,12 @@ fun TransitionPickerSheet(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF1E293B))
+                    .background(ApexPalette.BgElevated)
             ) {
                 Icon(
                     Icons.Default.Close,
                     contentDescription = "Close Transitions",
-                    tint = Color.White,
+                    tint = ApexPalette.TextSecondary,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -239,7 +239,7 @@ fun TransitionPickerSheet(
                 ) {
                     Text(
                         text = cat.label,
-                        color = if (isSelected) ApexPalette.NeonCyan else Color(0xFFCBD5E1),
+                        color = if (isSelected) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
                         fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -286,20 +286,20 @@ fun TransitionPickerSheet(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF26334D)),
+                                .background(ApexPalette.BgSurface),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Default.Block,
                                 contentDescription = "None",
-                                tint = if (isNone) ApexPalette.NeonCyan else Color(0xFF94A3B8),
+                                tint = if (isNone) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "None (Cut)",
-                            color = if (isNone) Color.White else Color(0xFF94A3B8),
+                            color = if (isNone) ApexPalette.TextPrimary else ApexPalette.TextSecondary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -317,7 +317,7 @@ fun TransitionPickerSheet(
                         .background(
                             Brush.linearGradient(
                                 if (isSelected) trans.gradientColors
-                                else listOf(Color(0xFF1E2538), Color(0xFF131722))
+                                else listOf(ApexPalette.BgElevated, ApexPalette.BgSurface)
                             )
                         )
                         .border(
@@ -357,7 +357,7 @@ fun TransitionPickerSheet(
                         Icon(
                             imageVector = trans.icon,
                             contentDescription = trans.name,
-                            tint = if (isSelected) Color.White else ApexPalette.NeonCyan,
+                            tint = if (isSelected) ApexPalette.TextPrimary else ApexPalette.NeonCyan,
                             modifier = Modifier.size(28.dp)
                         )
 
@@ -412,7 +412,7 @@ fun TransitionPickerSheet(
                 colors = SliderDefaults.colors(
                     thumbColor = ApexPalette.NeonCyan,
                     activeTrackColor = ApexPalette.NeonCyan,
-                    inactiveTrackColor = Color(0xFF26334D)
+                    inactiveTrackColor = ApexPalette.Divider
                 ),
                 modifier = Modifier.height(28.dp)
             )
@@ -429,11 +429,11 @@ fun TransitionPickerSheet(
                             .clip(RoundedCornerShape(6.dp))
                             .background(
                                 if (isPreset) ApexPalette.NeonCyan.copy(alpha = 0.2f)
-                                else Color(0xFF1E2538)
+                                else ApexPalette.BgSurface
                             )
                             .border(
                                 1.dp,
-                                if (isPreset) ApexPalette.NeonCyan else Color(0xFF2E384D),
+                                if (isPreset) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                                 RoundedCornerShape(6.dp)
                             )
                             .clickable { durationMs = presetMs }
@@ -441,7 +441,7 @@ fun TransitionPickerSheet(
                     ) {
                         Text(
                             TransitionLibrary.formatDuration(presetMs),
-                            color = if (isPreset) ApexPalette.NeonCyan else Color(0xFF94A3B8),
+                            color = if (isPreset) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -455,14 +455,14 @@ fun TransitionPickerSheet(
         if (!isVideoToVideoBoundary && selectedTypeId != "none") {
             Text(
                 "Transitions currently apply only between adjacent video clips.",
-                color = Color(0xFF94A3B8),
+                color = ApexPalette.TextSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         } else if (isVideoToVideoBoundary && selectedTypeId != "none" && !selectedTransitionCanOverlap) {
             Text(
                 "These clips are too short for a visible overlap at this duration.",
-                color = Color(0xFF94A3B8),
+                color = ApexPalette.TextSecondary,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
@@ -517,7 +517,7 @@ fun TransitionPickerSheet(
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ApexPalette.NeonCyan,
-                    contentColor = Color.Black
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 enabled = canApplySelectedTransition,
                 modifier = Modifier
@@ -607,14 +607,14 @@ private fun PickerTransitionPreview(
             if (player === activePlayer) player = null
         }
     }
-    Box(modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF0B0E14)).border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))) {
+    Box(modifier.clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgDeep).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))) {
         when {
             selectedType == "none" -> {
                 Row(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxHeight().background(Brush.linearGradient(listOf(Color(0xFF1E1B4B), Color(0xFF312E81)))))
                     Box(Modifier.weight(1f).fillMaxHeight().background(Brush.linearGradient(listOf(Color(0xFF065F46), Color(0xFF047857), Color(0xFF0E7490)))))
                 }
-                Text("No transition · hard cut", color = Color.White, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(6.dp))
+                Text("No transition · hard cut", color = ApexPalette.TextPrimary, fontSize = 10.sp, modifier = Modifier.align(Alignment.BottomCenter).padding(6.dp))
             }
             player != null && !failed -> AndroidView(
                 factory = { ctx -> android.view.LayoutInflater.from(ctx).inflate(com.apexstudio.app.R.layout.view_player, null) as androidx.media3.ui.PlayerView },
@@ -622,12 +622,12 @@ private fun PickerTransitionPreview(
             )
             failed -> {
                 IllustrativeTransitionFallback(selectedType, 0.5f, null, null, Modifier.fillMaxSize())
-                Text("Illustrative fallback · real shader preview unavailable", color = Color(0xFFFFD98A), fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
+                Text("Illustrative fallback · real shader preview unavailable", color = ApexPalette.Warning, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart).padding(6.dp))
             }
             else -> Unit
         }
         if (!ready && !failed) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.65f)), contentAlignment=Alignment.Center) {
-            Column(horizontalAlignment=Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.size(22.dp), color=ApexPalette.NeonCyan, strokeWidth=2.dp); Text("Loading real shader preview…", color=Color.White, fontSize=10.sp) }
+            Column(horizontalAlignment=Alignment.CenterHorizontally) { CircularProgressIndicator(Modifier.size(22.dp), color=ApexPalette.NeonCyan, strokeWidth=2.dp); Text("Loading real shader preview…", color=ApexPalette.TextPrimary, fontSize=10.sp) }
         }
     }
 }
@@ -645,8 +645,8 @@ private fun IllustrativeTransitionFallback(
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF0B0E14))
-            .border(1.dp, Color(0xFF1E293B), RoundedCornerShape(14.dp))
+            .background(ApexPalette.BgDeep)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width

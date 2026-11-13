@@ -114,9 +114,11 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -1787,6 +1789,21 @@ private fun TimelineTimeRuler(
             }
     ) {
         val totalSec = (durationMs / 1000L).toInt().coerceAtLeast(1)
+        val labelStyle = remember {
+            TextStyle(fontSize = 9.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+        }
+        val textMeasurer = rememberTextMeasurer()
+        val widestTimeLabel = remember(durationMs) { TimeFormat.msToShort(durationMs.coerceAtLeast(0L)) }
+        val labelWidthPx = remember(textMeasurer, widestTimeLabel, labelStyle) {
+            textMeasurer.measure(
+                text = AnnotatedString(widestTimeLabel),
+                style = labelStyle,
+                softWrap = false,
+                maxLines = 1
+            ).size.width.toFloat()
+        }
+        val labelWidthDp = with(LocalDensity.current) { labelWidthPx.toDp().value }
+        val stepSec = timelineRulerLabelStepSeconds(secondWidthDp.value, labelWidthDp)
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val h = size.height
@@ -1870,11 +1887,8 @@ private fun TimelineTimeRuler(
             }
         }
 
-        // Time labels: CapCut-style majors every 2s (MM:SS). At
-        // frame-level zoom (>= 180dp/s) show 1s majors so the ruler
-        // never looks empty.
-        val stepSec = if (secondWidthDp >= 180.dp) 1 else 2
-
+        // Keep the 2s normal-zoom / 1s frame-level cadence, widening labels
+        // at lower zoom so their measured text does not overlap.
         // Time labels: laid out in a Box (NOT a Row) so each label's
         // offset(x) is ABSOLUTE from the ruler origin, matching the
         // Canvas ticks and the playhead. In a Row, offsets are relative
@@ -1896,9 +1910,8 @@ private fun TimelineTimeRuler(
                         // CapCut-style: compact MM:SS majors at every step.
                         text = TimeFormat.msToShort(sec * 1000L),
                         color = TIMELINE_RULER_LABEL_COLOR,
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold
+                        style = labelStyle,
+                        modifier = Modifier.testTag("timeline-ruler-label-$sec")
                     )
                 }
             }

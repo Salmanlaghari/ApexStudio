@@ -1,6 +1,30 @@
 package com.apexstudio.app.ui.components
 
+import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+private val TIMELINE_RULER_LABEL_STEPS_SECONDS = intArrayOf(
+    1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200,
+    14_400, 28_800, 43_200, 86_400
+)
+
+/** Pick a readable ruler interval while preserving the current cadence at normal/high zoom. */
+internal fun timelineRulerLabelStepSeconds(
+    secondWidthDp: Float,
+    labelWidthDp: Float,
+    labelGapDp: Float = 2f
+): Int {
+    val baselineStep = if (secondWidthDp >= 180f) 1 else 2
+    if (!secondWidthDp.isFinite() || secondWidthDp <= 0f || !labelWidthDp.isFinite()) {
+        return baselineStep
+    }
+
+    val gap = labelGapDp.takeIf { it.isFinite() && it > 0f } ?: 0f
+    val requiredStep = ceil((labelWidthDp.coerceAtLeast(0f) + gap) / secondWidthDp)
+        .toInt()
+        .coerceAtLeast(baselineStep)
+    return TIMELINE_RULER_LABEL_STEPS_SECONDS.firstOrNull { it >= requiredStep } ?: requiredStep
+}
 
 /**
  * Return the horizontal scroll that keeps the timeline time under a moving pinch centroid fixed.

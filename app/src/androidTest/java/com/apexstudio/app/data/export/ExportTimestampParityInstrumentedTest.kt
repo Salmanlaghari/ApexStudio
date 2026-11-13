@@ -2,6 +2,7 @@ package com.apexstudio.app.data.export
 
 import android.content.ContextWrapper
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaExtractor
@@ -19,7 +20,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.apexstudio.app.ai.safety.GlobalModerationEnforcement
 import com.apexstudio.app.data.audio.PcmAudioExtractor
+import com.apexstudio.app.data.background.BackgroundReplaceEngine
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.filter.DownloadedLutFilterRepository
 import com.apexstudio.app.data.filter.FilterManifest
@@ -33,6 +36,7 @@ import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.packs.download.PackManifestRepo
+import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.stickers.LottieFrameCache
 import com.apexstudio.app.data.stickers.StickerAssetResolver
@@ -40,6 +44,9 @@ import com.apexstudio.app.data.stickers.StickerSpriteRenderer
 import com.apexstudio.app.data.template.ShortsMusicRepository
 import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import com.apexstudio.app.data.template.ShortsTemplateProjectFactory
+import com.apexstudio.app.domain.model.BackgroundReplaceMode
+import com.apexstudio.app.domain.model.BackgroundReplaceSettings
+import com.apexstudio.app.domain.model.ChromaKeySettings
 import com.apexstudio.app.domain.model.ExportSettings
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -2267,6 +2274,226 @@ class ExportTimestampParityInstrumentedTest {
                 File(outputDir, name).delete()
                 File(outputDir, name.removeSuffix(".mp4") + "_music.mp4").delete()
             }
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun chromaKeyWallpaperReplacementProducesDecodedPixelsInBakedMp4() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val baseContext = instrumentation.targetContext
+        val id = UUID.randomUUID().toString()
+        val root = File(baseContext.cacheDir, "chroma-key-encoded-$id").apply { mkdirs() }
+        val context = object : ContextWrapper(baseContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File {
+                val base = File(root, "external")
+                return (if (type == null) base else File(base, type)).apply { mkdirs() }
+            }
+        }
+        val width = 320
+        val height = 180
+        val sourceBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    setPixel(x, y, if (x < width * 2 / 3) Color.GREEN else Color.RED)
+                }
+            }
+        }
+        val wallpaperBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.BLUE)
+        }
+        val wallpaperFile = File(context.cacheDir, "wallpaper-$id.png")
+        val outputFile = File(context.cacheDir, "baked-$id.mp4")
+        var sourceFile: File? = null
+        var bakedFile: File? = null
+        var sourceFrame: Bitmap? = null
+        var bakedFrame: Bitmap? = null
+
+        try {
+            wallpaperFile.outputStream().use { output ->
+                assertTrue(
+                    "The deterministic wallpaper fixture must encode as PNG",
+                    wallpaperBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                )
+            }
+            val source = withTimeout(120_000L) {
+                requireNotNull(PhotoVideoEncoder.encodeStillImage(
+                    context = context,
+                    bitmap = sourceBitmap,
+                    durationMs = 1_000L,
+                    frameRate = 10
+                )) { "The deterministic green-screen MP4 fixture must encode." }
+            }
+            sourceFile = source
+            val sourceUri = Uri.fromFile(source).toString()
+            val sourceTrack = readVideoTrack(source)
+            assertTrue(
+                "The source fixture should retain approximately one second of video",
+                abs(sourceTrack.videoTrackDurationUs - 1_000_000L) <= 200_000L
+            )
+            assertTrue("The source fixture must contain multiple encoded frames", sourceTrack.presentationTimesUs.size >= 2)
+
+            val wallpaperPath = wallpaperFile.canonicalPath
+            assertTrue(
+                "The replacement image URI must resolve inside this isolated project fixture",
+                wallpaperPath.startsWith(root.canonicalPath + File.separator)
+            )
+            val validatedWallpaperUri = Uri.fromFile(wallpaperFile.canonicalFile).toString()
+            assertEquals(
+                "The wallpaper URI passed to the engine must identify the validated project fixture",
+                wallpaperPath,
+                Uri.parse(validatedWallpaperUri).path
+            )
+            val decodedWallpaper = requireNotNull(BitmapFactory.decodeFile(wallpaperPath)) {
+                "The selected test-project wallpaper URI must resolve to a decodable image."
+            }
+            try {
+                assertEquals("The project wallpaper fixture width must be validated", width, decodedWallpaper.width)
+                assertEquals("The project wallpaper fixture height must be validated", height, decodedWallpaper.height)
+            } finally {
+                decodedWallpaper.recycle()
+            }
+            val replacement = BackgroundReplaceSettings(
+                mode = BackgroundReplaceMode.IMAGE,
+                imageUri = validatedWallpaperUri,
+                chromaKeySettings = ChromaKeySettings(
+                    enabled = true,
+                    keyColorArgb = 0xFF00FF00L,
+                    similarity = 0.25f,
+                    smoothness = 0.10f,
+                    spillSuppression = 0f
+                ),
+                sourceUri = sourceUri
+            )
+            val baked = withTimeout(180_000L) {
+                // This is the same source-URI-bound authorization scope used by EditorBackgroundController.
+                GlobalModerationEnforcement.withExistingProjectVideoBackgroundReplacement(sourceUri) {
+                    BackgroundReplaceEngine.process(context, sourceUri, replacement, outputFile)
+                }
+            }
+            bakedFile = baked
+            assertEquals("The engine must publish to the requested MP4 path", outputFile.canonicalFile, baked.canonicalFile)
+            assertTrue("The background-replacement encoder must produce a non-empty MP4", baked.isFile && baked.length() > 0L)
+            assertTrue("The baked output must contain a video track", hasTrack(baked, "video/"))
+
+            val track = readVideoTrack(baked)
+            assertEquals("The baked video width must be retained", width, track.videoWidth)
+            assertEquals("The baked video height must be retained", height, track.videoHeight)
+            assertFalse("The baked video must contain encoded samples", track.presentationTimesUs.isEmpty())
+            assertTrue("The baked video track must report a positive duration", track.videoTrackDurationUs > 0L)
+            assertEquals(
+                "Background replacement must retain every source frame",
+                sourceTrack.presentationTimesUs.size,
+                track.presentationTimesUs.size
+            )
+            assertTrue(
+                "The encoded video track duration must stay within 150 ms of the source",
+                abs(track.videoTrackDurationUs - sourceTrack.videoTrackDurationUs) <= 150_000L
+            )
+            assertOutputTiming(
+                "Chroma Key background replacement",
+                track,
+                expectedDurationUs = sourceTrack.videoTrackDurationUs,
+                expectedSourceAnchorsUs = sourceTrack.presentationTimesUs,
+                requestedFps = 10
+            )
+
+            val bakedDurationMs = (track.videoTrackDurationUs / 1_000L).coerceAtLeast(1L)
+            val bakedClip = MediaClip(
+                id = "chroma-key-$id",
+                name = "Chroma Key encoded fixture",
+                uri = Uri.fromFile(baked).toString(),
+                durationMs = bakedDurationMs,
+                trimEndMs = bakedDurationMs,
+                backgroundReplace = replacement
+            )
+            assertNull(
+                "The real baked MP4 must pass project-export preflight",
+                projectCompositionUnsupportedReason(listOf(bakedClip), ExportEngine.ExportConfig())
+            )
+
+            fun decodeFirstFrame(file: File): Bitmap {
+                val retriever = MediaMetadataRetriever()
+                return try {
+                    retriever.setDataSource(file.absolutePath)
+                    requireNotNull(retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST)) {
+                        "${file.name} must contain a decodable video frame."
+                    }
+                } finally {
+                    retriever.release()
+                }
+            }
+            val original = decodeFirstFrame(source)
+            sourceFrame = original
+            val processed = decodeFirstFrame(baked)
+            bakedFrame = processed
+            assertEquals(width, original.width)
+            assertEquals(height, original.height)
+            assertEquals(width, processed.width)
+            assertEquals(height, processed.height)
+
+            fun rgbL1Distance(first: Int, second: Int): Int =
+                abs(Color.red(first) - Color.red(second)) +
+                    abs(Color.green(first) - Color.green(second)) +
+                    abs(Color.blue(first) - Color.blue(second))
+
+            assertTrue(
+                "The encoded source must retain a recognizably green key region",
+                rgbL1Distance(original.getPixel(width / 4, height / 2), Color.GREEN) < 80
+            )
+            assertTrue(
+                "The encoded source must retain a recognizably red foreground region",
+                rgbL1Distance(original.getPixel(width * 5 / 6, height / 2), Color.RED) < 80
+            )
+
+            val rows = 16 until height - 16
+            val keyColumns = 24 until width * 2 / 3 - 16
+            var changedKeyPixels = 0
+            var wallpaperMatchedPixels = 0
+            for (y in rows) {
+                for (x in keyColumns) {
+                    val before = original.getPixel(x, y)
+                    val after = processed.getPixel(x, y)
+                    if (rgbL1Distance(before, after) >= 80) changedKeyPixels++
+                    if (rgbL1Distance(after, Color.BLUE) <= 80) wallpaperMatchedPixels++
+                }
+            }
+            val keyRegionPixels = rows.count() * keyColumns.count()
+            assertTrue(
+                "Encoded Chroma Key must change at least 500 key-region pixels at RGB L1 distance >=80; changed=$changedKeyPixels",
+                changedKeyPixels >= 500
+            )
+            assertTrue(
+                "Most of the keyed region must decode near the blue wallpaper; matched=$wallpaperMatchedPixels/$keyRegionPixels",
+                wallpaperMatchedPixels >= keyRegionPixels * 3 / 4
+            )
+
+            val foregroundColumns = width * 2 / 3 + 16 until width - 24
+            var retainedForegroundPixels = 0
+            for (y in rows) {
+                for (x in foregroundColumns) {
+                    if (rgbL1Distance(processed.getPixel(x, y), original.getPixel(x, y)) <= 60) {
+                        retainedForegroundPixels++
+                    }
+                }
+            }
+            val foregroundRegionPixels = rows.count() * foregroundColumns.count()
+            assertTrue(
+                "At least 90% of the foreground must remain within RGB L1 distance 60 of the source; retained=$retainedForegroundPixels/$foregroundRegionPixels",
+                retainedForegroundPixels >= foregroundRegionPixels * 9 / 10
+            )
+        } finally {
+            sourceFrame?.recycle()
+            bakedFrame?.recycle()
+            sourceBitmap.recycle()
+            wallpaperBitmap.recycle()
+            sourceFile?.delete()
+            bakedFile?.delete()
+            outputFile.delete()
+            wallpaperFile.delete()
             root.deleteRecursively()
         }
     }

@@ -1801,6 +1801,13 @@ class ExportTimestampParityInstrumentedTest {
             println("shorts-retained-pts outputs=$outputPtsByName; common=$commonPtsUs; " +
                 "desiredMidpointsUs=$desiredMidpointsUs; chosenPhasePtsUs=$chosenPhasePtsUs")
             tracksByName.forEach { (name, track) ->
+                val normalizedRotation = ((track.rotationDegrees % 360) + 360) % 360
+                val displayWidth = if (normalizedRotation == 90 || normalizedRotation == 270) track.videoHeight else track.videoWidth
+                val displayHeight = if (normalizedRotation == 90 || normalizedRotation == 270) track.videoWidth else track.videoHeight
+                assertEquals("$name encoded display width (coded=${track.videoWidth}x${track.videoHeight}, rotation=${track.rotationDegrees})",
+                    720, displayWidth)
+                assertEquals("$name encoded display height (coded=${track.videoWidth}x${track.videoHeight}, rotation=${track.rotationDegrees})",
+                    1_280, displayHeight)
                 assertOutputTiming(name, track, plan.durationMs * 1_000L, sourcePtsUs, 30)
                 assertTrue("$name video duration ${track.videoTrackDurationUs}us differs from the planned ${plan.durationMs}ms",
                     track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - plan.durationMs * 1_000L) <= 150_000L)
@@ -1847,7 +1854,11 @@ class ExportTimestampParityInstrumentedTest {
                     frames += frame(baseline, timeUs)
                     frames += frame(full, timeUs)
                     frames += frame(withoutThisCaption, timeUs)
-                    frames.forEach { assertEquals(720, it.width); assertEquals(1_280, it.height) }
+                    val retrievedFrameSize = frames.first().width to frames.first().height
+                    frames.forEach { bitmap ->
+                        assertEquals("Retrieved caption-comparison frames must use one consistent size",
+                            retrievedFrameSize, bitmap.width to bitmap.height)
+                    }
                     val fullPixels = pixels(frames[1])
                     val allCaptionsChanged = changed(pixels(frames[0]), fullPixels)
                     val thisCaptionChanged = changed(pixels(frames[2]), fullPixels)
@@ -2005,6 +2016,9 @@ class ExportTimestampParityInstrumentedTest {
         val extractor = MediaExtractor()
         var audioDurationUs: Long? = null
         var trackDurations = ""
+        var videoWidth = 0
+        var videoHeight = 0
+        var videoRotationDegrees = 0
         var videoTrackDurationUs = 0L
         var presentationTimes: List<Long> = emptyList()
         try {
@@ -2024,6 +2038,11 @@ class ExportTimestampParityInstrumentedTest {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
             } ?: error("${file.name} has no video track")
             val format = extractor.getTrackFormat(index)
+            videoWidth = format.getInteger(MediaFormat.KEY_WIDTH)
+            videoHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
+            videoRotationDegrees = if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+                format.getInteger(MediaFormat.KEY_ROTATION)
+            } else 0
             videoTrackDurationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 format.getLong(MediaFormat.KEY_DURATION)
             } else 0L
@@ -2040,6 +2059,8 @@ class ExportTimestampParityInstrumentedTest {
         val retriever = MediaMetadataRetriever()
         val movieDurationUs = try {
             retriever.setDataSource(file.absolutePath)
+            videoRotationDegrees = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull() ?: videoRotationDegrees
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull()?.times(1_000L)
         } finally {
@@ -2048,6 +2069,9 @@ class ExportTimestampParityInstrumentedTest {
         val gaps = presentationTimes.zipWithNext { first, second -> second - first }
         return VideoTrack(
             videoTrackDurationUs,
+            videoWidth,
+            videoHeight,
+            videoRotationDegrees,
             presentationTimes,
             gaps.maxOrNull() ?: 0L,
             movieDurationUs,
@@ -2058,6 +2082,9 @@ class ExportTimestampParityInstrumentedTest {
 
     private data class VideoTrack(
         val videoTrackDurationUs: Long,
+        val videoWidth: Int,
+        val videoHeight: Int,
+        val rotationDegrees: Int,
         val presentationTimesUs: List<Long>,
         val maxGapUs: Long,
         val movieDurationUs: Long?,

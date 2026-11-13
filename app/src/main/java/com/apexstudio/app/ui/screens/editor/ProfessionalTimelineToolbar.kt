@@ -49,7 +49,11 @@ internal fun ProfessionalTimelineToolbar(
     modifier: Modifier = Modifier,
 ) {
     val timecode = preciseEditorTime(state.playerPositionMs)
-    val zoomLabel = String.format(Locale.ROOT, "%.1fx", state.timelineZoom)
+    val zoomLabel = String.format(
+        Locale.ROOT,
+        if (state.timelineZoom < 0.1f) "%.2fx" else "%.1fx",
+        state.timelineZoom
+    )
     val snapLabel = if (state.magneticSnapping) "Magnetic snapping enabled" else "Magnetic snapping disabled"
 
     Row(

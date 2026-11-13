@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.colortools
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.ColorStudioLut
 import com.apexstudio.app.data.color.hasValidRenderParameters
@@ -10,8 +11,9 @@ import com.arthenica.ffmpegkit.FFmpegSession
 import com.arthenica.ffmpegkit.FFprobeKit
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -19,13 +21,55 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /** Standalone selected-source export only; never reads or renders project timeline composition. */
 internal object ColorVideoExporter {
     private const val MAX_VIDEO_DURATION_SECONDS = 30 * 60
     private const val MAX_VIDEO_DIMENSION = 3840
     private const val MAX_STAGED_INPUT_BYTES = 2_000_000_000L
+    private const val CANCEL_DRAIN_TIMEOUT_MS = 5_000L
+    private const val NO_SESSION_ID = Long.MIN_VALUE
+    private const val TAG = "ColorVideoExporter"
+    private val nativeFileRegistryLock = Any()
+    private val activeNativeFilePaths = ConcurrentHashMap.newKeySet<String>()
+
+    /** Delete native inputs only after FFmpeg reports that it has stopped reading them. */
+    internal class NativeFileLease {
+        private val files = mutableListOf<File>()
+        private val nativeFinished = AtomicBoolean(false)
+        private val cleanupRequested = AtomicBoolean(false)
+        private val cleaned = AtomicBoolean(false)
+
+        internal fun register(file: File) {
+            synchronized(ColorVideoExporter.nativeFileRegistryLock) {
+                check(!cleanupRequested.get()) { "Cannot register files after Color cleanup was requested." }
+                files += file
+                ColorVideoExporter.activeNativeFilePaths.add(file.absolutePath)
+            }
+        }
+
+        internal fun markNativeFinished() {
+            nativeFinished.set(true)
+            cleanupWhenSafe()
+        }
+
+        internal fun requestCleanup() {
+            cleanupRequested.set(true)
+            cleanupWhenSafe()
+        }
+
+        private fun cleanupWhenSafe() {
+            if (!nativeFinished.get() || !cleanupRequested.get()) return
+            synchronized(ColorVideoExporter.nativeFileRegistryLock) {
+                if (!nativeFinished.get() || !cleanupRequested.get() || !cleaned.compareAndSet(false, true)) return
+                files.forEach { it.delete() }
+                files.forEach { ColorVideoExporter.activeNativeFilePaths.remove(it.absolutePath) }
+            }
+        }
+    }
 
     internal data class SourceInfo(
         val width: Int,
@@ -70,15 +114,19 @@ internal object ColorVideoExporter {
     /** Writes an independent MP4. The input is the full original source, not the project trim or composition. */
     suspend fun export(context: Context, uri: Uri, grade: ColorStudioGrade): File {
         require(grade.hasValidRenderParameters()) { "Color adjustment values are outside the supported range." }
-        val info = inspect(context, uri)
-        require(info.supported) { info.reason ?: "Selected video is unsupported." }
-        currentCoroutineContext().ensureActive()
-        val input = stage(context, uri, "color_input_")
-        var cube: File? = null
-        var output: File? = null
+        pruneOrphanedNativeFiles(context)
+        val lease = NativeFileLease()
+        var nativeLaunchAttempted = false
+        var publishedOutput: File? = null
         try {
-            val cubeFile = File.createTempFile("color_", ".cube", context.cacheDir).also { cube = it }
-            val outputFile = File.createTempFile("color_", ".mp4", ColorMediaIO.exportDirectory(context)).also { output = it }
+            val info = inspect(context, uri)
+            require(info.supported) { info.reason ?: "Selected video is unsupported." }
+            currentCoroutineContext().ensureActive()
+            val input = stage(context, uri, "color_input_", lease)
+            val cubeFile = createRegisteredTempFile("color_", ".cube", context.cacheDir, lease)
+            val outputFile = createRegisteredTempFile(
+                "color_pending_", ".mp4", ColorMediaIO.exportDirectory(context), lease
+            )
             withContext(Dispatchers.IO) { ColorStudioLut(grade).writeCube(cubeFile) }
             currentCoroutineContext().ensureActive()
             // executeWithArgumentsAsync keeps native encoding off the caller/main thread.
@@ -92,19 +140,51 @@ internal object ColorVideoExporter {
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
                 outputFile.absolutePath
             )
-            val session = executeCancellable(args)
+            nativeLaunchAttempted = true
+            val session = executeCancellable(args, lease::markNativeFinished)
             val returnCode = session.returnCode?.value ?: -1
             check(returnCode == 0 && outputFile.isFile && outputFile.length() > 0L) {
                 "FFmpeg could not finish the standalone Color video export (code $returnCode)."
             }
-            return outputFile
+            return publishPendingOutput(outputFile).also { publishedOutput = it }
         } catch (failure: Throwable) {
-            output?.delete()
+            publishedOutput?.delete()
             throw failure
         } finally {
-            input.delete()
-            cube?.delete()
+            if (!nativeLaunchAttempted) lease.markNativeFinished()
+            lease.requestCleanup()
         }
+    }
+
+    private fun pruneOrphanedNativeFiles(context: Context) {
+        val candidates = mutableListOf<File>()
+        context.cacheDir.listFiles()?.forEach { file ->
+            if ((file.name.startsWith("color_input_") && file.extension == "media") ||
+                (file.name.startsWith("color_") && file.extension == "cube")) candidates += file
+        }
+        ColorMediaIO.exportDirectory(context).listFiles()?.forEach { file ->
+            if (file.name.startsWith("color_pending_") && file.extension == "mp4") candidates += file
+        }
+        synchronized(nativeFileRegistryLock) {
+            candidates.filterNot { activeNativeFilePaths.contains(it.absolutePath) }.forEach { it.delete() }
+        }
+    }
+
+    internal fun publishPendingOutput(pending: File): File {
+        require(pending.isFile && pending.length() > 0L &&
+            pending.name.startsWith("color_pending_") && pending.extension == "mp4") {
+            "The standalone Color export result is not ready to publish."
+        }
+        val directory = pending.parentFile ?: error("The Color export directory is unavailable.")
+        val suffix = pending.name.removePrefix("color_pending_").removeSuffix(".mp4")
+        var candidate = File(directory, "color_$suffix.mp4")
+        var collision = 1
+        while (candidate.exists()) {
+            candidate = File(directory, "color_${suffix}_$collision.mp4")
+            collision++
+        }
+        check(pending.renameTo(candidate)) { "The completed Color export could not be finalized." }
+        return candidate
     }
 
     internal fun buildVideoFilter(cubePath: String, grade: ColorStudioGrade): String {
@@ -122,38 +202,111 @@ internal object ColorVideoExporter {
         return filters.joinToString(",")
     }
 
-    private suspend fun executeCancellable(arguments: Array<String>): FFmpegSession {
-        val nativeFinished = CompletableDeferred<FFmpegSession>()
+    private suspend fun executeCancellable(arguments: Array<String>, onNativeFinished: () -> Unit): FFmpegSession =
+        executeCancellableNativeSession(
+            startSession = { onComplete ->
+                val session = FFmpegKit.executeWithArgumentsAsync(arguments) { completed ->
+                    if (completed == null) onComplete(null, IllegalStateException("FFmpegKit returned no session result."))
+                    else onComplete(completed, null)
+                }
+                session.sessionId
+            },
+            cancelSession = { sessionId -> FFmpegKit.cancel(sessionId) },
+            onNativeFinished = onNativeFinished,
+            drainTimeoutMillis = CANCEL_DRAIN_TIMEOUT_MS,
+            onDrainTimeout = {
+                Log.w(TAG, "FFmpeg cancellation callback timed out; retaining staged Color files until native completion.")
+            }
+        )
+
+    internal suspend fun <T : Any> executeCancellableNativeSession(
+        startSession: (onComplete: (T?, Throwable?) -> Unit) -> Long,
+        cancelSession: (sessionId: Long) -> Unit,
+        onNativeFinished: () -> Unit,
+        drainTimeoutMillis: Long = CANCEL_DRAIN_TIMEOUT_MS,
+        onDrainTimeout: () -> Unit = {}
+    ): T {
+        require(drainTimeoutMillis >= 0L)
+        val nativeFinished = CompletableDeferred<Unit>()
+        val sessionId = AtomicLong(NO_SESSION_ID)
+        val startInvoked = AtomicBoolean(false)
+        val cancellationRequested = AtomicBoolean(false)
+        val cancellationSent = AtomicBoolean(false)
+        val nativeFinishedSignalled = AtomicBoolean(false)
+
+        fun signalNativeFinished() {
+            if (nativeFinishedSignalled.compareAndSet(false, true)) {
+                runCatching(onNativeFinished)
+                nativeFinished.complete(Unit)
+            }
+        }
+
+        fun cancelNativeSessionOnce(id: Long) {
+            if (!nativeFinishedSignalled.get() && cancellationSent.compareAndSet(false, true)) {
+                runCatching { cancelSession(id) }
+            }
+        }
+
+        fun requestNativeCancellation() {
+            cancellationRequested.set(true)
+            val id = sessionId.get()
+            if (id != NO_SESSION_ID) cancelNativeSessionOnce(id)
+        }
+
         return try {
             suspendCancellableCoroutine { continuation ->
-            val sessionRef = AtomicReference<FFmpegSession?>()
-            val cancelled = AtomicBoolean(false)
-            continuation.invokeOnCancellation {
-                cancelled.set(true)
-                sessionRef.get()?.let { FFmpegKit.cancel(it.sessionId) }
-            }
-            val session = FFmpegKit.executeWithArgumentsAsync(arguments) { completed ->
-                if (completed != null) {
-                    nativeFinished.complete(completed)
-                    if (continuation.isActive) continuation.resume(completed)
-                } else {
-                    nativeFinished.completeExceptionally(IllegalStateException("FFmpegKit returned no session result."))
-                    if (continuation.isActive) continuation.cancel(IllegalStateException("FFmpegKit returned no session result."))
+                continuation.invokeOnCancellation { requestNativeCancellation() }
+                try {
+                    startInvoked.set(true)
+                    val id = startSession { value, failure ->
+                        signalNativeFinished()
+                        if (continuation.isActive) {
+                            when {
+                                failure != null -> continuation.resumeWithException(failure)
+                                value != null -> continuation.resume(value)
+                                else -> continuation.resumeWithException(
+                                    IllegalStateException("FFmpegKit returned no session result.")
+                                )
+                            }
+                        }
+                    }
+                    sessionId.set(id)
+                    if (cancellationRequested.get()) cancelNativeSessionOnce(id)
+                } catch (failure: Throwable) {
+                    signalNativeFinished()
+                    if (continuation.isActive) continuation.resumeWithException(failure)
                 }
             }
-            sessionRef.set(session)
-            if (cancelled.get()) FFmpegKit.cancel(session.sessionId)
-            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            // Cancellation handler requests only this session to stop. Keep its staged input and LUT
-            // alive until the native completion callback confirms the encoder has stopped reading.
-            withContext(NonCancellable) { runCatching { nativeFinished.await() } }
+            if (!startInvoked.get()) signalNativeFinished()
+            val drained = withContext(NonCancellable) {
+                withTimeoutOrNull(drainTimeoutMillis) {
+                    nativeFinished.await()
+                    true
+                } ?: false
+            }
+            if (!drained) runCatching(onDrainTimeout)
             throw cancelled
         }
     }
 
-    private suspend fun stage(context: Context, uri: Uri, prefix: String): File = withContext(Dispatchers.IO) {
-        val staged = File.createTempFile(prefix, ".media", context.cacheDir)
+    private fun createRegisteredTempFile(
+        prefix: String,
+        suffix: String,
+        directory: File,
+        lease: NativeFileLease
+    ): File = synchronized(nativeFileRegistryLock) {
+        File.createTempFile(prefix, suffix, directory).also(lease::register)
+    }
+
+    private suspend fun stage(
+        context: Context,
+        uri: Uri,
+        prefix: String,
+        lease: NativeFileLease? = null
+    ): File = withContext(Dispatchers.IO) {
+        val staged = if (lease == null) File.createTempFile(prefix, ".media", context.cacheDir)
+        else createRegisteredTempFile(prefix, ".media", context.cacheDir, lease)
         try {
             val source = when (uri.scheme) {
                 null, "" -> File(uri.toString()).inputStream()

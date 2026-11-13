@@ -2005,6 +2005,9 @@ class ExportTimestampParityInstrumentedTest {
                 trimEndMs = 1_800L
             )
             val lutConfig = baseConfig.copy(filterPreset = selectedPreset, filterIntensity = 1f)
+            // Project exports take trims from MediaClip; ExportConfig trim fields must remain unset.
+            val projectBaseConfig = baseConfig.copy(trimStartMs = 0L, trimEndMs = 0L)
+            val projectLutConfig = projectBaseConfig.copy(filterPreset = selectedPreset, filterIntensity = 1f)
 
             suspend fun export(index: Int, config: ExportEngine.ExportConfig, project: Boolean): File {
                 if (project) engines[index].startProjectExport(clips, config, names[index])
@@ -2018,8 +2021,8 @@ class ExportTimestampParityInstrumentedTest {
 
             outputs[0] = export(0, baseConfig, project = false)
             outputs[1] = export(1, lutConfig, project = false)
-            outputs[2] = export(2, baseConfig, project = true)
-            outputs[3] = export(3, lutConfig, project = true)
+            outputs[2] = export(2, projectBaseConfig, project = true)
+            outputs[3] = export(3, projectLutConfig, project = true)
 
             val sourceAnchors = sourceTrack.presentationTimesUs.filter { it < 1_800_000L }
             val tracks = outputs.map { readVideoTrack(requireNotNull(it)) }

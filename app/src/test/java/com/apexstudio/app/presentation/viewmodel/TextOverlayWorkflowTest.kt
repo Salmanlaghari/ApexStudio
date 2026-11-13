@@ -2,6 +2,7 @@ package com.apexstudio.app.presentation.viewmodel
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
@@ -127,27 +128,37 @@ class TextOverlayWorkflowTest {
     }
 
     @Test
-    fun userSizeScaleIsAppliedOnlyOnceToPreviewText() {
-        val overlayState = mutableStateOf(TextOverlay(id = "scaled-title", text = "Mum", sizeScale = 1f))
+    fun userSizeScaleUpdatesPreviewTextSizeLinearly() {
+        val sizeScale = mutableStateOf(1f)
         compose.setContent {
             Box(Modifier.size(640.dp, 320.dp)) {
-                AnimatedTextOverlayView(
-                    overlay = overlayState.value,
-                    isSelected = false,
-                    containerWidth = 640.dp,
-                    containerHeight = 320.dp,
-                    currentTimeMs = 0L,
-                    isPlaying = false,
-                    onSelect = {},
-                    onPositionChange = { _, _ -> }
-                )
+                key(sizeScale.value) {
+                    AnimatedTextOverlayView(
+                        overlay = TextOverlay(id = "scaled-title", text = "Mum", sizeScale = sizeScale.value),
+                        isSelected = false,
+                        containerWidth = 640.dp,
+                        containerHeight = 320.dp,
+                        currentTimeMs = 0L,
+                        isPlaying = false,
+                        onSelect = {},
+                        onPositionChange = { _, _ -> }
+                    )
+                }
             }
         }
 
-        val baseWidth = compose.onNodeWithText("Mum").fetchSemanticsNode().boundsInRoot.width
-        compose.runOnIdle { overlayState.value = overlayState.value.copy(sizeScale = 2f) }
+        fun measuredTextWidth(): Float {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText("Mum").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { getResult ->
+                assertTrue(getResult(layouts))
+            }
+            return layouts.single().size.width.toFloat()
+        }
+
+        val baseWidth = measuredTextWidth()
+        compose.runOnIdle { sizeScale.value = 2f }
         compose.waitForIdle()
-        val doubledWidth = compose.onNodeWithText("Mum").fetchSemanticsNode().boundsInRoot.width
+        val doubledWidth = measuredTextWidth()
 
         assertEquals(2f, doubledWidth / baseWidth, 0.2f)
     }

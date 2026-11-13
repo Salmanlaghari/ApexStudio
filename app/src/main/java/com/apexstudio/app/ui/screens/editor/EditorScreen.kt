@@ -1602,6 +1602,16 @@ private fun EditorScreenContent(
                 },
                 onTogglePlayback = { vm.togglePlay() },
                 onDismiss = dismissWorkspace,
+                onReopenFilters = {
+                    val restarted = restartFilterWorkspace(projectId, vm.state.value, dismissWorkspace) { clip ->
+                        workspaceIsFilters = true
+                        workspaceTarget = clip
+                        workspacePreview = clip
+                    }
+                    if (!restarted) {
+                        android.widget.Toast.makeText(context, "Select a main-track project video first", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
                 openTimeActions = workspaceOpenTimeActions
             )
         }

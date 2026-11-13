@@ -63,6 +63,7 @@ internal fun FilterWorkspacePanel(
     onSeekSource: (Long) -> Unit,
     onTogglePlayback: () -> Unit,
     onDismiss: () -> Unit,
+    onReopen: (() -> Unit)? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -115,6 +116,9 @@ internal fun FilterWorkspacePanel(
     val targetReason = workspaceApplyTargetReason(projectId, state.project, state.selectedClipId, originalClip)
     val enabled = targetReason == null
     val mayApply = enabled && state.playerError == null
+    val recoveryAction = onReopen?.takeIf { targetReason == WORKSPACE_STALE_TARGET_REASON }
+    val canRestart = state.project?.id == projectId &&
+        selectedWorkspaceVideo(state.project, state.selectedClipId) != null
 
     LaunchedEffect(effects, enabled) {
         onPreviewClip(if (enabled) originalClip.copy(workspaceEffects = effects) else originalClip)
@@ -374,6 +378,7 @@ internal fun FilterWorkspacePanel(
                     }
                 }
 
+                FilterWorkspaceRecoveryAction(recoveryAction, canRestart)
                 state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.",
                     color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.",
@@ -641,6 +646,7 @@ internal fun FilterWorkspacePanel(
             }
 
             // Pinned cancellation and commit actions remain visible while cards scroll.
+            FilterWorkspaceRecoveryAction(recoveryAction, canRestart)
             state.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 ?: state.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -657,6 +663,24 @@ internal fun FilterWorkspacePanel(
                     Text(if (!dirty && selectedIndex != null) "Already applied" else "Apply")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FilterWorkspaceRecoveryAction(onRecover: (() -> Unit)?, canRestart: Boolean) {
+    if (onRecover == null) return
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (canRestart) "Restart discards the unsaved filter preview."
+            else "Select a main video on the timeline, then reopen Filters.",
+            color = EditorPalette.TextSecondary,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRecover, modifier = Modifier.testTag("filter-reopen")) {
+            Text(if (canRestart) "Restart Filters" else "Close Filters", fontSize = 11.sp)
         }
     }
 }

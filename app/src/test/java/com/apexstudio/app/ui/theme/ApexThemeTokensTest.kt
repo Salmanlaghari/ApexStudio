@@ -70,7 +70,11 @@ class ApexThemeTokensTest {
                     textTertiary = EditorPalette.TextTertiary,
                     textMuted = EditorPalette.TextMuted,
                     divider = EditorPalette.Divider,
-                    border = EditorPalette.BorderGlass
+                    border = EditorPalette.BorderGlass,
+                    gradientPrimaryStops = EditorPalette.GradientPrimaryStops,
+                    gradientSurfaceStops = EditorPalette.GradientSurfaceStops,
+                    gradientGlassIsNeutral = EditorPalette.GradientGlass === ApexPalette.GradientGlass,
+                    gradientAccentStops = EditorPalette.GradientAccentStops
                 )
                 SideEffect {
                     observedWindow.set((view.context as Activity).window)
@@ -148,6 +152,10 @@ class ApexThemeTokensTest {
         assertEquals(expected.textMuted, actual.textMuted)
         assertEquals(expected.divider, actual.divider)
         assertEquals(expected.border, actual.border)
+        assertEquals(listOf(expected.primary, expected.secondary), actual.gradientPrimaryStops)
+        assertEquals(listOf(expected.bgSurface, expected.bgDeep), actual.gradientSurfaceStops)
+        assertTrue(actual.gradientGlassIsNeutral)
+        assertEquals(listOf(expected.secondary, expected.primary), actual.gradientAccentStops)
     }
 
     private fun contrastRatio(foreground: Color, background: Color): Double {
@@ -183,6 +191,10 @@ class ApexThemeTokensTest {
         val textTertiary: Color,
         val textMuted: Color,
         val divider: Color,
-        val border: Color
+        val border: Color,
+        val gradientPrimaryStops: List<Color>,
+        val gradientSurfaceStops: List<Color>,
+        val gradientGlassIsNeutral: Boolean,
+        val gradientAccentStops: List<Color>
     )
 }

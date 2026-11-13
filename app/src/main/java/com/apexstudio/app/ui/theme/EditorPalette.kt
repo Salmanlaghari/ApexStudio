@@ -60,18 +60,18 @@ object EditorPalette {
     val TrackOverlay = ApexPalette.TrackOverlay
     val TrackSfx = ApexPalette.TrackSfx
 
+    internal val GradientPrimaryStops: List<Color>
+        @Composable @ReadOnlyComposable get() = listOf(selected.primary, selected.secondary)
+    internal val GradientSurfaceStops: List<Color>
+        @Composable @ReadOnlyComposable get() = listOf(selected.bgSurface, selected.bgDeep)
+    internal val GradientAccentStops: List<Color>
+        @Composable @ReadOnlyComposable get() = listOf(selected.secondary, selected.primary)
     val GradientPrimary: Brush
-        @Composable @ReadOnlyComposable get() = Brush.linearGradient(
-            listOf(selected.primary, selected.secondary)
-        )
+        @Composable @ReadOnlyComposable get() = Brush.linearGradient(GradientPrimaryStops)
     val GradientSurface: Brush
-        @Composable @ReadOnlyComposable get() = Brush.verticalGradient(
-            listOf(selected.bgSurface, selected.bgDeep)
-        )
+        @Composable @ReadOnlyComposable get() = Brush.verticalGradient(GradientSurfaceStops)
     // Neutral specular sheen intentionally stays theme-independent; its surface is theme-aware.
     val GradientGlass = ApexPalette.GradientGlass
     val GradientAccent: Brush
-        @Composable @ReadOnlyComposable get() = Brush.linearGradient(
-            listOf(selected.secondary, selected.primary)
-        )
+        @Composable @ReadOnlyComposable get() = Brush.linearGradient(GradientAccentStops)
 }

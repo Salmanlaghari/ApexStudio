@@ -31,19 +31,17 @@ import androidx.media3.effect.GlShaderProgram
 @UnstableApi
 class FxGlEffect private constructor(
     private val effectId: String,
-    private val isAnimated: Boolean,
     private val shaderSource: String,
     private val intensity: Float,
     private val speed: Float
 ) : GlEffect {
 
     constructor(preset: FxPreset, intensity: Float, speed: Float = 1f) : this(
-        preset.id, preset.isAnimated, shaderSourceFor(preset), intensity, speed
+        preset.id, shaderSourceFor(preset), intensity, speed
     )
 
     constructor(effect: DownloadedFxEffect, intensity: Float, speed: Float = 1f) : this(
         effect.id,
-        effect.isAnimated,
         ModernFxShaders.shaderFor(effect)
             ?: throw IllegalArgumentException("Unsupported downloaded FX family: ${effect.family}"),
         intensity,
@@ -52,7 +50,7 @@ class FxGlEffect private constructor(
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
         return FxShaderProgram(
-            effectId, isAnimated, shaderSource,
+            effectId, shaderSource,
             intensity.coerceIn(0f, 1f), speed.coerceIn(0.1f, 4f), useHdr
         )
     }
@@ -60,7 +58,6 @@ class FxGlEffect private constructor(
     @UnstableApi
     private class FxShaderProgram(
         private val effectId: String,
-        private val isAnimated: Boolean,
         shaderSource: String,
         private val intensity: Float,
         private val speed: Float,
@@ -68,6 +65,7 @@ class FxGlEffect private constructor(
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
         private val glProgram: GlProgram
+        private val activeOptionalUniforms: Set<String>
         private var inputWidth: Int = 0
         private var inputHeight: Int = 0
 
@@ -77,6 +75,12 @@ class FxGlEffect private constructor(
             } catch (e: Exception) {
                 throw VideoFrameProcessingException("Failed to compile FX shader for $effectId", e)
             }
+            // A declared uniform may be optimized out (e.g. Lens Flare's uTexel).
+            // GlProgram setters require active uniforms, unlike raw glUniform(-1).
+            // Query once after linking; animation metadata cannot establish presence.
+            activeOptionalUniforms = setOf("uIntensity", "uTime", "uSpeed", "uTexel")
+                .filter { glProgram.getUniformLocation(it) >= 0 }
+                .toSet()
             glProgram.setBufferAttribute(
                 "aFramePosition",
                 GlUtil.getNormalizedCoordinateBounds(),
@@ -104,20 +108,24 @@ class FxGlEffect private constructor(
             try {
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
-                glProgram.setFloatUniform("uIntensity", intensity)
-                glProgram.setFloatUniform("uTime", presentationTimeUs / 1_000_000f)
-                // Only animated presets declare uSpeed; setting it on other
-                // shaders would hit a missing-uniform lookup.
-                if (isAnimated) {
+                if ("uIntensity" in activeOptionalUniforms) {
+                    glProgram.setFloatUniform("uIntensity", intensity)
+                }
+                if ("uTime" in activeOptionalUniforms) {
+                    glProgram.setFloatUniform("uTime", presentationTimeUs / 1_000_000f)
+                }
+                if ("uSpeed" in activeOptionalUniforms) {
                     glProgram.setFloatUniform("uSpeed", speed)
                 }
-                glProgram.setFloatsUniform(
-                    "uTexel",
-                    floatArrayOf(
-                        1f / inputWidth.coerceAtLeast(1),
-                        1f / inputHeight.coerceAtLeast(1)
+                if ("uTexel" in activeOptionalUniforms) {
+                    glProgram.setFloatsUniform(
+                        "uTexel",
+                        floatArrayOf(
+                            1f / inputWidth.coerceAtLeast(1),
+                            1f / inputHeight.coerceAtLeast(1)
+                        )
                     )
-                )
+                }
                 glProgram.bindAttributesAndUniforms()
                 GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             } catch (e: GlUtil.GlException) {

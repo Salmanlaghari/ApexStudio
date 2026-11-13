@@ -21,6 +21,7 @@ import com.apexstudio.app.data.effect.TextOverlayGlShaders
 import com.apexstudio.app.data.fx.DownloadedEffectRepository
 import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxGlEffect
+import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.fx.ModernFxShaders
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.packs.download.PackManifestRepo
@@ -191,6 +192,176 @@ class ExportTimestampParityInstrumentedTest {
             )
             EGL14.eglDestroySurface(display, surface)
             EGL14.eglDestroyContext(display, context)
+            EGL14.eglTerminate(display)
+        }
+    }
+
+    @Test
+    fun fxWrapperDrawsUnusedUniformPresetsAndAnimatedSpeedPresetOnRealEglFrame() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val width = 128
+        val height = 128
+        val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+        assertTrue("EGL display must be available", display !== EGL14.EGL_NO_DISPLAY)
+        val version = IntArray(2)
+        assertTrue("EGL must initialize", EGL14.eglInitialize(display, version, 0, version, 1))
+        val configs = arrayOfNulls<EGLConfig>(1)
+        val configCount = IntArray(1)
+        assertTrue(
+            "EGL must provide an ES2 pbuffer config",
+            EGL14.eglChooseConfig(
+                display,
+                intArrayOf(
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+                    EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8,
+                    EGL14.EGL_BLUE_SIZE, 8,
+                    EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_NONE
+                ), 0, configs, 0, configs.size, configCount, 0
+            )
+        )
+        assertTrue("At least one EGL config is required", configCount[0] > 0)
+        val config = requireNotNull(configs[0])
+        val eglContext = EGL14.eglCreateContext(
+            display, config, EGL14.EGL_NO_CONTEXT,
+            intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE), 0
+        )
+        assertTrue("An ES2 context must be created", eglContext !== EGL14.EGL_NO_CONTEXT)
+        val surface = EGL14.eglCreatePbufferSurface(
+            display, config,
+            intArrayOf(EGL14.EGL_WIDTH, width, EGL14.EGL_HEIGHT, height, EGL14.EGL_NONE), 0
+        )
+        assertTrue("An ES2 pbuffer surface must be created", surface !== EGL14.EGL_NO_SURFACE)
+
+        val textures = mutableListOf<Int>()
+        val framebuffers = mutableListOf<Int>()
+        val bitmaps = mutableListOf<Bitmap>()
+
+        fun createTexture(bitmap: Bitmap? = null): Int {
+            val ids = IntArray(1)
+            GLES20.glGenTextures(1, ids, 0)
+            assertTrue("GL texture must be created", ids[0] != 0)
+            textures += ids[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_NEAREST)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_NEAREST)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            if (bitmap == null) {
+                GLES20.glTexImage2D(
+                    GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
+                    GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null
+                )
+            } else {
+                GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+            }
+            return ids[0]
+        }
+
+        fun assertNoGlError(label: String) {
+            assertEquals("$label must leave GLES error state clear", GLES20.GL_NO_ERROR, GLES20.glGetError())
+        }
+
+        try {
+            assertTrue("The ES2 context must become current", EGL14.eglMakeCurrent(display, surface, surface, eglContext))
+            val inputBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmaps += inputBitmap
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val checker = ((x / 8) + (y / 8)) and 1
+                    inputBitmap.setPixel(
+                        x, y,
+                        Color.argb(
+                            255,
+                            (x * 2 + if (checker == 0) 24 else 0).coerceAtMost(255),
+                            (y * 2 + if (checker == 1) 24 else 0).coerceAtMost(255),
+                            ((x + y) * 255 / (width + height - 2)).coerceIn(0, 255)
+                        )
+                    )
+                }
+            }
+            val inputTexture = createTexture(inputBitmap)
+            val outputTexture = createTexture()
+            val framebuffer = IntArray(1)
+            GLES20.glGenFramebuffers(1, framebuffer, 0)
+            assertTrue("GL framebuffer must be created", framebuffer[0] != 0)
+            framebuffers += framebuffer[0]
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer[0])
+            GLES20.glFramebufferTexture2D(
+                GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0,
+                GLES20.GL_TEXTURE_2D, outputTexture, 0
+            )
+            assertEquals(
+                "Output framebuffer must be complete",
+                GLES20.GL_FRAMEBUFFER_COMPLETE,
+                GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER)
+            )
+            GLES20.glViewport(0, 0, width, height)
+
+            val inputPixels = IntArray(width * height)
+            inputBitmap.getPixels(inputPixels, 0, width, 0, 0, width, height)
+            val effects = listOf(
+                Triple("lens_flare", FxPreset.LENS_FLARE, 0L),
+                Triple("vignette", FxPreset.VIGNETTE, 0L),
+                Triple("hue_cycle", FxPreset.HUE_CYCLE, 700_000L)
+            )
+            effects.forEach { (label, preset, timeUs) ->
+                val program = FxGlEffect(preset, intensity = 1f, speed = 1.4f)
+                    .toGlShaderProgram(context, useHdr = false) as BaseGlShaderProgram
+                try {
+                    val configured = program.configure(width, height)
+                    assertEquals("$label output width", width, configured.width)
+                    assertEquals("$label output height", height, configured.height)
+                    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer[0])
+                    GLES20.glViewport(0, 0, width, height)
+                    GLES20.glClearColor(0f, 0f, 0f, 0f)
+                    GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+                    assertNoGlError("$label setup")
+
+                    // This is intentionally the production FxGlEffect wrapper. A raw GLSL draw
+                    // would let glUniform(-1) no-op, whereas GlProgram's uniform cache throws on
+                    // the same inactive declaration and is the regression being protected.
+                    program.drawFrame(inputTexture, timeUs)
+                    GLES20.glFinish()
+                    assertNoGlError("$label draw")
+
+                    val pixels = ByteBuffer.allocateDirect(width * height * 4)
+                        .order(ByteOrder.nativeOrder())
+                    GLES20.glReadPixels(0, 0, width, height, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+                    assertNoGlError("$label readback")
+                    val output = ByteArray(width * height * 4)
+                    pixels.get(output)
+                    assertTrue(
+                        "$label must produce nonzero output",
+                        output.any { (it.toInt() and 0xff) != 0 }
+                    )
+                    var changedPixels = 0
+                    for (index in inputPixels.indices) {
+                        val offset = index * 4
+                        val distance = abs(Color.red(inputPixels[index]) - (output[offset].toInt() and 0xff)) +
+                            abs(Color.green(inputPixels[index]) - (output[offset + 1].toInt() and 0xff)) +
+                            abs(Color.blue(inputPixels[index]) - (output[offset + 2].toInt() and 0xff))
+                        if (distance >= 80) changedPixels++
+                    }
+                    assertTrue(
+                        "$label must produce meaningful changed output; changed pixels=$changedPixels",
+                        changedPixels >= 500
+                    )
+                } finally {
+                    program.release()
+                    GLES20.glUseProgram(0)
+                }
+            }
+        } finally {
+            if (framebuffers.isNotEmpty()) GLES20.glDeleteFramebuffers(framebuffers.size, framebuffers.toIntArray(), 0)
+            if (textures.isNotEmpty()) GLES20.glDeleteTextures(textures.size, textures.toIntArray(), 0)
+            bitmaps.forEach { if (!it.isRecycled) it.recycle() }
+            EGL14.eglMakeCurrent(display, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            EGL14.eglDestroySurface(display, surface)
+            EGL14.eglDestroyContext(display, eglContext)
             EGL14.eglTerminate(display)
         }
     }

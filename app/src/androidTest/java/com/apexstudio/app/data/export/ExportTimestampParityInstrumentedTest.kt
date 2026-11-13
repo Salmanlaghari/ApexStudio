@@ -580,42 +580,58 @@ class ExportTimestampParityInstrumentedTest {
             return changed
         }
 
-        fun selectVisibleAnimationSamples() {
+        fun selectVisibleAnimationSamples(commonTimesUs: List<Long>) {
             val frames = requireNotNull(LottieFrameCache.frames(context, assetPath)) {
                 "The installed heart-pop pack must render Lottie frames"
             }
+            assertTrue("The installed Lottie cache must contain frames", frames.isNotEmpty())
             val pixels = frames.map(::framePixels)
-            val visible = pixels.mapIndexedNotNull { index, frame ->
+            val visible = commonTimesUs.mapNotNull { timeUs ->
+                val timeMs = timeUs / 1_000L
+                if (timeMs < sticker.startMs || timeMs >= sticker.endMs) return@mapNotNull null
+                val index = LottieFrameCache.frameIndex(timeMs, sticker.startMs, frames.size)
+                val frame = pixels[index]
                 val opaquePixels = frame.count { Color.alpha(it) >= 32 }
-                if (opaquePixels >= 500) index to opaquePixels else null
+                if (opaquePixels >= 500) Triple(timeUs, index, opaquePixels) else null
             }
-            assertTrue("The downloaded Lottie pack must contain at least two visible frames", visible.size >= 2)
+            assertTrue(
+                "Need at least two visible common retained PTS candidates; common=${commonTimesUs.joinToString()} " +
+                    "visible=${visible.map { "${it.first}us->cache${it.second}" }}",
+                visible.size >= 2
+            )
 
             var bestEarlyIndex = -1
             var bestLaterIndex = -1
+            var bestEarlyTimeUs = 0L
+            var bestLaterTimeUs = 0L
             var bestScore = -1
             for (early in 0 until visible.lastIndex) {
-                val (earlyIndex, earlyOpaquePixels) = visible[early]
+                val (earlyTime, earlyIndex, earlyOpaquePixels) = visible[early]
                 for (later in early + 1 until visible.size) {
-                    val (laterIndex, laterOpaquePixels) = visible[later]
+                    val (laterTime, laterIndex, laterOpaquePixels) = visible[later]
                     val changedPixels = animationChangedPixels(pixels[earlyIndex], pixels[laterIndex])
                     if (changedPixels >= 100) {
                         val score = minOf(earlyOpaquePixels, laterOpaquePixels) + changedPixels
                         if (score > bestScore) {
                             bestEarlyIndex = earlyIndex
                             bestLaterIndex = laterIndex
+                            bestEarlyTimeUs = earlyTime
+                            bestLaterTimeUs = laterTime
                             bestScore = score
                         }
                     }
                 }
             }
-            assertTrue("The downloaded Lottie pack must have two distinct visible animation phases", bestEarlyIndex >= 0)
-
-            // Match LottieFrameCache.frameIndex's 33 ms buckets and sample near their centers.
-            earlyTimeUs = (bestEarlyIndex * 33L + 16L) * 1_000L
-            laterTimeUs = (bestLaterIndex * 33L + 16L) * 1_000L
-            assertEquals(bestEarlyIndex, LottieFrameCache.frameIndex(earlyTimeUs / 1_000L, sticker.startMs, frames.size))
-            assertEquals(bestLaterIndex, LottieFrameCache.frameIndex(laterTimeUs / 1_000L, sticker.startMs, frames.size))
+            assertTrue(
+                "The downloaded Lottie pack must have two distinct visible animation phases; " +
+                    "common=${commonTimesUs.joinToString()}, visible=${visible.map { "${it.first}us->cache${it.second}" }}",
+                bestEarlyIndex >= 0
+            )
+            earlyTimeUs = bestEarlyTimeUs
+            laterTimeUs = bestLaterTimeUs
+            assertTrue("Selected cache phases must be distinct", bestEarlyIndex != bestLaterIndex)
+            assertTrue("Selected common source PTS must be ordered", earlyTimeUs < laterTimeUs)
+            println("sticker-retained-pts chosen: early=${earlyTimeUs}us cache=$bestEarlyIndex; later=${laterTimeUs}us cache=$bestLaterIndex")
         }
 
         fun assertStickerPixels(
@@ -751,11 +767,13 @@ class ExportTimestampParityInstrumentedTest {
             instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
             }
+            val sourceTrack = readVideoTrack(source)
+            val sourceAnchorsUs = sourceTrack.presentationTimesUs.filter { it < 1_800_000L }
+            assertTrue("Source must provide retained anchors before the planned 1.8s end", sourceAnchorsUs.isNotEmpty())
             installTestPackAsset()
             assertTrue("The test pack must be registered as installed", PackManager.isDownloaded(context, packId))
             assertTrue("The downloaded sticker URI must resolve inside its installed pack",
                 StickerAssetResolver.downloadedFile(context, assetPath)?.isFile == true)
-            selectVisibleAnimationSamples()
 
             baselineEngine.startExport(Uri.fromFile(source).toString(), baselineConfig, baselineName)
             val baselineResult = awaitTerminalState(baselineEngine)
@@ -781,7 +799,7 @@ class ExportTimestampParityInstrumentedTest {
                 File(outputDir, selectedName).canonicalPath, stickerExportFile.canonicalPath)
             selectedOutput = stickerExportFile
 
-            val sourceDurationMs = readVideoTrack(source).videoTrackDurationUs / 1_000L
+            val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
             val projectClip = MediaClip(
                 id = "sticker-project-$id",
                 name = "Downloaded sticker project fixture",
@@ -830,6 +848,48 @@ class ExportTimestampParityInstrumentedTest {
                 "Whole-project export with downloaded sticker"
             )
 
+            val tracksByLabel = linkedMapOf(
+                "baseline" to readVideoTrack(requireNotNull(baselineOutput)),
+                "selected" to readVideoTrack(requireNotNull(selectedOutput)),
+                "project-baseline" to readVideoTrack(requireNotNull(projectBaselineOutput)),
+                "project-selected" to readVideoTrack(requireNotNull(projectOutput))
+            )
+            tracksByLabel.forEach { (label, track) ->
+                println(
+                    "sticker-retained-pts $label: count=${track.presentationTimesUs.size}, " +
+                        "pts=${track.presentationTimesUs.joinToString()}, gaps=${track.presentationTimesUs.zipWithNext { a, b -> b - a }}, " +
+                        "videoDurationUs=${track.videoTrackDurationUs}, movieDurationUs=${track.movieDurationUs}, " +
+                        "audioDurationUs=${track.audioDurationUs}, trackDurations=${track.trackDurations}"
+                )
+            }
+            val commonTimesUs = commonRetainedFrameTimesUs(
+                referenceTimesUs = sourceAnchorsUs,
+                encodedTimesByLabel = tracksByLabel.mapValues { it.value.presentationTimesUs }
+            )
+            println(
+                "sticker-retained-pts source: count=${sourceAnchorsUs.size}, pts=${sourceAnchorsUs.joinToString()}; " +
+                    "common: count=${commonTimesUs.size}, pts=${commonTimesUs.joinToString()}"
+            )
+            assertTrue(
+                "Need at least two common retained source PTS candidates; source=${sourceAnchorsUs.joinToString()}, " +
+                    "outputs=${tracksByLabel.mapValues { it.value.presentationTimesUs }}",
+                commonTimesUs.size >= 2
+            )
+            tracksByLabel.forEach { (label, track) ->
+                assertTrue(
+                    "sticker $label video duration ${track.videoTrackDurationUs}us must remain within 150000us of 1800000us",
+                    track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - 1_800_000L) <= 150_000L
+                )
+                assertOutputTiming(
+                    label = "sticker $label export",
+                    output = track,
+                    expectedDurationUs = 1_800_000L,
+                    expectedSourceAnchorsUs = sourceAnchorsUs,
+                    requestedFps = 30
+                )
+            }
+            selectVisibleAnimationSamples(commonTimesUs)
+
             val baselineFile = requireNotNull(baselineOutput)
             verifyExportFrames("Selected export", baselineFile, requireNotNull(selectedOutput))
             verifyExportFrames("Whole-project export", requireNotNull(projectBaselineOutput), requireNotNull(projectOutput))
@@ -851,6 +911,55 @@ class ExportTimestampParityInstrumentedTest {
             File(outputDir, projectBaselineName).delete()
             File(outputDir, projectName).delete()
         }
+    }
+
+    @Test
+    fun commonRetainedFrameTimesRequireActualCrossFilePtsAgreement() {
+        assertEquals(
+            listOf(0L, 33_334L),
+            commonRetainedFrameTimesUs(
+                referenceTimesUs = listOf(0L, 33_334L, 66_667L),
+                encodedTimesByLabel = mapOf(
+                    "first" to listOf(0L, 33_333L, 66_666L),
+                    "second" to listOf(1L, 33_334L, 100_000L)
+                )
+            )
+        )
+        assertEquals(
+            emptyList<Long>(),
+            commonRetainedFrameTimesUs(
+                referenceTimesUs = listOf(0L),
+                encodedTimesByLabel = mapOf("first" to listOf(0L), "second" to listOf(2_000L))
+            )
+        )
+        assertEquals(
+            emptyList<Long>(),
+            commonRetainedFrameTimesUs(
+                referenceTimesUs = listOf(100_000L),
+                encodedTimesByLabel = mapOf("first" to listOf(99_200L), "second" to listOf(100_800L))
+            )
+        )
+
+        fun assertInvalid(reference: List<Long>, encoded: Map<String, List<Long>>, toleranceUs: Long = 1L) {
+            var rejected = false
+            try {
+                commonRetainedFrameTimesUs(reference, encoded, toleranceUs)
+            } catch (_: IllegalArgumentException) {
+                rejected = true
+            }
+            assertTrue("Invalid timestamp input must fail closed", rejected)
+        }
+        assertInvalid(emptyList(), mapOf("output" to listOf(0L)))
+        assertInvalid(listOf(-1L), mapOf("output" to listOf(0L)))
+        assertInvalid(listOf(1L, 1L), mapOf("output" to listOf(1L)))
+        assertInvalid(listOf(2L, 1L), mapOf("output" to listOf(1L)))
+        assertInvalid(listOf(0L), emptyMap())
+        assertInvalid(listOf(0L), mapOf("output" to emptyList()))
+        assertInvalid(listOf(0L), mapOf("output" to listOf(-1L)))
+        assertInvalid(listOf(0L), mapOf("output" to listOf(0L, 0L)))
+        assertInvalid(listOf(0L), mapOf("output" to listOf(1L, 0L)))
+        assertInvalid(listOf(0L), mapOf("output" to listOf(0L)), toleranceUs = 0L)
+        assertInvalid(listOf(0L), mapOf("output" to listOf(0L)), toleranceUs = 1_001L)
     }
 
     @Test
@@ -1088,6 +1197,39 @@ class ExportTimestampParityInstrumentedTest {
             }
         } finally {
             extractor.release()
+        }
+    }
+
+    /**
+     * Keep actual source PTS only when every export retained that presentation moment.
+     * At most one millisecond allows timestamp quantization, never a missing frame interval.
+     * Anchor selection never observes decoded output pixels or chooses a passing comparison.
+     */
+    private fun commonRetainedFrameTimesUs(
+        referenceTimesUs: List<Long>,
+        encodedTimesByLabel: Map<String, List<Long>>,
+        toleranceUs: Long = 1_000L
+    ): List<Long> {
+        require(referenceTimesUs.isNotEmpty()) { "referenceTimesUs must be non-empty: $referenceTimesUs" }
+        require(encodedTimesByLabel.isNotEmpty()) { "encodedTimesByLabel must be non-empty: $encodedTimesByLabel" }
+        require(toleranceUs in 1L..1_000L) { "toleranceUs must stay within 1..1000us: $toleranceUs" }
+
+        fun validate(label: String, timesUs: List<Long>) {
+            require(timesUs.isNotEmpty()) { "$label timestamps must be non-empty: $timesUs" }
+            require(timesUs.all { it >= 0L }) { "$label timestamps must be non-negative: $timesUs" }
+            require(timesUs.zipWithNext().all { (first, second) -> first < second }) {
+                "$label timestamps must be strictly increasing and distinct: $timesUs"
+            }
+        }
+        validate("reference", referenceTimesUs)
+        encodedTimesByLabel.forEach { (label, timesUs) -> validate(label, timesUs) }
+
+        return referenceTimesUs.filter { sourcePtsUs ->
+            val matchedPts = encodedTimesByLabel.values.map { encodedPtsUs ->
+                encodedPtsUs.minBy { abs(it - sourcePtsUs) }
+            }
+            matchedPts.all { abs(it - sourcePtsUs) <= toleranceUs } &&
+                (matchedPts.max() - matchedPts.min()) <= toleranceUs
         }
     }
 

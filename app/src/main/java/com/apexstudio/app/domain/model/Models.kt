@@ -987,6 +987,13 @@ data class ProjectFxSettings(
     val speed: Float = 1f
 )
 
+/** Manual project-wide LUT values; a non-null snapshot with a null filter id means explicit Original. */
+@Serializable
+data class ProjectLutSettings(
+    val filterId: String? = null,
+    val intensity: Float = 1f
+)
+
 @Serializable
 data class Project(
     val id: String,
@@ -1000,9 +1007,9 @@ data class Project(
      * Last transmission template the user applied to this project.
      * Pure metadata — when the editor opens the project it preloads
      * this template's LUT + FX + intensity so the user starts with
-     * the look they had last time. A separate manual FX override may
-     * supersede only its FX values. Null means no template was applied;
-     * a manual FX choice may still be saved separately.
+     * the look they had last time. Separate manual FX and LUT overrides
+     * may supersede their respective template values. Null means no
+     * template was applied; manual choices may still be saved separately.
      *
      * Default-null + a default-value field means the JSON project
      * file stays backwards-compatible: older saved projects without
@@ -1065,7 +1072,9 @@ data class Project(
     /** Explicit FX-only override; null follows the template/default, while effectId=null clears it. */
     val manualFxOverride: ProjectFxSettings? = null,
     /** Project-wide video color/detail adjustments; absent in legacy JSON means no adjustments. */
-    val videoAdjustments: VideoAdjustments = VideoAdjustments()
+    val videoAdjustments: VideoAdjustments = VideoAdjustments(),
+    /** Manual LUT choice overrides the template LUT; null follows the template/default. */
+    val manualLutOverride: ProjectLutSettings? = null
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {

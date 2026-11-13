@@ -12,6 +12,7 @@ import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.ProjectFxSettings
+import com.apexstudio.app.domain.model.ProjectLutSettings
 import com.apexstudio.app.presentation.state.AudioStudioState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -162,6 +163,204 @@ class ProjectFxPersistenceTest {
             assertNull(cleared.state.value.activeFxId)
             assertEquals(template.filterId, cleared.state.value.activeFilterId)
             assertEquals(template.transitionType, cleared.state.value.lastTransitionType)
+        } finally {
+            store.clear()
+            repository.deleteProject(projectId)
+            withContext(Dispatchers.IO) { root.deleteRecursively() }
+        }
+    }
+
+    @Test
+    fun `manual LUT override survives template reopen undo redo export and explicit reset`() = runBlocking {
+        val base = ApplicationProvider.getApplicationContext<Context>()
+        val root = File(base.cacheDir, "project-lut-${System.nanoTime()}")
+        val files = File(root, "files").apply { mkdirs() }
+        val context = object : ContextWrapper(base) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = files
+        }
+        val projectId = "project-lut-${System.nanoTime()}"
+        val repository = ProjectRepository(context)
+        val template = ShortsTemplateCatalog.templates.first().asTransmissionTemplate()
+        val manualFilterId = ShortsTemplateCatalog.templates.first { it.filterId != template.filterId }.filterId
+        val store = ViewModelStore()
+
+        fun openEditor(): EditorViewModel = EditorViewModel(context = context, projectId = projectId).also {
+            store.put("project-lut-editor", it)
+        }
+
+        suspend fun awaitTemplate(editor: EditorViewModel) {
+            withTimeout(20_000L) {
+                editor.state.first {
+                    it.project?.id == projectId &&
+                        it.activeFilterId == template.filterId &&
+                        it.lastTransitionType == template.transitionType
+                }
+            }
+        }
+
+        suspend fun awaitLutState(
+            editor: EditorViewModel,
+            filterId: String?,
+            intensity: Float,
+            expectedOverride: ProjectLutSettings?
+        ) {
+            withTimeout(20_000L) {
+                editor.state.first { state ->
+                    val project = state.project
+                    project?.id == projectId && project.manualLutOverride == expectedOverride &&
+                        state.activeFilterId == filterId &&
+                        kotlin.math.abs(state.filterIntensity - intensity) < 0.0001f
+                }
+            }
+        }
+
+        suspend fun awaitSaved(editor: EditorViewModel, previous: Long) {
+            withTimeout(30_000L) {
+                editor.state.first { it.lastAutoSaveMs > previous }
+            }
+        }
+
+        try {
+            repository.saveProject(
+                Project(
+                    id = projectId,
+                    name = "LUT persistence",
+                    durationMs = 10_000L,
+                    lastTransmissionTemplateId = template.id,
+                    lastTransitionType = template.transitionType,
+                    lastTransitionDurationMs = template.transitionDurationMs
+                )
+            )
+
+            var editor = openEditor()
+            awaitTemplate(editor)
+            var savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.applyManualLutFilter(manualFilterId)
+            awaitSaved(editor, savedAt)
+            awaitLutState(
+                editor, manualFilterId, template.filterIntensity,
+                ProjectLutSettings(manualFilterId, template.filterIntensity)
+            )
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            val undoCountBeforeSlider = editor.undoStack.size
+            delay(2L)
+            editor.setFilterIntensity(0.65f)
+            editor.setFilterIntensity(0.42f)
+            assertEquals(undoCountBeforeSlider, editor.undoStack.size)
+            editor.commitManualLutSettings()
+            assertEquals(undoCountBeforeSlider + 1, editor.undoStack.size)
+            awaitSaved(editor, savedAt)
+            awaitLutState(editor, manualFilterId, 0.42f, ProjectLutSettings(manualFilterId, 0.42f))
+
+            val preset = com.apexstudio.app.data.filter.LutFilterEngine(context)
+                .manifest.presetById(manualFilterId)
+            assertNotNull(preset)
+            val exportConfig = buildProjectExportConfig(
+                editor.state.value,
+                AudioStudioState(),
+                com.apexstudio.app.domain.model.ExportSettings(
+                    resolution = "1080p", frameRate = 30, aspectRatio = "16:9", bitrateMbps = 12
+                ),
+                preset
+            )
+            assertEquals(manualFilterId, exportConfig.filterPreset?.id)
+            assertEquals(0.42f, exportConfig.filterIntensity, 0.0001f)
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.undo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(
+                editor, manualFilterId, template.filterIntensity,
+                ProjectLutSettings(manualFilterId, template.filterIntensity)
+            )
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.undo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(editor, template.filterId, template.filterIntensity, null)
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.redo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(
+                editor, manualFilterId, template.filterIntensity,
+                ProjectLutSettings(manualFilterId, template.filterIntensity)
+            )
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.redo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(editor, manualFilterId, 0.42f, ProjectLutSettings(manualFilterId, 0.42f))
+
+            store.clear()
+            editor = openEditor()
+            withTimeout(20_000L) {
+                editor.state.first { state ->
+                    val project = state.project
+                    project?.id == projectId &&
+                        project.manualLutOverride == ProjectLutSettings(manualFilterId, 0.42f) &&
+                        state.activeFilterId == manualFilterId && state.filterIntensity == 0.42f &&
+                        state.lastTransitionType == template.transitionType
+                }
+            }
+
+            editor.setLutContrast(1.45f)
+            editor.setLutSaturation(1.3f)
+            editor.setLutTemperature(6800f)
+            editor.setLutTint(22f)
+            editor.toggleLutCompareMode()
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.resetLutGrading()
+            awaitSaved(editor, savedAt)
+            val explicitClear = ProjectLutSettings(filterId = null, intensity = 1f)
+            awaitLutState(editor, null, 1f, explicitClear)
+            assertEquals(1f, editor.state.value.lutContrast, 0.0001f)
+            assertEquals(1f, editor.state.value.lutSaturation, 0.0001f)
+            assertEquals(5000f, editor.state.value.lutTemperature, 0.0001f)
+            assertEquals(0f, editor.state.value.lutTint, 0.0001f)
+            assertEquals(false, editor.state.value.lutCompareMode)
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.undo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(editor, manualFilterId, 0.42f, ProjectLutSettings(manualFilterId, 0.42f))
+            assertEquals(1.45f, editor.state.value.lutContrast, 0.0001f)
+            assertEquals(1.3f, editor.state.value.lutSaturation, 0.0001f)
+            assertEquals(6800f, editor.state.value.lutTemperature, 0.0001f)
+            assertEquals(22f, editor.state.value.lutTint, 0.0001f)
+            assertEquals(true, editor.state.value.lutCompareMode)
+
+            savedAt = editor.state.value.lastAutoSaveMs
+            delay(2L)
+            editor.redo()
+            awaitSaved(editor, savedAt)
+            awaitLutState(editor, null, 1f, explicitClear)
+            assertEquals(1f, editor.state.value.lutContrast, 0.0001f)
+            assertEquals(1f, editor.state.value.lutSaturation, 0.0001f)
+            assertEquals(5000f, editor.state.value.lutTemperature, 0.0001f)
+            assertEquals(0f, editor.state.value.lutTint, 0.0001f)
+            assertEquals(false, editor.state.value.lutCompareMode)
+            assertEquals(explicitClear, withContext(Dispatchers.IO) { repository.findById(projectId)!!.manualLutOverride })
+
+            store.clear()
+            val reopened = openEditor()
+            withTimeout(20_000L) {
+                reopened.state.first { state ->
+                    val project = state.project
+                    project?.id == projectId && project.manualLutOverride == explicitClear &&
+                        state.activeFilterId == null && state.filterIntensity == 1f &&
+                        state.lastTransitionType == template.transitionType
+                }
+            }
         } finally {
             store.clear()
             repository.deleteProject(projectId)

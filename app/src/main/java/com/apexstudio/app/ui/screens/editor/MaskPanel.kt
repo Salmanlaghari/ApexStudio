@@ -242,6 +242,7 @@ fun MaskPanel(
 @Composable
 private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
+    val linearPreviewFill = ApexPalette.TextPrimary.copy(alpha = 0.12f)
     Canvas(modifier.semantics { contentDescription = "${shape.label} mask preview" }) {
         val w = size.width
         val h = size.height
@@ -252,7 +253,7 @@ private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
             MaskShape.RECTANGLE -> drawRect(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
             MaskShape.ELLIPSE, MaskShape.CIRCLE -> drawOval(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
             MaskShape.LINEAR -> {
-                drawRect(ApexPalette.TextPrimary.copy(alpha = 0.12f), Offset(inset, inset), Size(w - inset * 2, h - inset * 2))
+                drawRect(linearPreviewFill, Offset(inset, inset), Size(w - inset * 2, h - inset * 2))
                 drawLine(color, Offset(w * 0.52f, inset), Offset(w * 0.52f, h - inset), strokeWidth = 2.dp.toPx())
                 drawLine(color.copy(alpha = 0.35f), Offset(w * 0.35f, inset), Offset(w * 0.35f, h - inset), strokeWidth = 1.dp.toPx())
             }

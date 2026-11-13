@@ -3,9 +3,11 @@ package com.apexstudio.app.data.export
 import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
 import android.net.Uri
 import android.opengl.EGL14
 import android.opengl.EGLConfig
@@ -17,7 +19,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.apexstudio.app.data.audio.PcmAudioExtractor
 import com.apexstudio.app.data.effect.TextOverlayGlShaders
+import com.apexstudio.app.data.filter.FilterManifest
+import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.fx.DownloadedEffectRepository
 import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxGlEffect
@@ -29,6 +34,9 @@ import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.stickers.LottieFrameCache
 import com.apexstudio.app.data.stickers.StickerAssetResolver
 import com.apexstudio.app.data.stickers.StickerSpriteRenderer
+import com.apexstudio.app.data.template.ShortsMusicRepository
+import com.apexstudio.app.data.template.ShortsTemplateCatalog
+import com.apexstudio.app.data.template.ShortsTemplateProjectFactory
 import com.apexstudio.app.domain.model.ExportSettings
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -40,6 +48,7 @@ import com.apexstudio.app.presentation.viewmodel.buildProjectExportConfig
 import com.apexstudio.app.presentation.viewmodel.flushProject
 import com.apexstudio.app.presentation.viewmodel.selectFx
 import com.apexstudio.app.presentation.viewmodel.setFxSpeed
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -56,6 +65,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -1552,6 +1562,327 @@ class ExportTimestampParityInstrumentedTest {
         }
     }
 
+    @Test
+    fun shortsTemplatePersistsAndEncodesTextAndImportedMusicThroughWholeProjectExport() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val id = "shorts-encoded-roundtrip-${UUID.randomUUID()}"
+        // Same fixed visible-delta floors as the existing encoded regression; never tune down for codecs.
+        val visibleRgbDistance = 80
+        val minCaptionChangedPixels = 500
+        val root = File(instrumentation.targetContext.cacheDir, id).apply { mkdirs() }
+        val context = object : ContextWrapper(instrumentation.targetContext) {
+            // VM/engine retain applicationContext; returning the base Application would
+            // escape these isolated paths. Assets/resolver/system services still delegate
+            // to the real context through ContextWrapper; no Application cast is required.
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File =
+                File(root, "external").let { base -> (if (type == null) base else File(base, type)).apply { mkdirs() } }
+        }
+        val source = File(context.cacheDir, "shorts-source-$id.mp4")
+        val music = File(context.filesDir, "shorts_music_fixture-$id.mp4")
+        val videoOnly = File(context.cacheDir, "shorts-video-only-$id.mp4")
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val names = listOf("baseline", "caption-a-only", "caption-b-only", "full")
+            .map { "shorts-$it-$id.mp4" }
+        val engines = List(names.size) { ExportEngine(context) }
+        val outputs = arrayOfNulls<File>(names.size)
+        val repository = ProjectRepository(context)
+        val store = ViewModelStore()
+        val editorJobs = mutableListOf<Job>()
+        val template = requireNotNull(ShortsTemplateCatalog.byId("shorts_travel_adventure"))
+
+        fun sha256(file: File): String = MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        fun remuxVideoOnly(input: File, output: File) {
+            val extractor = MediaExtractor()
+            var muxer: MediaMuxer? = null
+            var stopFailure: Throwable? = null
+            try {
+                extractor.setDataSource(input.absolutePath)
+                val videoIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                    extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
+                } ?: error("Fixture has no video track")
+                val format = extractor.getTrackFormat(videoIndex)
+                extractor.selectTrack(videoIndex)
+                muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                val muxTrack = muxer.addTrack(format)
+                muxer.start()
+                val buffer = ByteBuffer.allocate(2 * 1024 * 1024)
+                val info = MediaCodec.BufferInfo()
+                while (extractor.sampleTrackIndex >= 0) {
+                    buffer.clear()
+                    val size = extractor.readSampleData(buffer, 0)
+                    if (size < 0) break
+                    info.set(0, size, extractor.sampleTime, extractor.sampleFlags)
+                    muxer.writeSampleData(muxTrack, buffer, info)
+                    if (!extractor.advance()) break
+                }
+            } finally {
+                try { muxer?.stop() } catch (failure: Throwable) { stopFailure = failure }
+                runCatching { muxer?.release() }
+                extractor.release()
+            }
+            stopFailure?.let { throw AssertionError("Video-only remux muxer stop failed", it) }
+            assertTrue("Video-only remux must be non-empty after muxer stop", output.isFile && output.length() > 0L)
+        }
+
+        suspend fun closeEditor() {
+            instrumentation.runOnMainSync { store.clear() }
+            withTimeout(20_000L) { editorJobs.forEach { it.join() } }
+            editorJobs.clear()
+        }
+        fun openEditor(): EditorViewModel {
+            lateinit var editor: EditorViewModel
+            instrumentation.runOnMainSync {
+                editor = EditorViewModel(context = context, projectId = id)
+                store.put("shorts-editor", editor)
+                editor.viewModelScope.coroutineContext[Job]?.let(editorJobs::add)
+            }
+            return editor
+        }
+        fun frame(file: File, timeUs: Long): Bitmap = MediaMetadataRetriever().let { retriever ->
+            try {
+                retriever.setDataSource(file.absolutePath)
+                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
+            } finally { retriever.release() }
+        }
+        fun pixels(bitmap: Bitmap) = IntArray(bitmap.width * bitmap.height).also {
+            bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        }
+        fun changed(a: IntArray, b: IntArray): Int = a.indices.count { i ->
+            abs(Color.red(a[i]) - Color.red(b[i])) + abs(Color.green(a[i]) - Color.green(b[i])) +
+                abs(Color.blue(a[i]) - Color.blue(b[i])) >= visibleRgbDistance
+        }
+        suspend fun export(index: Int, config: ExportEngine.ExportConfig, clips: List<MediaClip>): File {
+            engines[index].startProjectExport(clips, config, names[index])
+            val terminal = awaitTerminalState(engines[index])
+            assertNull("${names[index]} must complete: ${terminal.error}", terminal.error)
+            assertFalse("${names[index]} must be terminal", terminal.isExporting)
+            return File(requireNotNull(Uri.parse(requireNotNull(terminal.outputUri)).path)).also {
+                assertTrue(it.isFile && it.length() > 0L)
+                assertEquals(File(outputDir, names[index]).canonicalPath, it.canonicalPath)
+            }
+        }
+
+        try {
+            instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
+                source.outputStream().use { output -> input.copyTo(output) }
+            }
+            assertTrue("Fixture must contain AAC", hasTrack(source, "audio/mp4a-latm"))
+            remuxVideoOnly(source, videoOnly)
+            assertFalse("Video-only source must not retain AAC", hasTrack(videoOnly, "audio/"))
+            val sourceTrack = readVideoTrack(videoOnly)
+            assertTrue("Fixture must retain at least 1.8 seconds", sourceTrack.videoTrackDurationUs >= 1_800_000L)
+            FilterManifest.initialize(context)
+
+            val catalogAsset = ShortsMusicRepository.loadCatalog(context).first { it.id == template.musicAssetId }
+            source.copyTo(music, overwrite = true)
+            // Expected metadata comes from the original fixture, independently of the owned copy.
+            val musicAsset = catalogAsset.copy(
+                fileName = music.name,
+                bytes = source.length(),
+                sha256 = sha256(source),
+                durationMs = requireNotNull(readVideoTrack(music).audioDurationUs) / 1_000L,
+                attribution = "${catalogAsset.artist} — ${catalogAsset.trackTitle} (offline AAC fixture)",
+                changes = "Project mix trims this offline AAC fixture to the retained 1.8 s video duration."
+            )
+            assertEquals(musicAsset.bytes, music.length())
+            assertEquals(musicAsset.sha256, sha256(music))
+            assertTrue("Music fixture must contain AAC", hasTrack(music, "audio/mp4a-latm"))
+
+            val applied = ShortsTemplateProjectFactory.apply(
+                Project(id, "Shorts encoded round-trip", 1_800L, resolution = "720p", fps = 30,
+                    clips = listOf(MediaClip("clip-$id", "video-only.mp4", Uri.fromFile(videoOnly).toString(),
+                        sourceTrack.videoTrackDurationUs / 1_000L, trimEndMs = 1_800L))),
+                template, musicAsset, music
+            ).also { ready ->
+                assertEquals(9f / 16f, ready.videoAspectRatio!!, 0f)
+                assertEquals(2, ready.clips.single().textOverlays.size)
+                assertEquals(1, ready.audioTracks.size)
+                assertEquals(template.visualPresetId, ready.lastTransmissionTemplateId)
+                withContext(Dispatchers.IO) { repository.saveProject(ready) }
+            }
+
+            val first = openEditor()
+            val restored = withTimeout(30_000L) {
+                first.state.first { state ->
+                    val project = state.project
+                    project?.id == id && project.clips.size == 1 && project.clips.single().textOverlays.size == 2 &&
+                        project.audioTracks.size == 1 && project.lastTransmissionTemplateId == template.visualPresetId &&
+                        state.activeFilterId == template.filterId && state.activeFxId == template.fxPresetId
+                }
+            }
+            val restoredProject = requireNotNull(restored.project)
+            assertEquals(9f / 16f, requireNotNull(restoredProject.videoAspectRatio), 0f)
+            assertEquals(music.canonicalPath, File(URI(restoredProject.audioTracks.single().uri)).canonicalPath)
+            assertEquals(musicAsset.sha256, sha256(File(URI(restoredProject.audioTracks.single().uri))))
+            closeEditor()
+            val reopened = openEditor()
+            val exact = withTimeout(30_000L) {
+                reopened.state.first { state ->
+                    val project = state.project
+                    project?.id == id && project.clips.size == 1 && project.clips.single().textOverlays.size == 2 &&
+                        project.audioTracks.singleOrNull()?.attributionText == musicAsset.creditText &&
+                        project.lastTransmissionTemplateId == template.visualPresetId &&
+                        state.activeFilterId == template.filterId && state.activeFxId == template.fxPresetId
+                }
+            }
+            val exactProject = requireNotNull(exact.project)
+            assertEquals(template.visualPresetId, exactProject.lastTransmissionTemplateId)
+            assertEquals(2, exactProject.clips.single().textOverlays.size)
+            assertEquals(template.filterId, exact.activeFilterId)
+            assertEquals(template.fxPresetId, exact.activeFxId)
+
+            val lut = requireNotNull(LutFilterEngine(context).manifest.presetById(template.filterId))
+            val settings = ExportSettings(resolution = "720p", frameRate = 30, aspectRatio = "9:16", bitrateMbps = 0)
+            assertEquals("Every caption field (text/font/animation/timing/layout) must survive reopen",
+                applied.clips.single().textOverlays, exactProject.clips.single().textOverlays)
+            assertEquals(music.canonicalPath, File(URI(exactProject.audioTracks.single().uri)).canonicalPath)
+            assertEquals(musicAsset.sha256, sha256(File(URI(exactProject.audioTracks.single().uri))))
+            assertEquals(applied.audioTracks.single().copy(uri = exactProject.audioTracks.single().uri), exactProject.audioTracks.single())
+            val fullClips = exactProject.clips
+            val fullConfig = buildProjectExportConfig(exact, AudioStudioState(), settings, lut)
+            assertEquals("9:16", settings.aspectRatio)
+            assertEquals(template.filterId, fullConfig.filterPreset?.id)
+            assertEquals(template.fxPresetId, fullConfig.fxPreset?.id)
+            assertEquals(1, fullConfig.musicMixTracks.size)
+            val baselineClips = fullClips.map { it.copy(textOverlays = emptyList()) }
+            val baselineState = exact.copy(project = exactProject.copy(clips = baselineClips, audioTracks = emptyList()))
+            val baselineConfig = buildProjectExportConfig(baselineState, AudioStudioState(), settings, lut)
+            assertEquals(fullConfig.filterPreset?.id, baselineConfig.filterPreset?.id)
+            assertEquals(fullConfig.fxPreset?.id, baselineConfig.fxPreset?.id)
+            assertTrue("Baseline must have no music mix tracks", baselineConfig.musicMixTracks.isEmpty())
+            val overlays = fullClips.single().textOverlays
+            assertEquals("Factory must materialize title and subtitle overlays", 2, overlays.size)
+            val partialClips = overlays.map { overlay -> listOf(fullClips.single().copy(textOverlays = listOf(overlay))) }
+            val partialConfigs = partialClips.map { clips ->
+                buildProjectExportConfig(exact.copy(project = exactProject.copy(clips = clips)), AudioStudioState(), settings, lut)
+            }
+            partialConfigs.forEach {
+                assertEquals(fullConfig.filterPreset?.id, it.filterPreset?.id)
+                assertEquals(fullConfig.fxPreset?.id, it.fxPreset?.id)
+                assertEquals(fullConfig.musicMixTracks, it.musicMixTracks)
+            }
+            closeEditor()
+            // Each partial keeps the same music/LUT/FX; only one caption is absent.
+            // This proves both captions contribute, not merely that either caption rendered.
+            outputs[0] = export(0, baselineConfig, baselineClips)
+            outputs[1] = export(1, partialConfigs[0], partialClips[0])
+            outputs[2] = export(2, partialConfigs[1], partialClips[1])
+            outputs[3] = export(3, fullConfig, fullClips)
+            val baseline = requireNotNull(outputs[0]); val full = requireNotNull(outputs[3])
+            val tracksByName = names.zip(outputs.map { readVideoTrack(requireNotNull(it)) }).toMap()
+            val plan = ProjectCompositionTimeline.build(fullClips)
+            assertEquals(1_800L, plan.durationMs)
+            val sourcePtsUs = sourceTrack.presentationTimesUs.filter { it < plan.durationMs * 1_000L }
+            val outputPtsByName = tracksByName.mapValues { it.value.presentationTimesUs }
+            val commonPtsUs = commonRetainedFrameTimesUs(sourcePtsUs, outputPtsByName)
+            val desiredMidpointsUs = overlays.map { overlay ->
+                require(overlay.endMs > overlay.startMs) { "Factory caption has no visible window" }
+                overlay.startMs * 1_000L + (overlay.endMs - overlay.startMs) * 1_000L / 2L
+            }
+            val phaseWindowUs = 1_000_000L / 30L + 1_000L
+            val chosenPhasePtsUs = overlays.mapIndexed { index, overlay ->
+                val visibleCommonPtsUs = commonPtsUs.filter {
+                    it >= overlay.startMs * 1_000L && it < overlay.endMs * 1_000L
+                }
+                val chosen = visibleCommonPtsUs.minByOrNull { abs(it - desiredMidpointsUs[index]) }
+                    ?: error("No common retained source PTS inside ${overlay.id} visible window; " +
+                        "window=${overlay.startMs * 1_000L}..${overlay.endMs * 1_000L}us; common=$commonPtsUs")
+                assertTrue("${overlay.id} common phase PTS $chosen is too far from midpoint ${desiredMidpointsUs[index]}us; " +
+                    "distance=${abs(chosen - desiredMidpointsUs[index])}us; window=${overlay.startMs * 1_000L}..${overlay.endMs * 1_000L}us",
+                    abs(chosen - desiredMidpointsUs[index]) <= phaseWindowUs)
+                chosen
+            }
+            assertEquals("Factory captions must provide distinct interior sample times", 2, chosenPhasePtsUs.distinct().size)
+            println("shorts-retained-pts outputs=$outputPtsByName; common=$commonPtsUs; " +
+                "desiredMidpointsUs=$desiredMidpointsUs; chosenPhasePtsUs=$chosenPhasePtsUs")
+            tracksByName.forEach { (name, track) ->
+                val normalizedRotation = ((track.rotationDegrees % 360) + 360) % 360
+                val displayWidth = if (normalizedRotation == 90 || normalizedRotation == 270) track.videoHeight else track.videoWidth
+                val displayHeight = if (normalizedRotation == 90 || normalizedRotation == 270) track.videoWidth else track.videoHeight
+                assertEquals("$name encoded display width (coded=${track.videoWidth}x${track.videoHeight}, rotation=${track.rotationDegrees})",
+                    720, displayWidth)
+                assertEquals("$name encoded display height (coded=${track.videoWidth}x${track.videoHeight}, rotation=${track.rotationDegrees})",
+                    1_280, displayHeight)
+                assertOutputTiming(name, track, plan.durationMs * 1_000L, sourcePtsUs, 30)
+                assertTrue("$name video duration ${track.videoTrackDurationUs}us differs from the planned ${plan.durationMs}ms",
+                    track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - plan.durationMs * 1_000L) <= 150_000L)
+            }
+            val pcmWindowStart = 100 * PcmAudioExtractor.TARGET_RATE / 1_000
+            val pcmWindowEnd = 500 * PcmAudioExtractor.TARGET_RATE / 1_000
+            fun pcmWindowRms(samples: FloatArray): Double {
+                val end = minOf(pcmWindowEnd, samples.size)
+                if (end <= pcmWindowStart) return 0.0
+                val sumSquares = (pcmWindowStart until end).sumOf { index ->
+                    val sample = samples[index].toDouble()
+                    sample * sample
+                }
+                return kotlin.math.sqrt(sumSquares / (end - pcmWindowStart))
+            }
+            val baselineHasAudioTrack = hasTrack(baseline, "audio/")
+            val baselinePcm = PcmAudioExtractor.extractMono16k(context, Uri.fromFile(baseline))
+            val baselineRms = if (baselineHasAudioTrack) {
+                val samples = requireNotNull(baselinePcm) { "Baseline audio track must decode for silence verification" }
+                assertTrue("Baseline audio track must cover the 100-500ms window", samples.size >= pcmWindowEnd)
+                pcmWindowRms(samples)
+            } else {
+                assertNull("Audio-less baseline must not decode PCM", baselinePcm)
+                0.0
+            }
+            assertTrue("Baseline without imported music must be silent; 100-500ms RMS=$baselineRms", baselineRms < 0.005)
+            outputs.drop(1).forEachIndexed { index, output ->
+                val mixed = requireNotNull(output)
+                assertTrue("Imported fixture output $index must retain AAC", hasTrack(mixed, "audio/mp4a-latm"))
+                val mixedPcm = requireNotNull(PcmAudioExtractor.extractMono16k(context, Uri.fromFile(mixed))) {
+                    "Imported fixture output $index must contain decodable audio"
+                }
+                assertTrue("Imported fixture output $index must cover the 100-500ms window", mixedPcm.size >= pcmWindowEnd)
+                val mixedRms = pcmWindowRms(mixedPcm)
+                assertTrue("Imported 440Hz fixture output $index must be audible; 100-500ms RMS=$mixedRms", mixedRms > 0.01)
+            }
+            // Each caption is sampled only at its own common retained source phase; no output pixels
+            // are observed while choosing anchors, and all three comparison files use the exact phase.
+            overlays.forEachIndexed { overlayIndex, overlay ->
+                val timeUs = chosenPhasePtsUs[overlayIndex]
+                val withoutThisCaption = requireNotNull(outputs[if (overlayIndex == 0) 2 else 1])
+                val frames = mutableListOf<Bitmap>()
+                try {
+                    frames += frame(baseline, timeUs)
+                    frames += frame(full, timeUs)
+                    frames += frame(withoutThisCaption, timeUs)
+                    val retrievedFrameSize = frames.first().width to frames.first().height
+                    frames.forEach { bitmap ->
+                        assertEquals("Retrieved caption-comparison frames must use one consistent size",
+                            retrievedFrameSize, bitmap.width to bitmap.height)
+                    }
+                    val fullPixels = pixels(frames[1])
+                    val allCaptionsChanged = changed(pixels(frames[0]), fullPixels)
+                    val thisCaptionChanged = changed(pixels(frames[2]), fullPixels)
+                    assertTrue("Caption composition at ${timeUs}us changed $allCaptionsChanged pixels; need >=$minCaptionChangedPixels",
+                        allCaptionsChanged >= minCaptionChangedPixels)
+                    assertTrue("Caption ${overlay.id} at ${timeUs}us contributes $thisCaptionChanged pixels; need >=$minCaptionChangedPixels",
+                        thisCaptionChanged >= minCaptionChangedPixels)
+                } finally { frames.forEach { it.recycle() } }
+            }
+        } finally {
+            withContext(NonCancellable) {
+                try { closeEditor() } finally {
+                    try { engines.forEach { it.cancelProjectExportAndAwait() } } finally {
+                        instrumentation.runOnMainSync { engines.forEach { it.release() } }
+                        try { repository.deleteProject(id) } finally {
+                            names.forEach { File(outputDir, it).delete(); File(outputDir, it.removeSuffix(".mp4") + "_music.mp4").delete() }
+                            root.deleteRecursively()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private suspend fun awaitTerminalState(engine: ExportEngine): ExportEngine.ExportProgressState =
         withTimeout(180_000L) {
             engine.exportState.first { it.error != null || it.outputUri != null }
@@ -1685,6 +2016,9 @@ class ExportTimestampParityInstrumentedTest {
         val extractor = MediaExtractor()
         var audioDurationUs: Long? = null
         var trackDurations = ""
+        var videoWidth = 0
+        var videoHeight = 0
+        var videoRotationDegrees = 0
         var videoTrackDurationUs = 0L
         var presentationTimes: List<Long> = emptyList()
         try {
@@ -1704,6 +2038,11 @@ class ExportTimestampParityInstrumentedTest {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
             } ?: error("${file.name} has no video track")
             val format = extractor.getTrackFormat(index)
+            videoWidth = format.getInteger(MediaFormat.KEY_WIDTH)
+            videoHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
+            videoRotationDegrees = if (format.containsKey(MediaFormat.KEY_ROTATION)) {
+                format.getInteger(MediaFormat.KEY_ROTATION)
+            } else 0
             videoTrackDurationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) {
                 format.getLong(MediaFormat.KEY_DURATION)
             } else 0L
@@ -1720,6 +2059,8 @@ class ExportTimestampParityInstrumentedTest {
         val retriever = MediaMetadataRetriever()
         val movieDurationUs = try {
             retriever.setDataSource(file.absolutePath)
+            videoRotationDegrees = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull() ?: videoRotationDegrees
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull()?.times(1_000L)
         } finally {
@@ -1728,6 +2069,9 @@ class ExportTimestampParityInstrumentedTest {
         val gaps = presentationTimes.zipWithNext { first, second -> second - first }
         return VideoTrack(
             videoTrackDurationUs,
+            videoWidth,
+            videoHeight,
+            videoRotationDegrees,
             presentationTimes,
             gaps.maxOrNull() ?: 0L,
             movieDurationUs,
@@ -1738,6 +2082,9 @@ class ExportTimestampParityInstrumentedTest {
 
     private data class VideoTrack(
         val videoTrackDurationUs: Long,
+        val videoWidth: Int,
+        val videoHeight: Int,
+        val rotationDegrees: Int,
         val presentationTimesUs: List<Long>,
         val maxGapUs: Long,
         val movieDurationUs: Long?,

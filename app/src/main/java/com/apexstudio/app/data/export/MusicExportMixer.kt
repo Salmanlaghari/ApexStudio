@@ -613,6 +613,15 @@ object MusicExportMixer {
                 },
                 cleanup = { muxer -> runCatching { muxer.release() } }
             ) { muxer ->
+                // The video samples are copied unchanged, but MediaMuxer does not
+                // infer the MP4 display transform from the input MediaFormat.
+                // Keep portrait/rotated clips upright after adding the AAC track.
+                val rotation = if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
+                    videoFormat.getInteger(MediaFormat.KEY_ROTATION)
+                } else 0
+                if (rotation == 90 || rotation == 180 || rotation == 270) {
+                    muxer.setOrientationHint(rotation)
+                }
                 val vOut = muxer.addTrack(videoFormat)
                 val aOut = muxer.addTrack(audioFormat)
                 muxer.start()

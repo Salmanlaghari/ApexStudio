@@ -189,9 +189,14 @@ class TextOverlayGlEffect(
                 glProgram.use()
                 glProgram.setSamplerTexIdUniform("uTexSampler", inputTexId, 0)
                 val hasCurrentSprite = plan.cacheKey != null && cachedKey == plan.cacheKey && overlayTexId[0] != 0
+                // Media3 requires every active sampler uniform to have a valid
+                // texture before bindAttributesAndUniforms(), even while the
+                // shader branch is disabled. Reuse the video texture on unit 1
+                // until a timed caption sprite is available; it is not sampled.
+                val overlayTextureId = if (hasCurrentSprite) overlayTexId[0] else inputTexId
                 glProgram.setSamplerTexIdUniform(
                     "uOverlaySampler",
-                    if (hasCurrentSprite) overlayTexId[0] else 0,
+                    overlayTextureId,
                     1
                 )
                 glProgram.setFloatsUniform("uOverlayEnabled", floatArrayOf(if (hasCurrentSprite) 1f else 0f))

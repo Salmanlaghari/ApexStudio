@@ -1,5 +1,6 @@
 package com.apexstudio.app.data.template
 
+import android.net.Uri
 import com.apexstudio.app.data.packs.download.DownloadEngine
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
@@ -62,7 +63,7 @@ object ShortsTemplateProjectFactory {
         val music = AudioTrack(
             id = "${template.id}-music-${UUID.randomUUID()}",
             name = trackName,
-            uri = downloadedMusic.toURI().toString(),
+            uri = Uri.fromFile(downloadedMusic).toString(),
             volume = 0.35f,
             trimStartMs = 0L,
             trimEndMs = musicDuration,

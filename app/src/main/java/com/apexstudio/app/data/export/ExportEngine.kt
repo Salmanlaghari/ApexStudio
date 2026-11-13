@@ -681,7 +681,10 @@ class ExportEngine(private val context: Context) {
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
-                    val composition = if (plan.transitions.isEmpty()) {
+                    val directSingleItem = items.singleOrNull()?.takeIf { plan.transitions.isEmpty() }
+                    val composition = if (directSingleItem != null) {
+                        null
+                    } else if (plan.transitions.isEmpty()) {
                         Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items)).build()
                     } else {
                         val videoSequences = plan.entries.mapIndexed { index, entry ->
@@ -756,7 +759,14 @@ class ExportEngine(private val context: Context) {
                     }
                     diagnostics.stage("project_preparation_completed", "durationMs=${plan.durationMs}")
                     publishProjectStage(run, ExportProgressStage.VIDEO_RENDER, diagnostics)
-                    val renderResult = renderProjectComposition(composition, config, partial, run, diagnostics)
+                    val renderResult = renderProjectComposition(
+                        composition = composition,
+                        directSingleItem = directSingleItem,
+                        config = config,
+                        outputFile = partial,
+                        run = run,
+                        diagnostics = diagnostics
+                    )
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
 
@@ -920,12 +930,16 @@ class ExportEngine(private val context: Context) {
 
     /** Compose callback API is main-looper confined, like the selected-clip route. */
     private suspend fun renderProjectComposition(
-        composition: Composition,
-        config: ExportConfig,
-        outputFile: File,
-        run: ProjectExportRun,
-        diagnostics: ExportDiagnosticTrace
-    ): ExportResult = withContext(Dispatchers.Main.immediate) {
+    composition: Composition?,
+    directSingleItem: EditedMediaItem?,
+    config: ExportConfig,
+    outputFile: File,
+    run: ProjectExportRun,
+    diagnostics: ExportDiagnosticTrace
+): ExportResult = withContext(Dispatchers.Main.immediate) {
+        require((composition == null) != (directSingleItem == null)) {
+            "Project render must receive exactly one Media3 input"
+        }
         suspendCancellableCoroutine<ExportResult> { continuation ->
             val settled = AtomicBoolean(false)
             var active: Transformer? = null
@@ -987,7 +1001,13 @@ class ExportEngine(private val context: Context) {
                     .addListener(listener)
                     .build()
                 transformer = active
-                active!!.start(composition, outputFile.absolutePath)
+                if (directSingleItem != null) {
+                    diagnostics.stage("project_transformer_input", "single_edited_media_item")
+                    active!!.start(directSingleItem, outputFile.absolutePath)
+                } else {
+                    diagnostics.stage("project_transformer_input", "composition")
+                    active!!.start(requireNotNull(composition), outputFile.absolutePath)
+                }
                 diagnostics.stage("project_transformer_started")
                 startProgressTracking(active!!, diagnostics) { progress ->
                     publishProjectProgress(run, 0.01f + progress * 0.89f)

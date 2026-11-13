@@ -1134,7 +1134,7 @@ class ExportTimestampParityInstrumentedTest {
         val minAnimatedPixels = 100
         // First-order identity sanity only; animation proof is the separate baseline-adjusted metric.
         val minDistinctFxFramePixels = 100
-        val sampleTimesMs = 400L to 1_400L
+        val desiredSampleTimesUs = 400_000L to 1_400_000L
         val saveTimeoutMs = 20_000L
         val savePollIntervalMs = 50L
         val maxSavePolls = (saveTimeoutMs / savePollIntervalMs).toInt()
@@ -1192,11 +1192,11 @@ class ExportTimestampParityInstrumentedTest {
             } ?: error("FX save did not reach $expected within ${saveTimeoutMs}ms/$maxSavePolls polls; last=${saved?.manualFxOverride}")
         }
 
-        fun frameAt(file: File, timeMs: Long): Bitmap {
+        fun frameAt(file: File, timeUs: Long): Bitmap {
             val retriever = MediaMetadataRetriever()
             return try {
                 retriever.setDataSource(file.absolutePath)
-                requireNotNull(retriever.getFrameAtTime(timeMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST))
+                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST))
             } finally { retriever.release() }
         }
 
@@ -1308,17 +1308,37 @@ class ExportTimestampParityInstrumentedTest {
             outputs[2] = exportPass(2, baseline, clips)
             outputs[3] = exportPass(3, config, clips)
 
-            fun verify(label: String, baselineFile: File, fxFile: File) {
-                val sampleAnchorsUs = sampleTimesMs.toList().map { it * 1_000L }
-                val baselineTrack = readVideoTrack(baselineFile)
-                val fxTrack = readVideoTrack(fxFile)
-                assertOutputTiming("$label baseline", baselineTrack, plan.durationMs * 1_000L, sampleAnchorsUs, 30)
-                assertOutputTiming("$label FX", fxTrack, plan.durationMs * 1_000L, sampleAnchorsUs, 30)
+            val tracksByName = names.zip(outputs.map { readVideoTrack(requireNotNull(it)) }).toMap()
+            val sourceAnchorsUs = sourceTrack.presentationTimesUs.filter { it < plan.durationMs * 1_000L }
+            val commonTimesUs = commonRetainedFrameTimesUs(sourceAnchorsUs,
+                tracksByName.mapValues { it.value.presentationTimesUs })
+            println("fx-retained-pts outputs=${tracksByName.mapValues { it.value.presentationTimesUs }}; common=$commonTimesUs")
+            fun retainedAnchorNear(targetUs: Long): Long {
+                val anchorUs = commonTimesUs.minByOrNull { abs(it - targetUs) }
+                    ?: error("FX exports have no common retained source PTS; outputs=$tracksByName")
+                // One source-frame window chooses a phase, not a cross-file matching tolerance.
+                // Every chosen moment is already independently retained by all four exports.
+                val sourceFrameWindowUs = 1_000_000L / 30L + 1_000L
+                assertTrue("No common FX anchor near ${targetUs}us; nearest=${anchorUs}us; common=$commonTimesUs",
+                    abs(anchorUs - targetUs) <= sourceFrameWindowUs)
+                return anchorUs
+            }
+            val sampleTimesUs = retainedAnchorNear(desiredSampleTimesUs.first) to retainedAnchorNear(desiredSampleTimesUs.second)
+            assertTrue("FX common sample anchors must be ordered", sampleTimesUs.first < sampleTimesUs.second)
+            tracksByName.forEach { (name, track) ->
+                assertOutputTiming(name, track, plan.durationMs * 1_000L, sourceAnchorsUs, 30)
+                assertTrue("$name video duration ${track.videoTrackDurationUs}us differs from the planned ${plan.durationMs}ms",
+                    track.videoTrackDurationUs > 0L && abs(track.videoTrackDurationUs - plan.durationMs * 1_000L) <= 150_000L)
+            }
+
+            fun verify(label: String, baselineIndex: Int, fxIndex: Int) {
+                val baselineFile = requireNotNull(outputs[baselineIndex])
+                val fxFile = requireNotNull(outputs[fxIndex])
                 assertTrue("$label baseline must retain AAC audio", hasTrack(baselineFile, "audio/mp4a-latm"))
                 assertTrue("$label FX must retain AAC audio", hasTrack(fxFile, "audio/mp4a-latm"))
                 val frames = mutableListOf<Bitmap>()
                 try {
-                    sampleTimesMs.toList().forEach { time ->
+                    sampleTimesUs.toList().forEach { time ->
                         frames += frameAt(baselineFile, time)
                         frames += frameAt(fxFile, time)
                     }
@@ -1340,8 +1360,8 @@ class ExportTimestampParityInstrumentedTest {
                     assertTrue("$label animated delta changed $animatedChanged pixels; need >=$minAnimatedPixels", animatedChanged >= minAnimatedPixels)
                 } finally { frames.forEach { it.recycle() } }
             }
-            verify("selected route", requireNotNull(outputs[0]), requireNotNull(outputs[1]))
-            verify("whole-project route", requireNotNull(outputs[2]), requireNotNull(outputs[3]))
+            verify("selected route", 0, 1)
+            verify("whole-project route", 2, 3)
         } finally {
             withContext(NonCancellable) {
                 try { closeEditor() } finally {

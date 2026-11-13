@@ -287,19 +287,19 @@ fun TrimPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.Red.copy(alpha = 0.15f))
-                        .border(1.dp, Color.Red.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .background(ApexPalette.Danger.copy(alpha = 0.15f))
+                        .border(1.dp, ApexPalette.Danger.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Error, contentDescription = null, tint = ApexPalette.Danger, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text(transformerTrimError, color = Color.Red, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text(transformerTrimError, color = ApexPalette.Danger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }
                     IconButton(onClick = { onClearTransformerStatus?.invoke() }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color.Red, modifier = Modifier.size(14.dp))
+                        Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = ApexPalette.Danger, modifier = Modifier.size(14.dp))
                     }
                 }
             }
@@ -359,7 +359,7 @@ fun TrimPanel(
                 ) {
                     TextButton(
                         onClick = { onCancelTransformerTrim?.invoke() },
-                        colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                        colors = ButtonDefaults.textButtonColors(contentColor = ApexPalette.Danger)
                     ) {
                         Text("Cancel", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
@@ -422,8 +422,8 @@ fun TrimPanel(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = ApexPalette.NeonCyan,
                         unfocusedBorderColor = ApexPalette.BorderGlass,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = ApexPalette.TextPrimary,
+                        unfocusedTextColor = ApexPalette.TextPrimary,
                         focusedLabelColor = ApexPalette.NeonCyan,
                         unfocusedLabelColor = ApexPalette.TextSecondary
                     ),
@@ -454,8 +454,8 @@ fun TrimPanel(
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = ApexPalette.NeonCyan,
                         unfocusedBorderColor = ApexPalette.BorderGlass,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
+                        focusedTextColor = ApexPalette.TextPrimary,
+                        unfocusedTextColor = ApexPalette.TextPrimary,
                         focusedLabelColor = ApexPalette.NeonCyan,
                         unfocusedLabelColor = ApexPalette.TextSecondary
                     ),
@@ -466,7 +466,7 @@ fun TrimPanel(
             if (inputError != null) {
                 Text(
                     inputError!!,
-                    color = Color.Red,
+                    color = ApexPalette.Danger,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium
                 )
@@ -804,7 +804,7 @@ fun TrimPanel(
                     .testTag("preview_trimmed_button"),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = ApexPalette.BgElevated,
-                    contentColor = Color.White
+                    contentColor = ApexPalette.TextPrimary
                 ),
                 shape = RoundedCornerShape(12.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, ApexPalette.BorderGlass)
@@ -902,7 +902,7 @@ private fun PresetPill(
  * The precise sliders + nudge buttons below remain for frame accuracy.
  */
 @Composable
-private fun TrimFilmstrip(
+internal fun TrimFilmstrip(
     clip: com.apexstudio.app.domain.model.MediaClip,
     trimStart: Long,
     trimEnd: Long,
@@ -978,7 +978,7 @@ private fun TrimFilmstrip(
                 .fillMaxWidth()
                 .height(64.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF0B0E14))
+                .background(ApexPalette.BgDeep)
         ) {
             val maxW = maxWidth
             // Thumbnails. Always thumbCount cells: extractFrames may
@@ -992,7 +992,7 @@ private fun TrimFilmstrip(
                         modifier = Modifier
                             .weight(1f)
                             .height(64.dp)
-                            .background(Color(0xFF151D2E)),
+                            .background(ApexPalette.BgElevated),
                         contentAlignment = Alignment.Center
                     ) {
                         if (bmp != null) {

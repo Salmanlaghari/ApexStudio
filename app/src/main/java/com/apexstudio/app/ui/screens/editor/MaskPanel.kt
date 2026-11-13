@@ -59,8 +59,8 @@ fun MaskPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .background(Color(0xFF141420))
-            .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .background(ApexPalette.BgSurface)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .heightIn(max = 380.dp)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -72,7 +72,7 @@ fun MaskPanel(
         ) {
             Text("Mask", color = ApexPalette.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
             IconButton(onClick = onClose, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Close mask", tint = Color.White.copy(alpha = 0.75f))
+                Icon(Icons.Default.Close, contentDescription = "Close mask", tint = ApexPalette.TextSecondary.copy(alpha = 0.75f))
             }
         }
 
@@ -89,7 +89,7 @@ fun MaskPanel(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f) else Color(0xFF1C1C2E))
+                        .background(if (selected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f) else ApexPalette.BgElevated)
                         .border(1.dp, if (selected) MaterialTheme.colorScheme.secondary else Color.Transparent, RoundedCornerShape(10.dp))
                         .clickable { onUpdate(preset.apply()) }
                         .padding(horizontal = 11.dp, vertical = 8.dp)
@@ -115,7 +115,7 @@ fun MaskPanel(
                     modifier = Modifier
                         .width(68.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color(0xFF1C1C2E))
+                        .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else ApexPalette.BgElevated)
                         .border(1.dp, if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(10.dp))
                         .clickable {
                             val next = MaskModel.selectShape(shape, mask, keyframeTimeMs)
@@ -196,10 +196,10 @@ fun MaskPanel(
         if (mask != null) {
             Spacer(Modifier.height(7.dp))
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(Color(0xFF1C1C2E))
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ApexPalette.BgElevated)
                     .clickable { fineTuneExpanded = !fineTuneExpanded }
                     .padding(horizontal = 11.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -242,6 +242,7 @@ fun MaskPanel(
 @Composable
 private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
     val accent = MaterialTheme.colorScheme.primary
+    val linearPreviewFill = ApexPalette.TextPrimary.copy(alpha = 0.12f)
     Canvas(modifier.semantics { contentDescription = "${shape.label} mask preview" }) {
         val w = size.width
         val h = size.height
@@ -252,7 +253,7 @@ private fun MaskShapePreview(shape: MaskShape, modifier: Modifier = Modifier) {
             MaskShape.RECTANGLE -> drawRect(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
             MaskShape.ELLIPSE, MaskShape.CIRCLE -> drawOval(color, Offset(inset, inset), Size(w - inset * 2, h - inset * 2), style = stroke)
             MaskShape.LINEAR -> {
-                drawRect(Color.White.copy(alpha = 0.12f), Offset(inset, inset), Size(w - inset * 2, h - inset * 2))
+                drawRect(linearPreviewFill, Offset(inset, inset), Size(w - inset * 2, h - inset * 2))
                 drawLine(color, Offset(w * 0.52f, inset), Offset(w * 0.52f, h - inset), strokeWidth = 2.dp.toPx())
                 drawLine(color.copy(alpha = 0.35f), Offset(w * 0.35f, inset), Offset(w * 0.35f, h - inset), strokeWidth = 1.dp.toPx())
             }

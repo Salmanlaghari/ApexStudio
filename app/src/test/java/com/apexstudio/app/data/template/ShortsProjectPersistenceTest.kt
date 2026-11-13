@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.template
 
 import android.content.Context
+import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.ClipType
@@ -72,7 +73,7 @@ class ShortsProjectPersistenceTest {
             assertNotNull(reopened)
             val savedProject = reopened!!
             val savedTrack = savedProject.audioTracks.single()
-            assertEquals(musicFile.toURI().toString(), savedTrack.uri)
+            assertEquals(Uri.fromFile(musicFile).toString(), savedTrack.uri)
             assertTrue(File(URI(savedTrack.uri)).isFile)
             assertEquals(asset.license, savedTrack.sourceLicense)
             assertEquals(asset.licenseUrl, savedTrack.sourceLicenseUrl)

@@ -62,6 +62,24 @@ class PhotoVideoEncoderTest {
     }
 
     @Test
+    fun `60 fps timestamps follow rational cadence for a rounded up still duration`() {
+        val durationMs = 1_801L
+        val frameCount = requireNotNull(PhotoVideoEncoder.frameCountForDurationMs(durationMs, frameRate = 60))
+        val timestamps = (0 until frameCount).map {
+            PhotoVideoEncoder.presentationTimeUsForFrame(it, frameRate = 60)
+        }
+        val intervals = timestamps.zipWithNext { first, second -> second - first }
+
+        assertEquals(109, timestamps.size)
+        assertEquals(1_800_000L, timestamps.last())
+        assertTrue("60 fps intervals must be quantized to 16,666 or 16,667 us", intervals.all {
+            it == 16_666L || it == 16_667L
+        })
+        assertEquals(36, intervals.count { it == 16_666L })
+        assertEquals(72, intervals.count { it == 16_667L })
+    }
+
+    @Test
     fun `duration frame arithmetic rejects invalid and excessively large durations`() {
         assertNull(PhotoVideoEncoder.frameCountForDurationMs(Long.MIN_VALUE))
         assertNull(PhotoVideoEncoder.frameCountForDurationMs(-1))

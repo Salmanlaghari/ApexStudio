@@ -669,9 +669,8 @@ class ExportEngine(private val context: Context) {
                                     androidx.media3.effect.BitmapOverlay.createStaticBitmapOverlay(drawingBitmap)
                                 )))
                             }
-                            add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
-                                effectiveExportFrameRate(config.fps).toFloat()
-                            ))
+                            // Project compositions must retain each source PTS for later clips and
+                            // overlays. Keep frame-cadence dropping confined to selected-clip export.
                         }
                         val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
                         val input = MediaItem.Builder()

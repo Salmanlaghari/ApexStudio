@@ -18,22 +18,37 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToLong
 
-/** Explicit CFR generation used only when a readable 60 fps H.264 output misses its cadence audit. */
-internal object ExportCfr60FpsNormalizer {
+/** Explicit CFR generation after a readable H.264 output misses a cadence contract. */
+internal object ExportCfrCadenceNormalizer {
     private const val MIN_FREE_BYTES = 64L * 1024L * 1024L
 
-    internal fun shouldNormalize(config: ExportEngine.ExportConfig, audit: EncodedFrameRateAudit): Boolean {
-        if (config.fps != 60 || config.videoMimeType != MimeTypes.VIDEO_H264) return false
+    internal fun shouldNormalize(
+        config: ExportEngine.ExportConfig,
+        audit: EncodedFrameRateAudit,
+        verifiedFasterCfrSource: Boolean = false
+    ): Boolean {
+        val targetFps = effectiveExportFrameRate(config.fps)
+        if (config.videoMimeType != MimeTypes.VIDEO_H264) return false
         if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") return false
-        val rendererCountMismatch = audit.transformerFrameCountDelta?.let { delta ->
-            abs(delta) > maxOf(2L, (audit.sampleCount * 0.02).roundToLong())
-        } == true
-        if (rendererCountMismatch) return false
-        // Classify from structured audit facts, never from a user-facing error string.
-        return audit.strict60FpsCadenceError != null &&
-            audit.sampleCount > 1 &&
+        if (!hasSafeVideoForNormalization(audit)) return false
+
+        return when {
+            targetFps == 60 -> {
+                val rendererCountMismatch = audit.transformerFrameCountDelta?.let { delta ->
+                    abs(delta) > maxOf(2L, (audit.sampleCount * 0.02).roundToLong())
+                } == true
+                !rendererCountMismatch && audit.strict60FpsCadenceError != null
+            }
+            targetFps in 24..59 -> verifiedFasterCfrSource && targetCadenceError(audit, targetFps) != null
+            else -> false
+        }
+    }
+
+    private fun hasSafeVideoForNormalization(audit: EncodedFrameRateAudit): Boolean =
+        audit.sampleCount > 1 &&
             audit.outputDurationMs != null &&
             audit.expectedCfrSampleCount != null &&
             audit.videoMimeType == MimeTypes.VIDEO_H264 &&
@@ -41,18 +56,46 @@ internal object ExportCfr60FpsNormalizer {
             audit.videoHeight?.let { it >= 2 } == true &&
             audit.duplicateTimestampCount == 0 &&
             audit.negativeTimestampCount == 0
+
+    /** Null means the final encoded samples meet the requested cadence tolerance. */
+    internal fun targetCadenceError(audit: EncodedFrameRateAudit, targetFps: Int): String? {
+        val average = audit.encodedAverageFps
+            ?: return "The final video could not be verified at $targetFps fps because its duration is unavailable."
+        val expected = audit.expectedCfrSampleCount
+            ?: return "The final video could not be verified at $targetFps fps because its sample count is unavailable."
+        val targetIntervalUs = 1_000_000.0 / targetFps
+        val minimumSamples = (expected - 1L).coerceAtLeast(1L)
+        val maximumSamples = expected + 1L
+        val minimumGapUs = (targetIntervalUs * 0.75).toLong()
+        val maximumGapUs = ceil(targetIntervalUs * 1.5).toLong()
+        val cadenceIsVerified = audit.sampleCount.toLong() in minimumSamples..maximumSamples &&
+            average in (targetFps - 1.5)..(targetFps + 1.5) &&
+            audit.sampleCount > 1 &&
+            audit.minPositiveTimestampGapUs >= minimumGapUs &&
+            audit.maxTimestampGapUs <= maximumGapUs
+        if (cadenceIsVerified) return null
+        val measured = "%.2f".format(java.util.Locale.ROOT, average)
+        return "The final video did not meet the requested $targetFps fps cadence " +
+            "(measured ${measured} fps; samples ${audit.sampleCount}/$expected; " +
+            "PTS gaps ${audit.minPositiveTimestampGapUs}–${audit.maxTimestampGapUs} µs)."
     }
 
-    /** Pure argument-array planner; paths remain individual arguments and never pass through a shell. */
-    internal fun buildArguments(inputPath: String, outputPath: String, targetBitrate: Int): Array<String> {
+    /** Pure argument-array planner; paths stay individual arguments and never pass through a shell. */
+    internal fun buildArguments(
+        inputPath: String,
+        outputPath: String,
+        targetBitrate: Int,
+        targetFps: Int = 60
+    ): Array<String> {
         require(inputPath.isNotBlank() && outputPath.isNotBlank()) { "CFR input and output paths are required." }
         require(targetBitrate in 1_000_000..100_000_000) { "CFR target bitrate is outside the supported export range." }
+        require(targetFps in 24..120) { "CFR target frame rate is outside the supported export range." }
         return arrayOf(
             "-hide_banner", "-y",
             "-i", inputPath,
             "-map", "0:v:0",
             "-map", "0:a?",
-            "-vf", "fps=60",
+            "-vf", "fps=$targetFps",
             "-fps_mode", "cfr",
             "-c:v", "libopenh264",
             "-b:v", targetBitrate.toString(),
@@ -67,41 +110,54 @@ internal object ExportCfr60FpsNormalizer {
     }
 
     /** Encodes to a temporary sibling file; callers audit it before atomically replacing the source. */
-    internal suspend fun transcode(inputFile: File, targetBitrate: Int): File = withContext(Dispatchers.IO) {
-        require(inputFile.isFile && inputFile.length() > 0L) { "The rendered video is missing before 60 fps normalization." }
-        val parent = inputFile.parentFile ?: throw IllegalStateException("The rendered video has no parent directory.")
-        val neededBytes = maxOf(MIN_FREE_BYTES, inputFile.length().coerceAtLeast(1L) * 2L)
-        val availableBytes = StatFs(parent.absolutePath).availableBytes
-        require(availableBytes >= neededBytes) {
-            "Not enough free storage to create and verify a 60 fps copy (need about ${neededBytes / (1024L * 1024L)} MiB)."
-        }
-        currentCoroutineContext().ensureActive()
-        val temporary = File.createTempFile("apex_cfr60_", ".mp4", parent)
-        try {
-            val command = buildArguments(inputFile.absolutePath, temporary.absolutePath, targetBitrate)
-            val session = executeCancellable(command)
-            check(ReturnCode.isSuccess(session.returnCode)) {
-                "The available OpenH264 encoder could not create the 60 fps copy (FFmpeg code ${session.returnCode?.value ?: "unknown"})."
+    internal suspend fun transcode(inputFile: File, targetBitrate: Int, targetFps: Int = 60): File =
+        withContext(Dispatchers.IO) {
+            require(inputFile.isFile && inputFile.length() > 0L) {
+                "The rendered video is missing before $targetFps fps normalization."
             }
-            check(temporary.isFile && temporary.length() > 0L) {
-                "The 60 fps conversion finished without producing a video file."
+            val parent = inputFile.parentFile
+                ?: throw IllegalStateException("The rendered video has no parent directory.")
+            val neededBytes = maxOf(MIN_FREE_BYTES, inputFile.length().coerceAtLeast(1L) * 2L)
+            val availableBytes = StatFs(parent.absolutePath).availableBytes
+            require(availableBytes >= neededBytes) {
+                "Not enough free storage to create and verify a $targetFps fps copy " +
+                    "(need about ${neededBytes / (1024L * 1024L)} MiB)."
             }
             currentCoroutineContext().ensureActive()
-            temporary
-        } catch (cancelled: CancellationException) {
-            temporary.delete()
-            throw cancelled
-        } catch (failure: Throwable) {
-            temporary.delete()
-            throw failure
+            val temporary = File.createTempFile("apex_cfr${targetFps}_", ".mp4", parent)
+            try {
+                val command = buildArguments(
+                    inputFile.absolutePath,
+                    temporary.absolutePath,
+                    targetBitrate,
+                    targetFps
+                )
+                val session = executeCancellable(command)
+                check(ReturnCode.isSuccess(session.returnCode)) {
+                    "The available OpenH264 encoder could not create the $targetFps fps copy " +
+                        "(FFmpeg code ${session.returnCode?.value ?: "unknown"})."
+                }
+                check(temporary.isFile && temporary.length() > 0L) {
+                    "The $targetFps fps conversion finished without producing a video file."
+                }
+                currentCoroutineContext().ensureActive()
+                temporary
+            } catch (cancelled: CancellationException) {
+                temporary.delete()
+                throw cancelled
+            } catch (failure: Throwable) {
+                temporary.delete()
+                throw failure
+            }
         }
-    }
 
-    /** POSIX rename within the same directory atomically replaces only after the candidate passes audit. */
-    internal fun replaceAtomically(candidate: File, destination: File) {
-        require(candidate.isFile && candidate.length() > 0L) { "The verified 60 fps candidate is missing." }
+    /** POSIX rename within the same directory publishes only after the candidate passes audit. */
+    internal fun replaceAtomically(candidate: File, destination: File, targetFps: Int = 60) {
+        require(candidate.isFile && candidate.length() > 0L) {
+            "The verified $targetFps fps candidate is missing."
+        }
         require(candidate.parentFile?.canonicalPath == destination.parentFile?.canonicalPath) {
-            "The 60 fps candidate must be in the export's directory for an atomic replacement."
+            "The $targetFps fps candidate must be in the export's directory for an atomic replacement."
         }
         Os.rename(candidate.absolutePath, destination.absolutePath)
     }
@@ -111,12 +167,14 @@ internal object ExportCfr60FpsNormalizer {
         sourceFile: File,
         candidateFile: File,
         sourceVideoDurationMs: Long,
-        candidateVideoDurationMs: Long
+        candidateVideoDurationMs: Long,
+        targetFps: Int = 60
     ): Int {
         val sourceTracks = audioTracks(sourceFile)
         val candidateTracks = audioTracks(candidateFile)
         check(sourceTracks.size == candidateTracks.size) {
-            "The 60 fps conversion changed the number of audio tracks (${sourceTracks.size} to ${candidateTracks.size})."
+            "The $targetFps fps conversion changed the number of audio tracks " +
+                "(${sourceTracks.size} to ${candidateTracks.size})."
         }
         if (sourceTracks.isEmpty()) return 0
         check(sourceVideoDurationMs > 0L && candidateVideoDurationMs > 0L) {
@@ -124,22 +182,23 @@ internal object ExportCfr60FpsNormalizer {
         }
         sourceTracks.zip(candidateTracks).forEachIndexed { index, (source, candidate) ->
             check(source.mimeType.equals(candidate.mimeType, ignoreCase = true)) {
-                "The 60 fps conversion changed audio track ${index + 1}'s codec."
+                "The $targetFps fps conversion changed audio track ${index + 1}'s codec."
             }
             check(source.sampleRate == null || source.sampleRate == candidate.sampleRate) {
-                "The 60 fps conversion changed audio track ${index + 1}'s sample rate."
+                "The $targetFps fps conversion changed audio track ${index + 1}'s sample rate."
             }
             check(source.channelCount == null || source.channelCount == candidate.channelCount) {
-                "The 60 fps conversion changed audio track ${index + 1}'s channel count."
+                "The $targetFps fps conversion changed audio track ${index + 1}'s channel count."
             }
             val candidateDurationUs = candidate.durationUs
-                ?: throw IllegalStateException("The 60 fps conversion's audio duration could not be verified.")
+                ?: throw IllegalStateException("The $targetFps fps conversion's audio duration could not be verified.")
             verifyAudioTrackTiming(
                 sourceDurationUs = source.durationUs,
                 candidateDurationUs = candidateDurationUs,
                 sourceVideoDurationMs = sourceVideoDurationMs,
                 candidateVideoDurationMs = candidateVideoDurationMs,
-                trackNumber = index + 1
+                trackNumber = index + 1,
+                targetFps = targetFps
             )
         }
         return sourceTracks.size
@@ -151,12 +210,13 @@ internal object ExportCfr60FpsNormalizer {
         candidateDurationUs: Long?,
         sourceVideoDurationMs: Long,
         candidateVideoDurationMs: Long,
-        trackNumber: Int = 1
+        trackNumber: Int = 1,
+        targetFps: Int = 60
     ) {
         val verifiedSourceDurationUs = sourceDurationUs
-            ?: throw IllegalStateException("The source audio duration could not be verified before 60 fps conversion.")
+            ?: throw IllegalStateException("The source audio duration could not be verified before $targetFps fps conversion.")
         val verifiedCandidateDurationUs = candidateDurationUs
-            ?: throw IllegalStateException("The 60 fps conversion's audio duration could not be verified.")
+            ?: throw IllegalStateException("The $targetFps fps conversion's audio duration could not be verified.")
         check(verifiedSourceDurationUs > 0L && verifiedCandidateDurationUs > 0L) {
             "Audio track $trackNumber has no positive, verifiable duration."
         }
@@ -165,7 +225,7 @@ internal object ExportCfr60FpsNormalizer {
         check(abs(verifiedCandidateDurationUs - verifiedSourceDurationUs) <= AV_SYNC_TOLERANCE_US &&
             abs(candidateDriftUs - sourceDriftUs) <= AV_SYNC_TOLERANCE_US
         ) {
-            "The 60 fps conversion changed audio track $trackNumber's duration or A/V synchronization."
+            "The $targetFps fps conversion changed audio track $trackNumber's duration or A/V synchronization."
         }
     }
 

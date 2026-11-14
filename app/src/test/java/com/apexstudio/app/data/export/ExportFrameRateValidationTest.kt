@@ -17,6 +17,35 @@ class ExportFrameRateValidationTest {
     }
 
     @Test
+    fun sourceCadenceAuditAcceptsConstantSixtyFpsWithDecodeOrderReordering() {
+        val orderedPts = (0 until 60).map { it * 16_667L }
+        val decodeOrderPts = listOf(orderedPts[0], orderedPts[2], orderedPts[1]) + orderedPts.drop(3)
+
+        val audit = auditSourceFrameTimestamps(decodeOrderPts, reportedFps = 60f)
+
+        assertEquals(60, audit.sampleCount)
+        assertTrue(audit.constantFrameRateFps!! in 59.5f..60.5f)
+        assertEquals(16_667L, audit.minIntervalUs)
+        assertEquals(16_667L, audit.maxIntervalUs)
+    }
+
+    @Test
+    fun sourceCadenceAuditRejectsVfrAndNominalRateMismatch() {
+        val vfr = auditSourceFrameTimestamps(
+            timestampsUs = listOf(0L, 16_667L, 33_334L, 83_334L, 100_001L, 116_668L),
+            reportedFps = 60f
+        )
+        val mismatch = auditSourceFrameTimestamps(
+            timestampsUs = (0 until 30).map { it * 33_333L },
+            reportedFps = 60f
+        )
+
+        assertEquals(null, vfr.constantFrameRateFps)
+        assertEquals(50_000L, vfr.maxIntervalUs)
+        assertEquals(null, mismatch.constantFrameRateFps)
+    }
+
+    @Test
     fun `reports actual encoded samples average rate and reference CFR count separately`() {
         // A 24 fps source exported at 30 fps can validly contain fewer than the
         // theoretical CFR reference count; that is not by itself evidence of drops.

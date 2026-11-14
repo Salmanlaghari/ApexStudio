@@ -4,6 +4,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.effect.AspectCropTransformation
+import com.apexstudio.app.domain.model.SpeedPoint
 import com.apexstudio.app.domain.model.VideoFitMode
 import org.junit.Assert.*
 import org.junit.Test
@@ -11,11 +12,94 @@ import org.junit.Test
 @androidx.annotation.OptIn(UnstableApi::class)
 class ExportOutputPolicyTest {
     @Test fun `720p request actually downsizes matching 4k aspect`() {
-        val effects = selectedVideoOutputEffects(ExportEngine.ExportConfig(resolution = "720p", fps = 30))
+        val effects = selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 30), sourceFrameRate = 60f
+        )
         val size = (effects.first() as GlMatrixTransformation).configure(3840, 2160)
         assertEquals(1280, size.width)
         assertEquals(720, size.height)
         assertTrue(effects.last() is FrameDropEffect)
+    }
+
+    @Test fun `cadence adjustment preserves equal and unknown source rates and caps faster playback`() {
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(sourceFrameRate = null, requestedFps = 30)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(sourceFrameRate = Float.NaN, requestedFps = 30)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(sourceFrameRate = 30f, requestedFps = 30)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(sourceFrameRate = 24f, requestedFps = 30)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = true),
+            sourceFrameRateAdjustment(sourceFrameRate = 60f, requestedFps = 30)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = true),
+            sourceFrameRateAdjustment(sourceFrameRate = 30f, requestedFps = 30, constantSpeed = 2f)
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(
+                sourceFrameRate = 30f,
+                requestedFps = 30,
+                speedPoints = listOf(SpeedPoint(0f, 0.5f), SpeedPoint(1f, 1f))
+            )
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = true),
+            sourceFrameRateAdjustment(
+                sourceFrameRate = 30f,
+                requestedFps = 30,
+                speedPoints = listOf(SpeedPoint(0f, 0.5f), SpeedPoint(1f, 2f))
+            )
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(
+                sourceFrameRate = 30f,
+                requestedFps = 30,
+                constantSpeed = 10f,
+                speedPoints = listOf(SpeedPoint(0f, 0.5f), SpeedPoint(1f, 2f)),
+                speedEffectApplied = false
+            )
+        )
+        assertEquals(
+            SourceFrameRateAdjustment(dropSourceFrames = false),
+            sourceFrameRateAdjustment(
+                sourceFrameRate = 30f,
+                requestedFps = 30,
+                speedPoints = listOf(SpeedPoint(Float.NaN, 10f))
+            )
+        )
+        assertFalse(selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 30), sourceFrameRate = 30f
+        ).last() is FrameDropEffect)
+    }
+
+    @Test
+    fun cfrNormalizationRequiresVerifiedIntegerMultipleAndNoSpeedEffect() {
+        assertTrue(shouldInspectSourceCadenceForCfrNormalization(60f, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(60f, 24, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(60f, 30, speedEffectApplied = true))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(null, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(30f, 30, speedEffectApplied = false))
+
+        val constant60 = auditSourceFrameTimestamps((0 until 60).map { it * 16_667L }, 60f)
+        val variable60 = auditSourceFrameTimestamps(
+            listOf(0L, 16_667L, 33_334L, 83_334L, 100_001L, 116_668L), 60f
+        )
+        assertTrue(isVerifiedFasterCfrSource(60f, constant60, 30, speedEffectApplied = false))
+        assertFalse(isVerifiedFasterCfrSource(60f, variable60, 30, speedEffectApplied = false))
+        assertFalse(isVerifiedFasterCfrSource(60f, constant60, 30, speedEffectApplied = true))
     }
 
     @Test fun `8K request uses exact landscape and portrait UHD output dimensions`() {

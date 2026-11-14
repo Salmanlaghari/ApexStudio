@@ -37,6 +37,81 @@ internal fun inspectSourceVideoFormat(context: Context, inputUri: String): Sourc
     }
 }
 
+/** Actual source-track PTS evidence; null cadence means do not convert a potentially VFR source. */
+internal data class SourceFrameCadenceAudit(
+    val sampleCount: Int,
+    val constantFrameRateFps: Float?,
+    val minIntervalUs: Long?,
+    val maxIntervalUs: Long?
+) {
+    fun diagnosticSummary(): String =
+        "sourceSamples=$sampleCount constantFrameRate=${constantFrameRateFps != null} " +
+            "constantFrameRateFps=${constantFrameRateFps ?: "unknown"} " +
+            "sourceMinIntervalUs=${minIntervalUs ?: "unknown"} sourceMaxIntervalUs=${maxIntervalUs ?: "unknown"}"
+}
+
+private const val MAX_SOURCE_CADENCE_SAMPLES = 500_000
+
+/** Reads sample timestamps only, without decoding frames; oversized/unreadable tracks stay unknown. */
+internal fun inspectSourceFrameCadence(
+    context: Context,
+    inputUri: String,
+    reportedFps: Float?,
+    cancellationCheck: () -> Unit = {}
+): SourceFrameCadenceAudit {
+    val extractor = MediaExtractor()
+    try {
+        extractor.setDataSource(context, Uri.parse(inputUri), null)
+        val videoTrack = (0 until extractor.trackCount).firstOrNull { index ->
+            extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
+        } ?: return SourceFrameCadenceAudit(0, null, null, null)
+        extractor.selectTrack(videoTrack)
+        val timestampsUs = ArrayList<Long>()
+        while (extractor.sampleTrackIndex >= 0) {
+            if (timestampsUs.size >= MAX_SOURCE_CADENCE_SAMPLES) {
+                return SourceFrameCadenceAudit(timestampsUs.size, null, null, null)
+            }
+            if (timestampsUs.size % 1_024 == 0) cancellationCheck()
+            timestampsUs += extractor.sampleTime
+            if (!extractor.advance()) break
+        }
+        return auditSourceFrameTimestamps(timestampsUs, reportedFps)
+    } finally {
+        extractor.release()
+    }
+}
+
+/** Pure PTS classifier for constant-cadence source evidence; decode-order regressions are sorted. */
+internal fun auditSourceFrameTimestamps(
+    timestampsUs: List<Long>,
+    reportedFps: Float?
+): SourceFrameCadenceAudit {
+    if (timestampsUs.size < 3 || timestampsUs.any { it < 0L }) {
+        return SourceFrameCadenceAudit(timestampsUs.size, null, null, null)
+    }
+    val presentationTimes = timestampsUs.sorted()
+    val intervals = presentationTimes.zipWithNext { first, second -> second - first }
+    if (intervals.isEmpty() || intervals.any { it <= 0L }) {
+        return SourceFrameCadenceAudit(timestampsUs.size, null, null, null)
+    }
+    val sortedIntervals = intervals.sorted()
+    val medianIntervalUs = sortedIntervals[sortedIntervals.size / 2]
+    val measuredFps = 1_000_000f / medianIntervalUs
+    val reported = reportedFps?.takeIf { it.isFinite() && it > 0f }
+    val metadataMatches = reported == null ||
+        kotlin.math.abs(measuredFps - reported) <= maxOf(0.5f, reported * 0.02f)
+    val intervalToleranceUs = maxOf(1_000L, (medianIntervalUs * 0.05).toLong())
+    val constantCadence = metadataMatches && intervals.all {
+        kotlin.math.abs(it - medianIntervalUs) <= intervalToleranceUs
+    }
+    return SourceFrameCadenceAudit(
+        sampleCount = timestampsUs.size,
+        constantFrameRateFps = measuredFps.takeIf { constantCadence },
+        minIntervalUs = intervals.minOrNull(),
+        maxIntervalUs = intervals.maxOrNull()
+    )
+}
+
 /** Facts read from actual muxed video samples; requested 60 fps is checked as a cadence contract. */
 internal data class EncodedFrameRateAudit(
     val sampleCount: Int,

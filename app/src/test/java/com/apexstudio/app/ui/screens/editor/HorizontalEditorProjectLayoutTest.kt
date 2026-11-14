@@ -6,10 +6,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -86,6 +88,7 @@ class HorizontalEditorProjectLayoutTest {
         compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Main video track").assertIsDisplayed()
         compose.onNodeWithContentDescription("Source audio waveform").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-resize-handle").assertDoesNotExist()
 
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val playback = compose.onNodeWithTag("editor-playback-controls").fetchSemanticsNode().boundsInRoot
@@ -116,6 +119,29 @@ class HorizontalEditorProjectLayoutTest {
         compose.onNodeWithTag("portrait-timeline-pane").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Portrait video keeps its tall preview frame: $preview", preview.height > preview.width)
+    }
+
+    @Test
+    fun resizingPortraitTimelineKeepsTheResolvedPreviewAspectRatio() {
+        show(editor(9f / 16f))
+
+        val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        val compactTimeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("timeline-resize-handle").assertIsDisplayed().performTouchInput {
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y - 100f), delayMillis = 120)
+            up()
+        }
+        compose.waitForIdle()
+
+        val after = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        val resizedTimeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
+        assertTrue("Dragging the handle grows the real timeline host", resizedTimeline.height > compactTimeline.height + 40f)
+        assertTrue("The portrait frame remains tall after resizing: $after", after.height > after.width)
+        assertEquals("Resizing changes available size, not source geometry", before.width / before.height,
+            after.width / after.height, 0.02f)
+        assertTrue("The fitted source-ratio preview uses the newly available height", after.height < before.height)
     }
 
     @Test

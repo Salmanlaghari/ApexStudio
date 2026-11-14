@@ -40,11 +40,12 @@ class TimelineFocusModeControlTest {
                     focused = isFocused,
                     fullscreen = false,
                     preview = { Box(Modifier.fillMaxWidth().height(180.dp).testTag("preview-pane")) },
-                    timeline = {
-                        if (isFocused) Box(Modifier.fillMaxSize().testTag("timeline-pane"))
+                    timeline = { fillTimelinePane ->
+                        if (isFocused || fillTimelinePane) Box(Modifier.fillMaxSize().testTag("timeline-pane"))
                         else Box(Modifier.fillMaxWidth().height(150.dp).testTag("timeline-pane"))
                     },
-                    inspector = {}
+                    inspector = {},
+                    compactTimelinePaneHeight = 150.dp,
                 )
                 TimelineFocusModeControl(
                     isFocused = isFocused,

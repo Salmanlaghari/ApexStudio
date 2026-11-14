@@ -2026,6 +2026,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     compactLandscape: Boolean = false,
     isFullscreenPreview: Boolean = false,
     horizontalProjectLayout: Boolean = false,
+    timelinePaneResized: Boolean = false,
 ) {
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
@@ -2064,12 +2065,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // No persistent property strip above the timeline. Keyframe/Animation stay
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
-    val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout) null else {
+    val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {
         compactTimelineHeight(state) +
             (if (compactLandscape) 44.dp else EditorLayoutMetrics.TimelineToolbarHeight) + 2.dp
     }
     CenteredTimelineWorkspace(
-        layoutWeight = if (horizontalProjectLayout) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
+        layoutWeight = if (horizontalProjectLayout || timelinePaneResized) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
         compactHeight = compactTimelineHostHeight
     ) {
         if (compactLandscape && !horizontalProjectLayout) {

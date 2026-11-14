@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,6 +49,7 @@ import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
+import com.apexstudio.app.ui.components.compactTimelineHeight
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import com.apexstudio.app.util.TimeFormat
 import kotlinx.coroutines.CancellationException
@@ -184,6 +186,10 @@ private fun EditorScreenContent(
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
+    var manualTimelinePaneHeightDp by rememberSaveable(projectId) { mutableStateOf<Float?>(null) }
+    val manualTimelinePaneHeight = manualTimelinePaneHeightDp?.dp
+    val compactTimelinePaneHeight = EditorLayoutMetrics.PlaybackBarHeight +
+        compactTimelineHeight(state) + EditorLayoutMetrics.TimelineToolbarHeight + 2.dp
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
     // of the editor. The player's audio sink (DenoiseRenderersFactory)
@@ -1368,6 +1374,9 @@ private fun EditorScreenContent(
             horizontalProjectMode = horizontalProjectLayout,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
+            compactTimelinePaneHeight = compactTimelinePaneHeight,
+            manualTimelinePaneHeight = manualTimelinePaneHeight,
+            onManualTimelinePaneHeightChange = { manualTimelinePaneHeightDp = it?.value },
             preview = {
         CompositionLocalProvider(LocalEditorPreviewEffects provides currentEffects) {
         EditorPreviewSection(
@@ -1399,7 +1408,7 @@ private fun EditorScreenContent(
         )
         }
             },
-            timeline = {
+            timeline = { timelinePaneResized ->
         if (editorChromeVisible(state.isFullscreenPreview) && !previewPlaybackSuspended) {
             EditorTransportSection(
                 compactLandscape = false,
@@ -1410,6 +1419,7 @@ private fun EditorScreenContent(
                 onTimelineFocusModeChange = { isTimelineFocusMode = it },
                 isFullscreenPreview = state.isFullscreenPreview,
                 horizontalProjectLayout = horizontalProjectLayout,
+                timelinePaneResized = timelinePaneResized,
                 // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
                 // set here and the picker launches immediately, so the pick
                 // can never be misrouted to V1 (the old bug: the ClipType was

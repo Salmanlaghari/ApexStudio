@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,10 +75,11 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                 )
             } else {
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                    val availableWorkspaceHeight = maxHeight
                     val effectiveTimelineHeight = manualTimelinePaneHeight?.let {
                         clampTimelinePaneHeight(
                             requestedTimelinePaneHeight = it,
-                            availableWorkspaceHeight = maxHeight,
+                            availableWorkspaceHeight = availableWorkspaceHeight,
                             compactTimelinePaneHeight = compactTimelinePaneHeight,
                         )
                     }
@@ -87,7 +89,7 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                             content = preview
                         )
                         TimelineResizeHandle(
-                            availableWorkspaceHeight = maxHeight,
+                            availableWorkspaceHeight = availableWorkspaceHeight,
                             compactTimelinePaneHeight = compactTimelinePaneHeight,
                             manualTimelinePaneHeight = manualTimelinePaneHeight,
                             onManualTimelinePaneHeightChange = onManualTimelinePaneHeightChange,

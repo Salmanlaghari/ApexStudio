@@ -1,6 +1,7 @@
 package com.apexstudio.app.data.color
 
 import android.content.Context
+import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import com.apexstudio.app.data.adjust.AdjustmentsGlEffect
@@ -69,7 +70,7 @@ class ColorStudioExportEffectsTest {
     fun `preview effect construction failure falls back without throwing`() {
         var reportedFailure: Exception? = null
 
-        val effects = safeProjectColorStudioPreviewEffects(
+        val effects = safeProjectColorStudioPreviewEffects<Effect>(
             ColorStudioGrade(),
             createEffects = { throw IllegalArgumentException("malformed LUT source") },
             onFailure = { reportedFailure = it }

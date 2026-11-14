@@ -2,7 +2,9 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -155,38 +157,27 @@ private fun TimelineResizeHandle(
     val density = LocalDensity.current
     val currentHeightState = rememberUpdatedState(manualTimelinePaneHeight)
     val onHeightChangeState = rememberUpdatedState(onManualTimelinePaneHeightChange)
+    val availableHeightState = rememberUpdatedState(availableWorkspaceHeight)
+    val compactHeightState = rememberUpdatedState(compactTimelinePaneHeight)
+    val dragState = rememberDraggableState { dragAmount ->
+        val requested = with(density) {
+            ((currentHeightState.value ?: compactHeightState.value).toPx() - dragAmount).toDp()
+        }
+        val bounded = clampTimelinePaneHeight(
+            requestedTimelinePaneHeight = requested,
+            availableWorkspaceHeight = availableHeightState.value,
+            compactTimelinePaneHeight = compactHeightState.value,
+        )
+        val isCompact = bounded.value <= compactHeightState.value.value + 1f
+        onHeightChangeState.value(if (isCompact) null else bounded)
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(TIMELINE_RESIZE_HANDLE_HEIGHT)
             .semantics { contentDescription = "Resize timeline. Drag up or down; tap to reset to compact." }
             .clickable(role = Role.Button) { onHeightChangeState.value(null) }
-            .pointerInput(availableWorkspaceHeight, compactTimelinePaneHeight, density) {
-                var draggedHeightPx = 0f
-                detectVerticalDragGestures(
-                    onDragStart = {
-                        val startHeight = clampTimelinePaneHeight(
-                            requestedTimelinePaneHeight = currentHeightState.value ?: compactTimelinePaneHeight,
-                            availableWorkspaceHeight = availableWorkspaceHeight,
-                            compactTimelinePaneHeight = compactTimelinePaneHeight,
-                        )
-                        draggedHeightPx = with(density) { startHeight.toPx() }
-                    },
-                    onVerticalDrag = { change, dragAmount ->
-                        change.consume()
-                        draggedHeightPx -= dragAmount
-                        val requested = with(density) { draggedHeightPx.toDp() }
-                        val bounded = clampTimelinePaneHeight(
-                            requestedTimelinePaneHeight = requested,
-                            availableWorkspaceHeight = availableWorkspaceHeight,
-                            compactTimelinePaneHeight = compactTimelinePaneHeight,
-                        )
-                        draggedHeightPx = with(density) { bounded.toPx() }
-                        val isCompact = bounded.value <= compactTimelinePaneHeight.value + 1f
-                        onHeightChangeState.value(if (isCompact) null else bounded)
-                    },
-                )
-            }
+            .draggable(orientation = Orientation.Vertical, state = dragState)
             .testTag("timeline-resize-handle"),
         contentAlignment = Alignment.Center,
     ) {

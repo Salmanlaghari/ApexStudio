@@ -137,7 +137,11 @@ class HorizontalEditorProjectLayoutTest {
 
         val after = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val resizedTimeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
-        assertTrue("Dragging the handle grows the real timeline host", resizedTimeline.height > compactTimeline.height + 40f)
+        assertTrue(
+            "Dragging the handle grows the real timeline host: compact=${compactTimeline.height}px, " +
+                "resized=${resizedTimeline.height}px",
+            resizedTimeline.height > compactTimeline.height + 40f
+        )
         assertTrue("The portrait frame remains tall after resizing: $after", after.height > after.width)
         assertEquals("Resizing changes available size, not source geometry", before.width / before.height,
             after.width / after.height, 0.02f)

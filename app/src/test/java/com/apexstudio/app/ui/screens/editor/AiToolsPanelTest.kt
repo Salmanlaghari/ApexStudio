@@ -175,13 +175,18 @@ class AiToolsPanelTest {
     }
 
     @Test
-    fun unavailableEmailFallsBackToClearlyLabelledLocalFlag() {
+    fun unavailableEmailUsesReportStateForLocalSaveConfirmation() {
         var submitted: AiContentReportReason? = null
+        val reportState = mutableStateOf(AiContentReportUiState())
         val target = AiContentReportTarget("project", "clip", "VIDEO")
         compose.setContent { MaterialTheme {
             AiToolsPanel(
                 tools = inventory, message = "", onClose = {}, reportTarget = target,
-                reportState = AiContentReportUiState(), onSubmitReport = { _, reason -> submitted = reason; true },
+                reportState = reportState.value, onSubmitReport = { _, reason ->
+                    submitted = reason
+                    reportState.value = AiContentReportUiState(isSaving = true, message = "Saving report on this device…")
+                    true
+                },
                 onClearReportFeedback = {}, onComposeReport = { _, _ -> false }
             )
         } }
@@ -189,6 +194,18 @@ class AiToolsPanelTest {
         compose.onNodeWithText("Hateful content").activateVisibleControl()
         compose.onNodeWithText("Open email draft").activateVisibleControl()
         compose.runOnIdle { assertEquals(AiContentReportReason.HATEFUL, submitted) }
+        compose.onNodeWithText("Saving report on this device…").assertExists()
+        compose.onNodeWithText("Saving local flag…").assertExists()
+        compose.onNodeWithText("Saved locally — not sent").assertDoesNotExist()
+
+        compose.runOnIdle {
+            reportState.value = AiContentReportUiState(
+                message = "Saved on this device. It was not sent to the developer.",
+                saved = true
+            )
+        }
+        compose.onNodeWithText("Saved on this device. It was not sent to the developer.").assertExists()
+        compose.onNodeWithText("Saved locally — not sent").assertExists()
     }
 
     @Test

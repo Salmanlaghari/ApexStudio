@@ -215,7 +215,7 @@ fun AiToolsPanel(
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Report AI content", style = MaterialTheme.typography.titleMedium, color = ApexPalette.TextPrimary)
-                Text("Report / Suggestions: $AI_REPORT_CONTACT. Open an email draft with a clip reference and reason; no media attachment and no automatic send. If no email app is available, only a local flag is saved, not sent to the developer.",
+                Text("Report / Suggestions: $AI_REPORT_CONTACT. Open an email draft with a clip reference and reason; no media attachment and no automatic send. If no email app is available, a local-only save is attempted on this device; nothing is sent to the developer.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
                 Button(onClick = {
                     emailFeedback = null
@@ -252,12 +252,13 @@ fun AiToolsPanel(
                         emailFeedback = "Email draft opened for $AI_REPORT_CONTACT. Review and send it in your email app; delivery has not been confirmed."
                         showReportDialog = false
                         reportDialogTarget = null
-                    } else if (onSubmitReport(target, reason)) {
-                        emailFeedback = "No email app available. Saving a local-only flag; nothing is sent. Contact $AI_REPORT_CONTACT manually."
-                    } else {
+                    } else if (!onSubmitReport(target, reason)) {
                         emailFeedback = "The report target changed before it could be saved. Nothing was submitted."
                         showReportDialog = false
                         reportDialogTarget = null
+                    } else {
+                        // Callback acceptance is not persistence confirmation; reportState owns async progress/result.
+                        emailFeedback = null
                     }
                 }
             }
@@ -309,7 +310,7 @@ private fun AiContentReportDialog(
         title = { Text("Flag AI content") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Choose a reason to open an email draft to $AI_REPORT_CONTACT with the selected project clip${if (target?.textOverlayId != null) " and text overlay" else ""} reference. No media or text content is attached. You must send the email yourself. Without an email app, a local-only flag is saved instead.")
+                Text("Choose a reason to open an email draft to $AI_REPORT_CONTACT with the selected project clip${if (target?.textOverlayId != null) " and text overlay" else ""} reference. No media or text content is attached. You must send the email yourself. Without an email app, a local-only save is attempted on this device; nothing is sent.")
                 AiContentReportReason.entries.forEach { reason ->
                     Row(Modifier.fillMaxWidth().clickable(enabled = !state.isSaving) { selectedReason = reason },
                         verticalAlignment = Alignment.CenterVertically) {

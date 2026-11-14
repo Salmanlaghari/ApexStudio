@@ -232,7 +232,9 @@ internal object ColorVideoExporter {
                         else onComplete(completed, null)
                     },
                     null,
-                    { statistics -> onStatistics(statistics.time.toDouble()) }
+                    // FFmpegKit Statistics.getTime() reports milliseconds; the maintained 8.1 API
+                    // retains the upstream unit, matching the FFprobe duration passed to the mapper.
+                    { statistics -> onStatistics(statistics.time) }
                 )
                 session.sessionId
             },

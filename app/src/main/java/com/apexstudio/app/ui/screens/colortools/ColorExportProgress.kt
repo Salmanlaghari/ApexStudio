@@ -14,7 +14,7 @@ internal fun colorVideoExportPercent(encodedTimeMs: Double, durationMs: Double):
 /** Project exports publish a weighted Media3 render estimate; invert that mapping only during rendering. */
 internal fun colorTimelineExportPercent(
     overallProgress: Float,
-    stage: ExportProgressStage,
+    stage: ExportProgressStage?,
     completedOutputAvailable: Boolean
 ): Int? {
     if (stage == ExportProgressStage.COMPLETE) return if (completedOutputAvailable) 100 else null

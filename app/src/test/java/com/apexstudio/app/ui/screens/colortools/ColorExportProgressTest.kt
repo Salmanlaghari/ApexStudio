@@ -18,6 +18,7 @@ class ColorExportProgressTest {
     }
 
     @Test fun timelineShowsOnlyMeasuredVideoRenderProgressAndCommittedCompletion() {
+        assertNull(colorTimelineExportPercent(0.5f, null, false))
         assertNull(colorTimelineExportPercent(0f, ExportProgressStage.PREPARING, false))
         assertNull(colorTimelineExportPercent(0.5f, ExportProgressStage.AUDIO_MIX, false))
         assertNull(colorTimelineExportPercent(0.01f, ExportProgressStage.VIDEO_RENDER, false))

@@ -232,8 +232,9 @@ internal object ColorVideoExporter {
                         else onComplete(completed, null)
                     },
                     null,
-                    // FFmpegKit Statistics.getTime() reports milliseconds; the maintained 8.1 API
-                    // retains the upstream unit, matching the FFprobe duration passed to the mapper.
+                    // Upstream FFmpegKit 6.0 release notes define Statistics.getTime() in milliseconds.
+                    // Maintained 8.1.7 preserves the Double getter (pinned by the host contract test),
+                    // but its source omits the unit; this adapter follows the inherited upstream contract.
                     { statistics -> onStatistics(statistics.time) }
                 )
                 session.sessionId

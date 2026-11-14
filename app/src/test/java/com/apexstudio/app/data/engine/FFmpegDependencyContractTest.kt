@@ -24,4 +24,11 @@ class FFmpegDependencyContractTest {
         assertEquals(returnCode, session.getMethod("getReturnCode").returnType)
         assertEquals(Int::class.javaPrimitiveType, returnCode.getMethod("getValue").returnType)
     }
+
+    @Test fun resolvedForkExposesStatisticsTimeAsDouble() {
+        val loader = javaClass.classLoader
+        val statistics = Class.forName("com.arthenica.ffmpegkit.Statistics", false, loader)
+
+        assertEquals(Double::class.javaPrimitiveType, statistics.getMethod("getTime").returnType)
+    }
 }

@@ -22,6 +22,13 @@ class ColorExportProgressTest {
         assertNull(colorTimelineExportPercent(0f, ExportProgressStage.PREPARING, false))
         assertNull(colorTimelineExportPercent(0.5f, ExportProgressStage.AUDIO_MIX, false))
         assertNull(colorTimelineExportPercent(0.01f, ExportProgressStage.VIDEO_RENDER, false))
+        assertNull(
+            colorTimelineExportPercent(
+                projectVideoRenderProgress(0.009f),
+                ExportProgressStage.VIDEO_RENDER,
+                false
+            )
+        )
         assertEquals(
             1,
             colorTimelineExportPercent(

@@ -10,9 +10,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.aireport.AI_REPORT_CONTACT
@@ -20,9 +23,11 @@ import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
 import com.apexstudio.app.data.aireport.openAiContentReportEmail
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.AiContentReportUiState
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
@@ -65,6 +70,20 @@ internal fun resolveAiTargetClip(
     selectedClip?.takeIf { isAiMainTrackVideo(it) }
 } else {
     mainPreviewClip?.takeIf { isAiMainTrackVideo(it) }
+}
+
+/** Re-resolve the action target from the latest editor snapshot and live playhead at tap time. */
+internal fun resolveCurrentAiVideoTarget(
+    expectedProjectId: String,
+    state: EditorState,
+    playheadMs: Long
+): MediaClip? {
+    val project = state.project?.takeIf { it.id == expectedProjectId } ?: return null
+    val selectedClip = state.selectedClipId?.let { id -> project.clips.firstOrNull { it.id == id } }
+    val previewClip = ProjectTransitionTimeline.build(project.clips, project.transitions)
+        .entryAt(playheadMs)?.clip ?: timelinePreviewClip(project.clips, playheadMs)
+    return resolveAiTargetClip(selectedClip, state.selectedClipId, previewClip)
+        ?.takeIf { isCurrentProjectAiVideoTarget(expectedProjectId, project.id, it) }
 }
 
 internal fun isAiReportTargetCurrent(
@@ -117,7 +136,7 @@ fun AiToolsPanel(
     onOpenBackgroundReplace: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
-    onSubmitReport: (AiContentReportTarget, AiContentReportReason) -> Boolean,
+    onSubmitReport: (AiContentReportTarget, AiContentReportReason) -> Unit,
     onClearReportFeedback: () -> Unit,
     isReportTargetCurrent: (AiContentReportTarget) -> Boolean = { true },
     onComposeReport: ((AiContentReportTarget, AiContentReportReason) -> Boolean)? = null
@@ -127,6 +146,7 @@ fun AiToolsPanel(
     var showSafetyInfo by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportDialogTarget by remember { mutableStateOf<AiContentReportTarget?>(null) }
+    var reportDialogFeedback by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val hasVideoTarget = !targetVideoName.isNullOrBlank()
     val detailsOnlyCount = tools.count { aiToolActionForId(it.id) == null }
@@ -219,6 +239,7 @@ fun AiToolsPanel(
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
                 Button(onClick = {
                     emailFeedback = null
+                    reportDialogFeedback = null
                     onClearReportFeedback()
                     reportDialogTarget = reportTarget
                     showReportDialog = true
@@ -240,27 +261,36 @@ fun AiToolsPanel(
     if (showReportDialog) AiContentReportDialog(
         target = reportDialogTarget,
         state = reportState,
-        onDismiss = { showReportDialog = false; reportDialogTarget = null },
+        feedback = reportDialogFeedback,
+        onDismiss = { showReportDialog = false; reportDialogTarget = null; reportDialogFeedback = null },
         onSubmit = { reason ->
             reportDialogTarget?.let { target ->
                 if (!isReportTargetCurrent(target)) {
                     emailFeedback = "This report target is no longer in the current project. Nothing was submitted; reopen the report for a current clip."
                     showReportDialog = false
                     reportDialogTarget = null
+                    reportDialogFeedback = null
                 } else {
-                    val opened = onComposeReport?.invoke(target, reason)
-                        ?: openAiContentReportEmail(context, target, reason)
-                    if (opened) {
+                    val opened = try {
+                        onComposeReport?.invoke(target, reason) ?: openAiContentReportEmail(context, target, reason)
+                    } catch (_: Exception) {
+                        reportDialogFeedback = "Could not open an email draft. Nothing was submitted."
+                        null
+                    }
+                    if (opened == true) {
                         emailFeedback = "Email draft opened for $AI_REPORT_CONTACT. Review and send it in your email app; delivery has not been confirmed."
                         showReportDialog = false
                         reportDialogTarget = null
-                    } else if (!onSubmitReport(target, reason)) {
-                        emailFeedback = "The report target changed before it could be saved. Nothing was submitted."
-                        showReportDialog = false
-                        reportDialogTarget = null
-                    } else {
-                        // Callback acceptance is not persistence confirmation; reportState owns async progress/result.
-                        emailFeedback = null
+                        reportDialogFeedback = null
+                    } else if (opened == false) {
+                        try {
+                            onSubmitReport(target, reason)
+                            // reportState alone confirms asynchronous local persistence.
+                            emailFeedback = null
+                            reportDialogFeedback = null
+                        } catch (_: Exception) {
+                            reportDialogFeedback = "Could not start saving the report. Nothing was submitted."
+                        }
                     }
                 }
             }
@@ -287,7 +317,12 @@ private fun AiActionCard(action: AiActionSpec, enabled: Boolean, modifier: Modif
     Surface(
         onClick = action.onClick,
         enabled = enabled,
-        modifier = modifier.heightIn(min = 112.dp).testTag("ai_action_${action.id}"),
+        modifier = modifier.heightIn(min = 112.dp)
+            .alpha(if (enabled) 1f else 0.48f)
+            .testTag("ai_action_${action.id}")
+            .semantics {
+                if (!enabled) stateDescription = "Select a main-track video to enable this action"
+            },
         shape = MaterialTheme.shapes.medium,
         color = ApexPalette.BgElevated
     ) {
@@ -303,6 +338,7 @@ private fun AiActionCard(action: AiActionSpec, enabled: Boolean, modifier: Modif
 private fun AiContentReportDialog(
     target: AiContentReportTarget?,
     state: AiContentReportUiState,
+    feedback: String?,
     onDismiss: () -> Unit,
     onSubmit: (AiContentReportReason) -> Unit
 ) {
@@ -321,6 +357,7 @@ private fun AiContentReportDialog(
                     }
                 }
                 state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                feedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {

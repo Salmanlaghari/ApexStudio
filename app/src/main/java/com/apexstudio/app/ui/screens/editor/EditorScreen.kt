@@ -1604,13 +1604,7 @@ private fun EditorScreenContent(
     }
 
     val prepareAiVideoTarget: () -> Boolean = {
-        val targetId = aiTargetVideo?.id
-        val current = vm.state.value
-        val currentProject = current.project
-        val currentClip = currentProject?.clips?.firstOrNull { it.id == targetId }
-        val validClip = currentClip?.takeIf {
-            isCurrentProjectAiVideoTarget(projectId, currentProject?.id, it)
-        }
+        val validClip = resolveCurrentAiVideoTarget(projectId, vm.state.value, vm.livePlayheadMs())
         if (validClip != null) {
             vm.selectClip(validClip.id)
             true
@@ -1659,13 +1653,7 @@ private fun EditorScreenContent(
             }
         },
         reportTarget = aiReportTarget, reportState = aiContentReportState,
-        onSubmitReport = { target, reason ->
-            val currentProject = vm.state.value.project
-            if (isAiReportTargetCurrent(projectId, currentProject, target)) {
-                vm.submitAiContentReport(target, reason)
-                true
-            } else false
-        },
+        onSubmitReport = { target, reason -> vm.submitAiContentReport(target, reason) },
         isReportTargetCurrent = { target ->
             isAiReportTargetCurrent(projectId, vm.state.value.project, target)
         },

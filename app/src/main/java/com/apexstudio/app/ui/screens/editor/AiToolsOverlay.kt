@@ -76,7 +76,7 @@ fun AiToolsOverlay(
     onOpenBackgroundReplace: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
-    onSubmitReport: (AiContentReportTarget, AiContentReportReason) -> Boolean,
+    onSubmitReport: (AiContentReportTarget, AiContentReportReason) -> Unit,
     onClearReportFeedback: () -> Unit,
     isReportTargetCurrent: ((AiContentReportTarget) -> Boolean)? = null,
 ) {

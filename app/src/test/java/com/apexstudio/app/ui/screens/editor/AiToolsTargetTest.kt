@@ -4,6 +4,7 @@ import com.apexstudio.app.data.aireport.AiContentReportTarget
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -54,6 +55,40 @@ class AiToolsTargetTest {
         assertFalse(isCurrentProjectAiVideoTarget("project-a", "project-b", mainVideo))
         assertFalse(isCurrentProjectAiVideoTarget("project-a", "project-a", secondaryVideo))
         assertFalse(isCurrentProjectAiVideoTarget("project-a", "project-a", null))
+    }
+
+    @Test
+    fun actionTargetUsesTheLatestSelectionInsteadOfACompositionSnapshot() {
+        val first = clip("first")
+        val latestSelection = clip("latest-selection")
+        val project = Project("project-a", "Edit", 10_000L, clips = listOf(first, latestSelection))
+        val state = EditorState(project = project, selectedClipId = latestSelection.id)
+
+        assertEquals(latestSelection, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 0L))
+    }
+
+    @Test
+    fun actionTargetUsesTheLivePlayheadWhenThereIsNoExplicitSelection() {
+        val first = clip("first")
+        val second = clip("second")
+        val project = Project("project-a", "Edit", 10_000L, clips = listOf(first, second))
+        val state = EditorState(project = project, selectedClipId = null, playerPositionMs = 0L)
+
+        assertEquals(first, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 0L))
+        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 5_000L))
+        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 10_000L))
+    }
+
+    @Test
+    fun actionTargetRejectsAChangedProjectOrUnsupportedCurrentSelection() {
+        val main = clip("main")
+        val overlay = clip("overlay", type = ClipType.OVERLAY, trackIndex = 1)
+        val project = Project("project-a", "Edit", 5_000L, clips = listOf(main, overlay))
+
+        assertNull(resolveCurrentAiVideoTarget("project-b", EditorState(project = project), playheadMs = 0L))
+        assertNull(resolveCurrentAiVideoTarget(
+            "project-a", EditorState(project = project, selectedClipId = overlay.id), playheadMs = 0L
+        ))
     }
 
     @Test

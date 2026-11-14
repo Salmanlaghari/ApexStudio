@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.apexstudio.app.data.aireport.AiContentReportReason
@@ -48,7 +49,7 @@ class AiToolsPanelTest {
                 onOpenVideoUpscale = { upscaleOpens++ },
                 reportTarget = null,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> false },
+                onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}
             )
         } }
@@ -95,7 +96,7 @@ class AiToolsPanelTest {
                 onOpenVideoUpscale = {},
                 reportTarget = null,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> false },
+                onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}
             )
         } }
@@ -103,6 +104,12 @@ class AiToolsPanelTest {
         compose.onNodeWithText("Select a main-track video on the timeline").assertExists()
         compose.onNodeWithText("Photos and overlays are not supported here; actions stay disabled until a main-track video is selected.").assertExists()
         compose.onNodeWithTag("ai_action_review").assertIsNotEnabled()
+        compose.onNodeWithTag("ai_action_review").assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Select a main-track video to enable this action"
+            )
+        )
         compose.onNodeWithTag("ai_action_captions").assertIsNotEnabled()
         compose.onNodeWithTag("ai_action_background").assertIsNotEnabled()
         compose.onNodeWithTag("ai_action_upscale").assertIsNotEnabled()
@@ -119,7 +126,7 @@ class AiToolsPanelTest {
                 onOpenLocalAnalysis = {},
                 reportTarget = null,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> false },
+                onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}
             )
         } }
@@ -140,7 +147,7 @@ class AiToolsPanelTest {
                 onClose = {},
                 reportTarget = null,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> false },
+                onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}
             )
         } }
@@ -165,7 +172,7 @@ class AiToolsPanelTest {
                 onOpenDownloads = { requests++ },
                 reportTarget = null,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> false },
+                onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}
             )
         } }
@@ -185,7 +192,6 @@ class AiToolsPanelTest {
                 reportState = reportState.value, onSubmitReport = { _, reason ->
                     submitted = reason
                     reportState.value = AiContentReportUiState(isSaving = true, message = "Saving report on this device…")
-                    true
                 },
                 onClearReportFeedback = {}, onComposeReport = { _, _ -> false }
             )
@@ -218,7 +224,7 @@ class AiToolsPanelTest {
         compose.setContent { MaterialTheme {
             AiToolsPanel(
                 tools = inventory, message = "", onClose = {}, reportTarget = target,
-                reportState = AiContentReportUiState(), onSubmitReport = { _, _ -> localFlags++; true },
+                reportState = AiContentReportUiState(), onSubmitReport = { _, _ -> localFlags++ },
                 onClearReportFeedback = {}, onComposeReport = { receivedTarget, reason ->
                     assertEquals(target, receivedTarget)
                     assertEquals(AiContentReportReason.VIOLENT, reason)
@@ -244,7 +250,7 @@ class AiToolsPanelTest {
             AiToolsPanel(
                 tools = inventory, message = "", onClose = {}, reportTarget = target,
                 reportState = AiContentReportUiState(),
-                onSubmitReport = { _, _ -> localFlags++; true },
+                onSubmitReport = { _, _ -> localFlags++ },
                 onClearReportFeedback = {},
                 isReportTargetCurrent = { false },
                 onComposeReport = { _, _ -> drafts++; true }
@@ -267,7 +273,7 @@ class AiToolsPanelTest {
         compose.setContent { MaterialTheme {
             AiToolsPanel(
                 tools = inventory, message = "", onClose = {}, reportTarget = activeTarget.value,
-                reportState = AiContentReportUiState(), onSubmitReport = { _, _ -> false },
+                reportState = AiContentReportUiState(), onSubmitReport = { _, _ -> },
                 onClearReportFeedback = {}, isReportTargetCurrent = { it == originalTarget },
                 onComposeReport = { target, _ -> emailTarget = target; true }
             )
@@ -278,6 +284,71 @@ class AiToolsPanelTest {
         compose.onNodeWithText("Open email draft").activateVisibleControl()
 
         compose.runOnIdle { assertEquals(originalTarget, emailTarget) }
+    }
+
+    @Test
+    fun reportStateFailureIsShownWithoutClaimingTheTargetChanged() {
+        val reportState = mutableStateOf(AiContentReportUiState())
+        val target = AiContentReportTarget("project", "clip", "VIDEO")
+        compose.setContent { MaterialTheme {
+            AiToolsPanel(
+                tools = inventory, message = "", onClose = {}, reportTarget = target,
+                reportState = reportState.value,
+                onSubmitReport = { _, _ ->
+                    reportState.value = AiContentReportUiState(message = "Could not save the report on this device.")
+                },
+                onClearReportFeedback = {}, onComposeReport = { _, _ -> false }
+            )
+        } }
+        compose.onNodeWithText("Flag AI content").activateVisibleControl()
+        compose.onNodeWithText("Hateful content").activateVisibleControl()
+        compose.onNodeWithText("Open email draft").activateVisibleControl()
+
+        compose.onNodeWithText("Could not save the report on this device.").assertExists()
+        compose.onNodeWithText("The report target changed before it could be saved.").assertDoesNotExist()
+        compose.onNodeWithText("Saved locally — not sent").assertDoesNotExist()
+    }
+
+    @Test
+    fun submissionCallbackExceptionShowsFailureWithoutClaimingStaleOrSaved() {
+        val target = AiContentReportTarget("project", "clip", "VIDEO")
+        compose.setContent { MaterialTheme {
+            AiToolsPanel(
+                tools = inventory, message = "", onClose = {}, reportTarget = target,
+                reportState = AiContentReportUiState(),
+                onSubmitReport = { _, _ -> throw IllegalStateException("test failure") },
+                onClearReportFeedback = {}, onComposeReport = { _, _ -> false }
+            )
+        } }
+        compose.onNodeWithText("Flag AI content").activateVisibleControl()
+        compose.onNodeWithText("Hateful content").activateVisibleControl()
+        compose.onNodeWithText("Open email draft").activateVisibleControl()
+
+        compose.onNodeWithText("Could not start saving the report. Nothing was submitted.").assertExists()
+        compose.onNodeWithText("The report target changed before it could be saved.").assertDoesNotExist()
+        compose.onNodeWithText("Saved locally — not sent").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").assertExists()
+    }
+
+    @Test
+    fun emailComposerExceptionDoesNotClaimDraftOpenedOrStartLocalSave() {
+        var localSaves = 0
+        val target = AiContentReportTarget("project", "clip", "VIDEO")
+        compose.setContent { MaterialTheme {
+            AiToolsPanel(
+                tools = inventory, message = "", onClose = {}, reportTarget = target,
+                reportState = AiContentReportUiState(), onSubmitReport = { _, _ -> localSaves++ },
+                onClearReportFeedback = {}, onComposeReport = { _, _ -> throw IllegalStateException("test failure") }
+            )
+        } }
+        compose.onNodeWithText("Flag AI content").activateVisibleControl()
+        compose.onNodeWithText("Hateful content").activateVisibleControl()
+        compose.onNodeWithText("Open email draft").activateVisibleControl()
+
+        compose.runOnIdle { assertEquals(0, localSaves) }
+        compose.onNodeWithText("Could not open an email draft. Nothing was submitted.").assertExists()
+        compose.onNodeWithText("Email draft opened", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Saved locally — not sent").assertDoesNotExist()
     }
 
     private fun SemanticsNodeInteraction.activateVisibleControl() {

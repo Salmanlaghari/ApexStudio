@@ -161,6 +161,7 @@ class AiToolsPanelTest {
                 message = "",
                 targetVideoName = null,
                 onClose = {},
+                onOpenLocalAnalysis = {},
                 onOpenDownloads = { requests++ },
                 reportTarget = null,
                 reportState = AiContentReportUiState(),

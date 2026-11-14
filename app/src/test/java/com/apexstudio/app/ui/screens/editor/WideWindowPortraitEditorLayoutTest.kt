@@ -23,7 +23,7 @@ class WideWindowPortraitEditorLayoutTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun portraitSourceOnWideWindowKeepsSourceFirstPreviewAndFullWidthTimeline() {
+    fun portraitProjectOnWideWindowKeepsTallPreviewAndFullWidthTimeline() {
         val clip = MediaClip(
             id = "main-video",
             name = "Project video",
@@ -41,12 +41,10 @@ class WideWindowPortraitEditorLayoutTest {
                     name = "Wide window project",
                     durationMs = 12_000L,
                     clips = listOf(clip),
-                    videoAspectRatio = 16f / 9f,
+                    videoAspectRatio = 9f / 16f,
                 ),
                 selectedClipId = clip.id,
                 durationMs = 12_000L,
-                videoWidth = 1080,
-                videoHeight = 1920,
             )
         }
 
@@ -73,7 +71,7 @@ class WideWindowPortraitEditorLayoutTest {
         val timelinePane = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
         val timeline = compose.onNodeWithTag("centered-timeline-workspace").fetchSemanticsNode().boundsInRoot
 
-        assertTrue("Portrait source keeps a tall preview frame: $preview", preview.height > preview.width)
+        assertTrue("Portrait project metadata keeps a tall preview frame: $preview", preview.height > preview.width)
         assertTrue("Preview pane remains full-width: pane=$previewPane root=$root",
             previewPane.width >= root.width * 0.97f)
         assertTrue("Dedicated timeline stays full-width: timeline=$timeline root=$root",

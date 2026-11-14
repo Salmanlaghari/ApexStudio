@@ -45,6 +45,20 @@ class EditorProjectExportControllerTest {
         assertEquals(0f, buildProjectExportConfig(state, AudioStudioState(isMuted = true), settings).volume, 0f)
     }
 
+    @Test fun `saved Color grade reaches the standard project export with later main-track clips`() {
+        val grade = ColorStudioGrade(brightness = .18f, saturation = 1.2f, sharpness = .35f)
+        val laterClip = first.copy(id = "added-later", uri = "file:///later.mp4")
+        val overlay = first.copy(id = "overlay", type = ClipType.OVERLAY, trackIndex = 1)
+        val project = state.project!!
+        val edited = state.copy(project = project.copy(
+            clips = project.clips + listOf(laterClip, overlay),
+            colorStudioGrade = grade
+        ))
+
+        assertEquals(listOf(first, second, laterClip), projectMainExportClips(edited))
+        assertEquals(grade, buildProjectExportConfig(edited, AudioStudioState(), settings).colorStudioGrade)
+    }
+
     @Test fun `project adjustments restore into editor state and reach project export config`() {
         val persisted = VideoAdjustments(brightness = .27f, sharpness = .68f, contrast = 1.14f)
         val updated = persisted.copy(brightness = .36f, sharpness = .82f)

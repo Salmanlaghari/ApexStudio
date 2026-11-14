@@ -669,6 +669,20 @@ private fun EditorScreenContent(
     val globalFxBinding = remember(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed) {
         globalFxPreviewBinding(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed)
     }
+    val projectColorGrade = state.project?.colorStudioGrade
+    val shouldGradeMainPreview = mainPreviewClip?.let {
+        it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
+    } == true
+    val projectColorEffects by produceState<List<androidx.media3.common.Effect>>(
+        initialValue = emptyList(), projectColorGrade, shouldGradeMainPreview
+    ) {
+        value = emptyList()
+        val grade = projectColorGrade ?: return@produceState
+        if (!shouldGradeMainPreview) return@produceState
+        value = withContext(Dispatchers.Default) {
+            com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+        }
+    }
 
     val currentEffects = remember(
         activePreset,
@@ -679,7 +693,8 @@ private fun EditorScreenContent(
         globalFxBinding,
         state.adjustments,
         selectedKeyframes,
-        sharedPreviewClip
+        sharedPreviewClip,
+        projectColorEffects
     ) {
         buildList<androidx.media3.common.Effect> {
             // Match project export's per-clip LUT/adjustment stages when the
@@ -756,6 +771,7 @@ private fun EditorScreenContent(
                 }
             }
             globalFxBinding?.createEffect()?.let(::add)
+            addAll(projectColorEffects)
             val hasSharedAnimation = sharedPreviewClip?.let {
                 it.animationKeyframeTimes().isNotEmpty()
             } == true
@@ -783,6 +799,7 @@ private fun EditorScreenContent(
         state.project?.videoAspectRatio,
         activePreset,
         globalFxBinding,
+        projectColorEffects,
         state.filterIntensity,
         state.adjustments,
         state.gpuFilterCompareMode,
@@ -894,6 +911,7 @@ private fun EditorScreenContent(
                         }
                     }
                 )?.let(::add)
+                addAll(projectColorEffects)
                 val captions = clip.textOverlays.filter { it.text.isNotBlank() }
                 if (captions.isNotEmpty()) {
                     add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))

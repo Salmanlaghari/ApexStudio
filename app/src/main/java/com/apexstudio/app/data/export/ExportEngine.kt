@@ -40,6 +40,7 @@ import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.color.hasValidRenderParameters
 import com.apexstudio.app.data.color.toLutTexture
 import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.ChromaKeySettings
@@ -1162,6 +1163,9 @@ class ExportEngine(private val context: Context) {
                 require(config.chromaKeySettings == null || config.chromaKeySettings.hasValidChromaParameters()) {
                     "Invalid chroma-key parameters; export stopped rather than changing the keyed result."
                 }
+                require(config.colorStudioGrade?.hasValidRenderParameters() != false) {
+                    "Invalid Color Studio grade; export stopped rather than dropping the project grade."
+                }
                 require(config.chromaKeySettings?.enabled != true) {
                     "Apply chroma key and its wallpaper to the clip before exporting."
                 }
@@ -1424,6 +1428,9 @@ class ExportEngine(private val context: Context) {
                 speedPair?.let {
                     // Its paired audio processor is already in the production chain.
                     videoEffects.add(it.second)
+                }
+                config.colorStudioGrade?.let { grade ->
+                    videoEffects.addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                 }
 
                 // 7. Caption / Text Overlays & Stickers

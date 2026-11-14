@@ -6,6 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import com.apexstudio.app.domain.model.AudioTrack as LegacyAudioTrack
+import com.apexstudio.app.domain.model.ColorStudioGrade
+import com.apexstudio.app.domain.model.ColorWheelVector
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.GpuFilterConfig
 import com.apexstudio.app.domain.model.MediaClip
@@ -136,6 +138,35 @@ class ProjectRepositoryMigrationTest {
                 """[{"id":"legacy-adjustments","name":"Legacy","durationMs":1000}]"""
             ).single()
             assertEquals(VideoAdjustments(), legacy.videoAdjustments)
+        } finally {
+            repository.deleteProject(id)
+        }
+    }
+
+    @Test
+    fun `project Color grade survives save and reopen while legacy JSON defaults to no grade`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val repository = ProjectRepository(context)
+        val id = "color-grade-${UUID.randomUUID()}"
+        val grade = ColorStudioGrade(
+            brightness = .21f,
+            contrast = 1.12f,
+            shadows = ColorWheelVector(.2f, -.1f),
+            rCurve = listOf(0f, .22f, .51f, .77f, 1f),
+            hdr = .3f,
+            sharpness = .4f
+        )
+        try {
+            repository.saveProject(legacyProject(id).copy(colorStudioGrade = grade))
+
+            val reopened = ProjectRepository(context).findById(id)
+            assertNotNull(reopened)
+            assertEquals(grade, reopened!!.colorStudioGrade)
+
+            val legacy = repository.decode(
+                """[{"id":"legacy-color-grade","name":"Legacy","durationMs":1000}]"""
+            ).single()
+            assertNull(legacy.colorStudioGrade)
         } finally {
             repository.deleteProject(id)
         }

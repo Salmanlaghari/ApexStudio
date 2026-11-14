@@ -994,6 +994,30 @@ data class ProjectLutSettings(
     val intensity: Float = 1f
 )
 
+/** Color Studio wheel offsets persisted as part of a project grade. */
+@Serializable
+data class ColorWheelVector(val x: Float = 0f, val y: Float = 0f)
+
+/** Project-wide SDR Color Studio grade, applied to main-track footage before attached titles. */
+@Serializable
+data class ColorStudioGrade(
+    val brightness: Float = 0f,
+    val contrast: Float = 1f,
+    val saturation: Float = 1f,
+    val shadows: ColorWheelVector = ColorWheelVector(),
+    val midtones: ColorWheelVector = ColorWheelVector(),
+    val highlights: ColorWheelVector = ColorWheelVector(),
+    val rCurve: List<Float> = IDENTITY_CURVE,
+    val gCurve: List<Float> = IDENTITY_CURVE,
+    val bCurve: List<Float> = IDENTITY_CURVE,
+    val lumaCurve: List<Float> = IDENTITY_CURVE,
+    /** SDR tone-map amount; output remains SDR. */
+    val hdr: Float = 0f,
+    val sharpness: Float = 0f
+) {
+    companion object { val IDENTITY_CURVE = listOf(0f, 0.25f, 0.5f, 0.75f, 1f) }
+}
+
 @Serializable
 data class Project(
     val id: String,
@@ -1074,7 +1098,9 @@ data class Project(
     /** Project-wide video color/detail adjustments; absent in legacy JSON means no adjustments. */
     val videoAdjustments: VideoAdjustments = VideoAdjustments(),
     /** Manual LUT choice overrides the template LUT; null follows the template/default. */
-    val manualLutOverride: ProjectLutSettings? = null
+    val manualLutOverride: ProjectLutSettings? = null,
+    /** Optional project-wide Color Studio grade; null preserves legacy project appearance. */
+    val colorStudioGrade: ColorStudioGrade? = null
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {

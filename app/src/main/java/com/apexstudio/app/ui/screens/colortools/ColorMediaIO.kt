@@ -16,7 +16,7 @@ import java.io.InputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Standalone Color tool intentionally accepts one selected still/video source, never a project render. */
+/** Color Studio previews one main-track source while committing its grade to the whole project track. */
 internal object ColorMediaIO {
     const val PREVIEW_MAX_DIMENSION = 1280
     const val MAX_STILL_EXPORT_PIXELS = 12_000_000L
@@ -26,7 +26,7 @@ internal object ColorMediaIO {
     data class ImageBounds(val width: Int, val height: Int, val exifOrientation: Int)
 
     fun selectedSources(clips: List<MediaClip>): List<MediaClip> =
-        clips.filter { it.type == ClipType.VIDEO || it.type == ClipType.IMAGE }
+        clips.filter { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
 
     fun sourceUri(clip: MediaClip): String = clip.backgroundReplace?.sourceUri
         ?.takeIf(String::isNotBlank) ?: clip.uri

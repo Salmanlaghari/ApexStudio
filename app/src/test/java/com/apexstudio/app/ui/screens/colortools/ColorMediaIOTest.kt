@@ -9,12 +9,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ColorMediaIOTest {
-    @Test fun sourcePickerOnlyOffersExistingProjectVideosAndImages() {
+    @Test fun sourcePickerOnlyOffersMainTrackVideosAndImages() {
         val image = clip("photo", ClipType.IMAGE)
         val video = clip("movie", ClipType.VIDEO)
+        val pipVideo = clip("pip", ClipType.VIDEO).copy(trackIndex = 1)
         val audio = clip("sound", ClipType.AUDIO)
         val overlay = clip("overlay", ClipType.OVERLAY)
-        assertEquals(listOf(image, video), ColorMediaIO.selectedSources(listOf(image, audio, video, overlay)))
+        assertEquals(listOf(image, video), ColorMediaIO.selectedSources(listOf(image, audio, video, pipVideo, overlay)))
     }
 
     @Test fun previewTimeIsBoundedToTheSelectedClipTrimAndSourceDuration() {

@@ -1,11 +1,11 @@
 package com.apexstudio.app.ui.screens.colortools
 
-import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.ColorStudioGrade
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
-import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -19,6 +19,7 @@ import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
@@ -40,7 +41,7 @@ class ColorStudioVisualRenderTest {
         vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
         compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
 
-        compose.onNodeWithText("This Before/After is the selected source frame only, not a full-timeline preview.")
+        compose.onNodeWithText("This is a selected source-frame preview. Apply saves the grade to all current and future main-track clips; export the full project once when editing is complete.")
             .assertIsDisplayed()
     }
 
@@ -56,22 +57,41 @@ class ColorStudioVisualRenderTest {
         compose.onNodeWithText("Sharpness").assertIsDisplayed()
     }
 
-    @Test fun selectedSourceExportActionDoesNotWaitForPreviewDecode() {
+    @Test fun projectApplyReplacesStandaloneColorExportActions() {
         val vm = EditorViewModel()
-        val clip = MediaClip(
-            "missing-image", "Unavailable preview", "file:///missing-color-preview.png", 1_000L,
-            trimEndMs = 1_000L, type = ClipType.IMAGE
-        )
-        vm._state.value = EditorState(
-            project = Project("fixture", "Host only", 1_000L, clips = listOf(clip)),
-            selectedClipId = clip.id
-        )
-        compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
+        val clip = MediaClip("fixture", "Host layout fixture", "file:///test-only.mp4", 5_000L, trimEndMs = 5_000L)
+        val grade = ColorStudioGrade(brightness = .2f)
+        vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L,
+            clips = listOf(clip), colorStudioGrade = grade), selectedClipId = clip.id)
+        var backCount = 0
+        compose.setContent { ColorStudioScreen("fixture", { backCount++ }, {}, vm = vm, embedded = true) }
 
-        compose.onNodeWithText("Selected source").performClick()
-        compose.onNodeWithText("Export").performClick()
+        compose.onNodeWithText("Apply").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Export Color result").assertDoesNotExist()
+        compose.onNodeWithText("Export timeline").assertDoesNotExist()
+        compose.onNodeWithText("Export video").assertDoesNotExist()
+        compose.onNodeWithText("Export still").assertDoesNotExist()
 
-        compose.onNodeWithText("Export still").assertIsDisplayed().assertIsEnabled()
+        assertEquals(grade, vm.state.value.project?.colorStudioGrade)
+        // Embedded Apply returns to the project editor; the editor's standard Export action remains its caller's route.
+        assertEquals(1, backCount)
+    }
+
+    @Test fun parentExportRequestUsesTheStandardProjectExportRoute() {
+        val vm = EditorViewModel()
+        val clip = MediaClip("fixture", "Host layout fixture", "file:///test-only.mp4", 5_000L, trimEndMs = 5_000L)
+        val grade = ColorStudioGrade(brightness = .16f)
+        vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L,
+            clips = listOf(clip), colorStudioGrade = grade), selectedClipId = clip.id)
+        var exportCount = 0
+
+        compose.setContent {
+            ColorStudioScreen("fixture", {}, { exportCount++ }, vm = vm, embedded = true, exportRequest = 1)
+        }
+        compose.waitForIdle()
+
+        assertEquals(1, exportCount)
+        assertEquals(grade, vm.state.value.project?.colorStudioGrade)
     }
 
     @Test fun productionColorWorkspaceFitsCompactPhoneEditorArea() {

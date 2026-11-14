@@ -1,17 +1,25 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.components.compactTimelineHeight
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.trimClip
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertTrue
@@ -24,6 +32,68 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "w375dp-h830dp")
 class EditorReferenceLayoutTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun trimmingThenSelectingEffectsOpensVisualEffectsWithoutColorExportDialog() {
+        val clip = MediaClip(
+            id = "main-video",
+            name = "Project video",
+            uri = "file:///missing-reference-test-video.mp4",
+            durationMs = 12_000L,
+            trimEndMs = 12_000L
+        )
+        val vm = EditorViewModel().also { editor ->
+            editor._export.value = editor.export.value.copy(
+                settings = editor.export.value.settings.copy(aspectRatio = "9:16")
+            )
+            editor._state.value = editor.state.value.copy(
+                project = Project("reference-project", "Reference project", 12_000L, clips = listOf(clip)),
+                selectedClipId = null,
+                durationMs = 12_000L
+            )
+        }
+        val activeWorkspace = mutableStateOf("edit")
+
+        compose.setContent {
+            EditorScreen(
+                projectId = "reference-project",
+                onBack = {},
+                onExport = {},
+                onColor = { activeWorkspace.value = "color" },
+                onAudio = {},
+                entryWorkspace = activeWorkspace.value,
+                onCloseWorkspace = { activeWorkspace.value = "edit" },
+                vm = vm
+            )
+        }
+
+        compose.onNodeWithText("Trim").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("close_trim_panel_button").assertIsDisplayed()
+        compose.runOnIdle { vm.trimClip(clip.id, 1_000L, 11_000L) }
+        compose.runOnIdle {
+            assertEquals(1_000L, vm.state.value.project?.clips?.single()?.trimStartMs)
+        }
+        compose.onNodeWithTag("close_trim_panel_button", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue("The Trim close action must clear the panel state", !vm.state.value.trimPanelOpen)
+        }
+        assertTrue(
+            "Trim panel must close before returning to editing tools",
+            compose.onAllNodesWithTag("close_trim_panel_button").fetchSemanticsNodes().isEmpty()
+        )
+        compose.onNodeWithText("FX").performScrollTo().assertIsDisplayed().performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("workspace-panel").assertIsDisplayed()
+        compose.onNodeWithTag("workspace-presets-card").assertIsDisplayed()
+        assertTrue(
+            "Effects must not launch the Color Studio export dialog",
+            compose.onAllNodesWithText("Export Color result").fetchSemanticsNodes().isEmpty()
+        )
+        compose.runOnIdle { assertEquals("edit", activeWorkspace.value) }
+    }
 
     @Test
     fun firstEditorEntryShowsReferenceFilterWorkspaceAndRealTimelineControls() {
@@ -67,7 +137,10 @@ class EditorReferenceLayoutTest {
             compose.onNodeWithText(it).assertIsDisplayed()
         }
         compose.onNodeWithContentDescription("Play playback").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        assertTrue(
+            "Compact timeline mode must not render the expanded timeline header",
+            compose.onAllNodesWithTag("timeline-header").fetchSemanticsNodes().isEmpty()
+        )
         val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot

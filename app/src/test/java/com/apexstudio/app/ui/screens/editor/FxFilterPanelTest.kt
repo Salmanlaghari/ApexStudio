@@ -5,13 +5,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -26,6 +32,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -96,7 +103,7 @@ class FxFilterPanelTest {
     }
 
     @Test
-    fun `downloaded effects can be fetched and selected from the FX category`() {
+    fun `downloaded effects can be fetched and selected from All and Downloaded categories`() {
         val effect = DownloadedFxEffect(
             id = "dl_apex-fx-vol-01_prism_sample",
             label = "Prism Sample",
@@ -133,7 +140,11 @@ class FxFilterPanelTest {
                     onDownloadEffectsPack = {
                         downloadRequests++
                         packState.value = PackManager.PackState.Downloaded
-                        profiles.value = listOf(effect)
+                        profiles.value = listOf(
+                            effect,
+                            effect.copy(label = "Duplicate Prism"),
+                            effect.copy(id = FxPreset.HUE_CYCLE.id, label = "Built-in ID collision")
+                        )
                     },
                     onClose = {}
                 )
@@ -145,12 +156,45 @@ class FxFilterPanelTest {
         }
         compose.onNodeWithTag("fx-category-downloaded").performClick()
         compose.onNodeWithText("Download 30 effects · 5.2 KB").performScrollTo().performClick()
-        compose.onNodeWithText("Prism Sample").performScrollTo().performClick()
+
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-all"))
+        compose.onNodeWithTag("fx-category-all").performClick()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
+        compose.onAllNodesWithText("Duplicate Prism").assertCountEquals(0)
+        compose.onAllNodesWithText("Built-in ID collision").assertCountEquals(0)
         compose.runOnIdle {
             assertEquals(1, downloadRequests)
             assertEquals(effect.id, selectedFx.value)
         }
+
+        compose.onNodeWithText("Original").performClick()
+        compose.runOnIdle { assertEquals(null, selectedFx.value) }
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-downloaded"))
+        compose.onNodeWithTag("fx-category-downloaded").performClick()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
         compose.onNodeWithText("1.2x").performScrollTo().assertIsDisplayed()
+
+        val categoryList = compose.onNodeWithTag("fx-category-list")
+        categoryList.performScrollTo()
+        categoryList.performScrollToNode(hasTestTag("fx-category-animated"))
+        val animatedCategory = compose.onNodeWithTag("fx-category-animated")
+        animatedCategory.assertIsDisplayed()
+        assertFalse(
+            "Animated category should start unselected",
+            animatedCategory.fetchSemanticsNode().config[SemanticsProperties.Selected]
+        )
+        animatedCategory.performClick()
+        compose.waitForIdle()
+        animatedCategory.assertIsSelected()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Hue Cycle").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Prism Sample").assertCountEquals(0)
+        compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -39,6 +42,8 @@ import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+
+private const val FX_PANEL_LOG_TAG = "FxPanel"
 
 /**
  * Bottom-sheet FX picker: "Original" + every real-time FX preset,
@@ -182,7 +187,7 @@ fun FxPanel(
                             if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                             RoundedCornerShape(10.dp)
                         )
-                        .clickable { activeCategory = cat }
+                        .selectable(selected = selected, role = Role.Tab) { activeCategory = cat }
                         .testTag("fx-category-${cat.lowercase().replace(" ", "-")}")
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
@@ -201,37 +206,47 @@ fun FxPanel(
             if (activeCategory == "All") FxPreset.values().toList()
             else FxPreset.values().filter { it.category == activeCategory }
         }
+        val displayedDownloadedEffects = remember(activeCategory, downloadedEffects) {
+            if (activeCategory == "Downloaded" || activeCategory == "All") {
+                uniqueDownloadedFxEffects(downloadedEffects)
+            } else emptyList()
+        }
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                FxChip(
-                    label = "Original",
-                    icon = null,
-                    colors = listOf(ApexPalette.BgElevated, ApexPalette.BgDeep),
-                    selected = activeFxId == null,
-                    onClick = { onFxSelected(null) }
-                )
-            }
-            items(displayedPresets, key = { it.id }) { preset ->
-                FxChip(
-                    label = preset.label,
-                    icon = iconFor(preset),
-                    colors = colorsFor(preset),
-                    selected = activeFxId == preset.id,
-                    onClick = { onFxSelected(preset.id) }
-                )
-            }
-            items(
-                if (activeCategory == "Downloaded") downloadedEffects else emptyList(),
-                key = { it.id }
-            ) { effect ->
-                FxChip(
-                    label = effect.label,
-                    icon = Icons.Default.Layers,
-                    colors = colorsForFamily(effect.family),
-                    selected = activeFxId == effect.id,
-                    onClick = { onFxSelected(effect.id) }
-                )
+        key(activeCategory) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().testTag("fx-preset-list")
+            ) {
+                item {
+                    FxChip(
+                        label = "Original",
+                        icon = null,
+                        colors = listOf(ApexPalette.BgElevated, ApexPalette.BgDeep),
+                        selected = activeFxId == null,
+                        onClick = { onFxSelected(null) }
+                    )
+                }
+                items(
+                    displayedDownloadedEffects,
+                    key = { it.id }
+                ) { effect ->
+                    FxChip(
+                        label = effect.label,
+                        icon = Icons.Default.Layers,
+                        colors = colorsForFamily(effect.family),
+                        selected = activeFxId == effect.id,
+                        onClick = { onFxSelected(effect.id) }
+                    )
+                }
+                items(displayedPresets, key = { it.id }) { preset ->
+                    FxChip(
+                        label = preset.label,
+                        icon = iconFor(preset),
+                        colors = colorsFor(preset),
+                        selected = activeFxId == preset.id,
+                        onClick = { onFxSelected(preset.id) }
+                    )
+                }
             }
         }
 
@@ -322,6 +337,25 @@ fun FxPanel(
             }
         }
     }
+}
+
+private fun uniqueDownloadedFxEffects(downloadedEffects: List<DownloadedFxEffect>): List<DownloadedFxEffect> {
+    val seenIds = FxPreset.values().mapTo(mutableSetOf()) { it.id }
+    val omittedIds = mutableListOf<String>()
+    val visible = downloadedEffects.filter { effect ->
+        if (seenIds.add(effect.id)) true else {
+            omittedIds += effect.id
+            false
+        }
+    }
+    if (omittedIds.isNotEmpty()) {
+        Log.w(
+            FX_PANEL_LOG_TAG,
+            "Omitted ${omittedIds.size} downloaded FX profile(s) with duplicate or built-in IDs: " +
+                omittedIds.distinct().joinToString()
+        )
+    }
+    return visible
 }
 
 @Composable

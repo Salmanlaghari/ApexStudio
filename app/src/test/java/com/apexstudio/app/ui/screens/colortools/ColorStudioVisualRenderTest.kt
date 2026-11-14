@@ -5,7 +5,6 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule

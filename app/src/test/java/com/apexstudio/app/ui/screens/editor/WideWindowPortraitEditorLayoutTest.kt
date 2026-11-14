@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -82,7 +83,7 @@ class WideWindowPortraitEditorLayoutTest {
 
         compose.onNodeWithContentDescription("Open video properties").assertIsDisplayed().performClick()
         compose.onNodeWithTag("video-properties-dialog").assertIsDisplayed()
-        compose.onNodeWithText("Position X").assertIsDisplayed()
+        compose.onNodeWithText("Position X").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Close video properties").performClick()
         compose.onNodeWithTag("video-properties-dialog").assertDoesNotExist()
     }

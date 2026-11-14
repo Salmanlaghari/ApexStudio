@@ -139,7 +139,7 @@ class ScreenshotClipToolbarTest {
         composeRule.onNodeWithText("Speed").assertDoesNotExist()
         composeRule.onNodeWithText("More").performClick()
         composeRule.onNodeWithContentDescription("Editing and export notes").performScrollTo().performClick()
-        composeRule.onNodeWithText("Overlay speed editing is not available yet; use Properties for overlay volume.").assertExists()
+        composeRule.onNodeWithText("Speed editing applies to main video clips; use Properties for overlay volume.").assertExists()
         composeRule.onNodeWithText("Got it").performClick()
         composeRule.onNodeWithText("Volume").performScrollTo().performClick()
         assertEquals(1, calls["overlay-props"] ?: 0)

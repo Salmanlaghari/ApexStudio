@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -179,8 +180,11 @@ class FxFilterPanelTest {
         compose.onNodeWithTag("fx-category-list")
             .performScrollToNode(hasTestTag("fx-category-animated"))
         compose.onNodeWithTag("fx-category-animated").performClick()
+        compose.onNodeWithTag("fx-category-animated").assertIsSelected()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Hue Cycle").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("Prism Sample").assertCountEquals(0)
+        compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
     }
 
     @Test

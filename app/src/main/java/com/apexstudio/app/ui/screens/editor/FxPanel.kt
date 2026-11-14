@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -182,7 +184,7 @@ fun FxPanel(
                             if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
                             RoundedCornerShape(10.dp)
                         )
-                        .clickable { activeCategory = cat }
+                        .selectable(selected = selected, role = Role.Tab) { activeCategory = cat }
                         .testTag("fx-category-${cat.lowercase().replace(" ", "-")}")
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
@@ -208,39 +210,41 @@ fun FxPanel(
             } else emptyList()
         }
 
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().testTag("fx-preset-list")
-        ) {
-            item {
-                FxChip(
-                    label = "Original",
-                    icon = null,
-                    colors = listOf(ApexPalette.BgElevated, ApexPalette.BgDeep),
-                    selected = activeFxId == null,
-                    onClick = { onFxSelected(null) }
-                )
-            }
-            items(
-                displayedDownloadedEffects,
-                key = { it.id }
-            ) { effect ->
-                FxChip(
-                    label = effect.label,
-                    icon = Icons.Default.Layers,
-                    colors = colorsForFamily(effect.family),
-                    selected = activeFxId == effect.id,
-                    onClick = { onFxSelected(effect.id) }
-                )
-            }
-            items(displayedPresets, key = { it.id }) { preset ->
-                FxChip(
-                    label = preset.label,
-                    icon = iconFor(preset),
-                    colors = colorsFor(preset),
-                    selected = activeFxId == preset.id,
-                    onClick = { onFxSelected(preset.id) }
-                )
+        key(activeCategory) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().testTag("fx-preset-list")
+            ) {
+                item {
+                    FxChip(
+                        label = "Original",
+                        icon = null,
+                        colors = listOf(ApexPalette.BgElevated, ApexPalette.BgDeep),
+                        selected = activeFxId == null,
+                        onClick = { onFxSelected(null) }
+                    )
+                }
+                items(
+                    displayedDownloadedEffects,
+                    key = { it.id }
+                ) { effect ->
+                    FxChip(
+                        label = effect.label,
+                        icon = Icons.Default.Layers,
+                        colors = colorsForFamily(effect.family),
+                        selected = activeFxId == effect.id,
+                        onClick = { onFxSelected(effect.id) }
+                    )
+                }
+                items(displayedPresets, key = { it.id }) { preset ->
+                    FxChip(
+                        label = preset.label,
+                        icon = iconFor(preset),
+                        colors = colorsFor(preset),
+                        selected = activeFxId == preset.id,
+                        onClick = { onFxSelected(preset.id) }
+                    )
+                }
             }
         }
 

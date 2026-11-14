@@ -128,7 +128,8 @@ fun TimelineTrackArea(
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
-    onAutoCutSelected: () -> Unit = {}
+    onAutoCutSelected: () -> Unit = {},
+    compactTimeline: Boolean = false,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -364,6 +365,7 @@ fun TimelineTrackArea(
         // Multi-Layer Video Timeline Component: Horizontal Scrolling, Multi-Layer Tracks (Video, Audio, Overlay), Drag-and-Drop Reordering
         com.apexstudio.app.ui.components.VideoTimeline(
             state = state,
+            compactTimeline = compactTimeline,
             onScrub = onScrub,
             onSelectClip = onSelectClip,
             onDeselect = onDeselect,

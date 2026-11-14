@@ -174,6 +174,10 @@ internal const val OVERLAY_FILMSTRIP_HEIGHT_DP = 52
 internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
+private const val SOURCE_WAVEFORM_SPACING_DP = 10
+private const val SOURCE_WAVEFORM_HEIGHT_DP = 36
+private const val COMPACT_SOURCE_WAVEFORM_SPACING_DP = 6
+private const val COMPACT_SOURCE_WAVEFORM_HEIGHT_DP = 20
 
 private fun Modifier.timelineHeaderActionSurface(tint: Color): Modifier {
     val shape = RoundedCornerShape(11.dp)
@@ -209,7 +213,7 @@ internal fun mainVideoLaneHeight(
 ): Dp = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
-internal fun compactTimelineHeight(state: EditorState): Dp {
+internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean = true): Dp {
     val project = state.project
     val clips = project?.clips.orEmpty()
     val layerIndex = TimelineLayerContentIndex.from(clips)
@@ -242,7 +246,13 @@ internal fun compactTimelineHeight(state: EditorState): Dp {
     // historical portrait timeline rows below.
     var height = TIMELINE_RULER_HEIGHT_DP
     if (hasMain) height += 10 + MAIN_VIDEO_LANE_HEIGHT_DP
-    if (hasWaveform) height += 10 + 36
+    if (hasWaveform) {
+        height += if (compactWaveform) {
+            COMPACT_SOURCE_WAVEFORM_SPACING_DP + COMPACT_SOURCE_WAVEFORM_HEIGHT_DP
+        } else {
+            SOURCE_WAVEFORM_SPACING_DP + SOURCE_WAVEFORM_HEIGHT_DP
+        }
+    }
     val supportRows = overlayLayers + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
         (if (originalAudioRows > 0) 1 else 0) +
@@ -285,6 +295,8 @@ internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
 private fun FixedTimelineIdentityRail(
     hasMainVideo: Boolean,
     showWaveformStrip: Boolean,
+    waveformStripHeight: Int,
+    waveformStripSpacing: Int,
     overlayLayers: List<Int>,
     hasText: Boolean,
     hasStickers: Boolean,
@@ -317,7 +329,12 @@ private fun FixedTimelineIdentityRail(
             }
         }
         if (showWaveformStrip) {
-            Box(Modifier.fillMaxWidth().height((10 + 36).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
+            Box(
+                Modifier.fillMaxWidth()
+                    .height((waveformStripSpacing + waveformStripHeight).dp)
+                    .padding(top = waveformStripSpacing.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
                 TimelineLaneIdentity("V1 · Audio", Color(0xFF765BDB))
             }
         }
@@ -623,6 +640,7 @@ fun VideoTimeline(
     scrollState: ScrollState = rememberScrollState(),
     /** Hoisted vertical scroll state (same ownership as [scrollState]). */
     vScrollState: ScrollState = rememberScrollState(),
+    compactTimeline: Boolean = false,
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
@@ -951,7 +969,16 @@ fun VideoTimeline(
         adjustmentsSummary(adjustments).isNotEmpty()
     val showWaveformStrip = audioWaveform.isNotEmpty() && videoClips.isNotEmpty() &&
         originalVideoAudioTracks.isEmpty()
-    val waveformStripHeight = 36
+    val waveformStripHeight = if (compactTimeline) {
+        COMPACT_SOURCE_WAVEFORM_HEIGHT_DP
+    } else {
+        SOURCE_WAVEFORM_HEIGHT_DP
+    }
+    val waveformStripSpacing = if (compactTimeline) {
+        COMPACT_SOURCE_WAVEFORM_SPACING_DP
+    } else {
+        SOURCE_WAVEFORM_SPACING_DP
+    }
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
         .sumOf { overlayLayerHeight.value.toInt() + 10 }
     val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
@@ -965,7 +992,7 @@ fun VideoTimeline(
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
         (if (hasMainVideo) 10 + v1Height.value.toInt() else 0) +
-        (if (showWaveformStrip) 10 + waveformStripHeight else 0)
+        (if (showWaveformStrip) waveformStripSpacing + waveformStripHeight else 0)
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
         fxLaneTotal + a0Total + a1Total + a2Total
     val timelineTotalDp = fixedHeaderHeight +
@@ -1194,7 +1221,7 @@ fun VideoTimeline(
                             // V1; it uses decoded samples only, never synthetic
                             // bars, and spans the first clip's duration.
                             if (showWaveformStrip) {
-                                Spacer(Modifier.height(10.dp))
+                                Spacer(Modifier.height(waveformStripSpacing.dp))
                                 val firstClip = videoClips.first()
                                 val stripWidthDp =
                                     (firstClip.effectiveDurationMs() * msToDp).dp
@@ -1448,6 +1475,8 @@ fun VideoTimeline(
             FixedTimelineIdentityRail(
                 hasMainVideo = hasMainVideo,
                 showWaveformStrip = showWaveformStrip,
+                waveformStripHeight = waveformStripHeight,
+                waveformStripSpacing = waveformStripSpacing,
                 overlayLayers = videoLayers.filter { it in 1..9 },
                 hasText = textOverlays.isNotEmpty(),
                 hasStickers = stickers.isNotEmpty(),
@@ -1647,6 +1676,7 @@ fun VideoTimeline(
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
     onAutoCutSelected: () -> Unit = {},
+    compactTimeline: Boolean = false,
 ) {
     val project = state.project
     val autoCutAvailable = state.selectedAudioTrackId?.let { trackId ->
@@ -1744,7 +1774,8 @@ fun VideoTimeline(
         lockedVideoLayers = lockedVideoLayers,
         playerPositionFlow = playerPositionFlow,
         scrollState = scrollState,
-        vScrollState = vScrollState
+        vScrollState = vScrollState,
+        compactTimeline = compactTimeline
     )
 }
 

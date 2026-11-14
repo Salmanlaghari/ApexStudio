@@ -2065,8 +2065,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     // No persistent property strip above the timeline. Keyframe/Animation stay
     // in the lower selected-clip tools; the timeline header has one contextual
     // keyframe action, without duplicating the full property inspector.
+    val compactPhoneTimeline = !compactLandscape && !horizontalProjectLayout &&
+        !isTimelineFocusMode && !timelinePaneResized
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {
-        compactTimelineHeight(state) +
+        compactTimelineHeight(state, compactWaveform = compactPhoneTimeline) +
             (if (compactLandscape) 44.dp else EditorLayoutMetrics.TimelineToolbarHeight) + 2.dp
     }
     CenteredTimelineWorkspace(
@@ -2116,6 +2118,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 
     TimelineTrackArea(
         state = state,
+        compactTimeline = compactPhoneTimeline,
         onScrub = { targetMs ->
             val snapped = vm.findMagneticSnapPoint(targetMs)
             seekPlayerAndState(snapped)

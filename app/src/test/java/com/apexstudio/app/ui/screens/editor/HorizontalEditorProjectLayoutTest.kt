@@ -127,6 +127,9 @@ class HorizontalEditorProjectLayoutTest {
 
         val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val compactTimeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
+        val compactWaveform = compose.onNodeWithContentDescription("Source audio waveform")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Collapsed timeline keeps a visible compact waveform", 20f, compactWaveform.height, 1f)
         compose.onNodeWithTag("timeline-resize-handle").assertIsDisplayed().performTouchInput {
             val start = center
             down(start)
@@ -137,11 +140,21 @@ class HorizontalEditorProjectLayoutTest {
 
         val after = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val resizedTimeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot
+        val expandedWaveform = compose.onNodeWithContentDescription("Source audio waveform")
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals("Expanded timeline restores the full-height waveform", 36f, expandedWaveform.height, 1f)
+        val previewMinimumPx = with(compose.density) { 180.dp.toPx() }
+        val availablePreviewShrink = (before.height - previewMinimumPx).coerceAtLeast(0f)
+        val expectedGrowth = minOf(100f, availablePreviewShrink)
+        val actualGrowth = resizedTimeline.height - compactTimeline.height
         assertTrue(
-            "Dragging upward by 100px grows the real timeline host: compact=${compactTimeline.height}px, " +
-                "resized=${resizedTimeline.height}px",
-            resizedTimeline.height > compactTimeline.height + 80f
+            "A 100px upward drag consumes available resize headroom: compact=${compactTimeline.height}px, " +
+                "resized=${resizedTimeline.height}px, expectedGrowth=$expectedGrowth, actualGrowth=$actualGrowth",
+            actualGrowth >= expectedGrowth - 2f
         )
+        assertTrue("Preview respects its minimum height: $after", after.height >= previewMinimumPx - 1f)
+        assertEquals("Timeline growth equals the height surrendered by preview", actualGrowth,
+            before.height - after.height, 2f)
         assertTrue("The portrait frame remains tall after resizing: $after", after.height > after.width)
         assertEquals("Resizing changes available size, not source geometry", before.width / before.height,
             after.width / after.height, 0.02f)

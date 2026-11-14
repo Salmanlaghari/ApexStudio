@@ -130,7 +130,6 @@ fun TimelineTrackArea(
     onSetClipStickerRange: ((ownerClipId: String, stickerId: String, projectStartMs: Long, projectEndMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
-    onToggleRippleEdit: () -> Unit = {},
     onAutoCutSelected: () -> Unit = {},
     compactTimeline: Boolean = false,
 ) {
@@ -415,7 +414,6 @@ fun TimelineTrackArea(
             onSetClipStickerRange = onSetClipStickerRange,
             onToggleMagneticSnapping = onToggleMagneticSnapping,
             onToggleSnapToBeat = onToggleSnapToBeat,
-            onToggleRippleEdit = onToggleRippleEdit,
             onSelectAudioTrack = onSelectAudioTrack,
             onMoveAudioTrack = onMoveAudioTrack,
             onTrimAudioTrack = onTrimAudioTrack,

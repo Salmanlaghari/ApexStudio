@@ -566,13 +566,9 @@ fun VideoTimeline(
     snapToBeat: Boolean = false,
     magneticSnapping: Boolean = true,
     sharedSnapTimes: Set<Long> = emptySet(),
-    // Editing-assist modes. The snapping/ripple logic lives in
-    // EditorAudioController; these flags and callbacks only surface it in the
-    // timeline overflow menu so the modes are reachable outside landscape.
-    rippleEditEnabled: Boolean = false,
+    // Snapping actions use the current project's cuts, keyframes, and beats.
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
-    onToggleRippleEdit: () -> Unit = {},
     // Lazy filmstrip frames: (complete source identity, clip-relative output ms) -> bitmap.
     // Only the visible window is ever held (see TimelineTrackArea);
     // lanes look frames up by exact key with a nearest-earlier fallback.
@@ -1692,7 +1688,6 @@ fun VideoTimeline(
     onSetClipStickerRange: ((ownerClipId: String, stickerId: String, projectStartMs: Long, projectEndMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
-    onToggleRippleEdit: () -> Unit = {},
     onAutoCutSelected: () -> Unit = {},
     compactTimeline: Boolean = false,
 ) {
@@ -1756,10 +1751,8 @@ fun VideoTimeline(
         snapToBeat = state.snapToBeat,
         magneticSnapping = state.magneticSnapping,
         sharedSnapTimes = sharedSnapTimes,
-        rippleEditEnabled = state.rippleEditEnabled,
         onToggleMagneticSnapping = onToggleMagneticSnapping,
         onToggleSnapToBeat = onToggleSnapToBeat,
-        onToggleRippleEdit = onToggleRippleEdit,
         onAutoCutSelected = onAutoCutSelected,
         autoCutAvailable = autoCutAvailable,
         onScrub = onScrub,

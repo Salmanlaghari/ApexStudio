@@ -138,7 +138,7 @@ class AiToolsPanelTest {
     }
 
     @Test
-    fun availabilityDetailsExplainWhyUnwiredInventoryIsNotAnAction() {
+    fun availabilityDetailsFocusOnProjectRoutesWithoutListingFutureFeatures() {
         compose.setContent { MaterialTheme {
             AiToolsPanel(
                 tools = inventory,
@@ -154,9 +154,11 @@ class AiToolsPanelTest {
         compose.onNodeWithContentDescription("AI availability details").activateVisibleControl()
         compose.onNodeWithText("AI processing availability").assertExists()
         compose.onNodeWithText(AI_PROTECTED_BLOCKER).assertExists()
-        compose.onNodeWithText("2 catalog/model entries are not shown as editing actions", substring = true).assertExists()
+        compose.onNodeWithText("Only actions shown above have complete routes into the current project video. Model availability alone does not make an editing feature ready.").assertExists()
         compose.onNodeWithText("Availability checked").assertExists()
-        compose.onNodeWithText("Artistic style transfer, pose overlay, content moderation and 2D-to-3D video conversion are not editing actions in this release.").assertExists()
+        compose.onNodeWithText("catalog/model entries", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Artistic style transfer", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("pose overlay", substring = true).assertDoesNotExist()
     }
 
     @Test

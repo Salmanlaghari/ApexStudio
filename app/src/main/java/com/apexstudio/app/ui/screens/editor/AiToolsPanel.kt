@@ -131,7 +131,7 @@ private data class AiActionSpec(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AiToolsPanel(
-    tools: List<AiToolCard>,
+    @Suppress("UNUSED_PARAMETER") tools: List<AiToolCard>,
     message: String,
     targetVideoName: String? = null,
     onClose: () -> Unit,
@@ -155,7 +155,6 @@ fun AiToolsPanel(
     var reportDialogFeedback by remember { mutableStateOf<String?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val hasVideoTarget = !targetVideoName.isNullOrBlank()
-    val detailsOnlyCount = tools.count { aiToolActionForId(it.id) == null }
     val actions = buildList {
         onOpenLocalAnalysis?.let {
             add(AiActionSpec("review", "Review suggestions",
@@ -308,10 +307,8 @@ fun AiToolsPanel(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(AI_PROTECTED_BLOCKER)
-                Text("Only the supported actions above are connected to the current project video. Model availability by itself does not mean a feature can edit, preview and export a project.")
-                if (detailsOnlyCount > 0) Text("$detailsOnlyCount catalog/model entries are not shown as editing actions because they do not have a complete project-video route in this editor.")
+                Text("Only actions shown above have complete routes into the current project video. Model availability alone does not make an editing feature ready.")
                 Text("Face-framing and local suggestions sample frames; review each suggestion before applying it.")
-                Text("Artistic style transfer, pose overlay, content moderation and 2D-to-3D video conversion are not editing actions in this release.")
                 if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
             }
         },

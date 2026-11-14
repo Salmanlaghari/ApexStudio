@@ -19,21 +19,32 @@ import com.apexstudio.app.presentation.viewmodel.applyProjectVideoEffect
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextTemplate
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
+private data class CapturedProjectVideoTarget(
+    val projectId: String,
+    val clip: MediaClip,
+    val allowUnselectedMainTrackTarget: Boolean,
+)
+
 /** A frozen target prevents a delayed selection from editing a different clip or project. */
 @Composable
 fun ProjectVideoPresetsOverlay(
     vm: EditorViewModel,
     onClose: () -> Unit,
-    onLearnedUpscale: ((String, MediaClip) -> Unit)? = null,
 ) {
     val target = remember { vm.state.value.let { state ->
         state.project?.let { project ->
-            project.clips.firstOrNull { it.id == state.selectedClipId }?.let { project.id to it }
+            val selected = project.clips.firstOrNull { it.id == state.selectedClipId }
+                ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+            val preview = timelinePreviewClip(project.clips, state.playerPositionMs)
+                ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+            (selected ?: preview)?.let { clip ->
+                CapturedProjectVideoTarget(project.id, clip, allowUnselectedMainTrackTarget = selected == null)
+            }
         }
     } }
     var feedback by remember { mutableStateOf<String?>(null) }
-    val templateBlockReason = target?.second?.let(::projectVideoTemplateBlockReason)
-    val videoEligible = target?.second?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+    val templateBlockReason = target?.clip?.let(::projectVideoTemplateBlockReason)
+    val videoEligible = target?.clip?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
         it.durationMs > 0L && it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs } == true
     fun finish(applied: Boolean) {
         if (applied) onClose()
@@ -42,17 +53,34 @@ fun ProjectVideoPresetsOverlay(
     ProjectVideoPresetsPanel(
         eligible = videoEligible,
         templateEligible = videoEligible && templateBlockReason == null,
-        targetName = target?.second?.name,
+        targetName = target?.clip?.name,
         feedback = feedback,
         templateBlockReason = templateBlockReason,
-        onTextTemplate = { id -> finish(target?.let { vm.applyProjectVideoTextTemplate(it.first, it.second, id) } == true) },
-        onVideoEffect = { id -> finish(target?.let { vm.applyProjectVideoEffect(it.first, it.second, id) } == true) },
+        onTextTemplate = { id -> finish(target?.let {
+            vm.applyProjectVideoTextTemplate(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
+        onVideoEffect = { id -> finish(target?.let {
+            vm.applyProjectVideoEffect(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
         onClose = onClose,
-        onVideoTemplate = { id -> finish(target?.let { vm.applyProjectVideoTemplate(it.first, it.second, id) } == true) },
-        onTextMotion = { id -> finish(target?.let { vm.applyProjectVideoTextMotion(it.first, it.second, id) } == true) },
-        onLearnedUpscale = if (target != null && onLearnedUpscale != null) {
-            { onLearnedUpscale.invoke(target.first, target.second) }
-        } else null
+        onVideoTemplate = { id -> finish(target?.let {
+            vm.applyProjectVideoTemplate(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
+        onTextMotion = { id -> finish(target?.let {
+            vm.applyProjectVideoTextMotion(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) }
     )
 }
 
@@ -67,7 +95,6 @@ internal fun ProjectVideoPresetsPanel(
     onClose: () -> Unit,
     onVideoTemplate: (String) -> Unit = {},
     onTextMotion: (String) -> Unit = {},
-    onLearnedUpscale: (() -> Unit)? = null,
     templateEligible: Boolean = eligible,
     templateBlockReason: String? = null
 ) {
@@ -79,7 +106,7 @@ internal fun ProjectVideoPresetsPanel(
             Text("Project video tools", style = MaterialTheme.typography.titleLarge)
             Text("Fixed local editing choices; no text or prompt input. Color presets are deterministic, not AI.",
                 style = MaterialTheme.typography.bodySmall)
-            Text(if (eligible) "Selected video: $targetName"
+            Text(if (eligible) "Target video: $targetName"
                 else "Select an existing main-track video clip in this project. Still images, audio and overlays are not supported.")
             Text("Video Templates · Fixed Combo", style = MaterialTheme.typography.titleMedium)
             Text(when {
@@ -120,21 +147,12 @@ internal fun ProjectVideoPresetsPanel(
                 }
             }
             Text("Video Enhance · Deterministic Color", style = MaterialTheme.typography.titleMedium)
-            Text("A fixed contrast, saturation and exposure color matrix. Learned video upscaling is a separate tool.",
+            Text("A fixed contrast, saturation and exposure color matrix; it changes color, not resolution or recovered detail.",
                 style = MaterialTheme.typography.bodySmall)
             ProjectVideoPresets.videoEnhancements.forEach { preset ->
                 OutlinedButton(onClick = { onVideoEffect(preset.id) }, enabled = eligible,
                     modifier = Modifier.fillMaxWidth().testTag("video_enhancement_${preset.id}")) {
                     Text(preset.label)
-                }
-            }
-            Text("Learned Video Upscale · Separate", style = MaterialTheme.typography.titleMedium)
-            Text("This learned upscaling tool is separate from the deterministic color preset.",
-                style = MaterialTheme.typography.bodySmall)
-            onLearnedUpscale?.let { callback ->
-                OutlinedButton(onClick = callback, enabled = eligible,
-                    modifier = Modifier.fillMaxWidth().testTag("video_learned_upscale")) {
-                    Text("Learned Video Upscale")
                 }
             }
             feedback?.let { Text(it, color = MaterialTheme.colorScheme.error) }

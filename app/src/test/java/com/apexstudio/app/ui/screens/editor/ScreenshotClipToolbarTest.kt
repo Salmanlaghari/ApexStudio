@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -192,13 +193,37 @@ class ScreenshotClipToolbarTest {
         composeRule.onNodeWithTag("editor_more_toolbar").assertExists()
     }
 
+    @Test fun easyModeMoreShowsSharedActionsOnceAndKeepsThemRouted() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent { testToolbar(calls, horizontalProjectLayout = true) }
+        composeRule.onNodeWithText("More").performClick()
+
+        listOf("AI tools", "Captions", "BG Remove", "Project tools", "History").forEach {
+            composeRule.onAllNodesWithText(it).assertCountEquals(1)
+        }
+        listOf("AI", "Subtitles", "Enhance", "Templates").forEach {
+            composeRule.onNodeWithText(it).assertDoesNotExist()
+        }
+        listOf(
+            "AI tools" to "ai",
+            "Captions" to "captions",
+            "BG Remove" to "bg-remover",
+            "Project tools" to "project-tools",
+            "History" to "history"
+        ).forEach { (label, action) ->
+            composeRule.onNodeWithText(label).performScrollTo().performClick()
+            assertEquals("$label callback", 1, calls[action] ?: 0)
+        }
+    }
+
     @Composable
     private fun testToolbar(
         calls: MutableMap<String, Int>,
         selectionKind: ToolbarSelectionKind = ToolbarSelectionKind.VIDEO,
         isOverlaySelected: Boolean = false,
         isLegacyAudioClipSelected: Boolean = false,
-        showSelectionToolsInitially: Boolean = true
+        showSelectionToolsInitially: Boolean = true,
+        horizontalProjectLayout: Boolean = false
     ) {
         fun count(action: String) {
             calls[action] = (calls[action] ?: 0) + 1
@@ -209,13 +234,15 @@ class ScreenshotClipToolbarTest {
             isOverlaySelected = isOverlaySelected,
             isLegacyAudioClipSelected = isLegacyAudioClipSelected,
             showSelectionToolsInitially = showSelectionToolsInitially,
+            horizontalProjectLayout = horizontalProjectLayout,
             onMedia = { count("media") },
             onDeviceAudio = { count("device-audio") },
             onText = { count("text") },
             onEffects = { count("effects") },
             onStickers = { count("stickers") },
+            onAi = { count("ai") },
             onCaptions = { count("captions") },
-            onTemplates = { count("templates") },
+            onProjectVideoTools = { count("project-tools") },
             onCrop = { count("crop") },
             onArFace = { count("ar-face") },
             onLenses = { count("lenses") },
@@ -223,7 +250,6 @@ class ScreenshotClipToolbarTest {
             onAddOverlayImage = { count("add-image") },
             onAddOverlayVideo = { count("add-video") },
             onAdjust = { count("adjust") },
-            onEnhance = { count("enhance") },
             onReplace = { count("replace") },
             onSpeed = { count("speed") },
             onVolume = { count("volume") },

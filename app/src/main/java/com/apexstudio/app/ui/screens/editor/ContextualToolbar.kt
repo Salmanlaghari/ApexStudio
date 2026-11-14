@@ -71,7 +71,7 @@ internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
 internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
-    "Music", "SFX", "Enhance", "Color", "Templates", "Canvas",
+    "Music", "SFX", "Color", "Project tools", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
     "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
@@ -163,7 +163,6 @@ fun ContextualBottomToolbar(
     onAddOverlayVideo: () -> Unit,
     // Video-clip tools
     onAdjust: () -> Unit,
-    onEnhance: () -> Unit = onAdjust,
     onReplace: () -> Unit,
     onSpeed: () -> Unit,
     onVolume: () -> Unit,
@@ -257,7 +256,7 @@ fun ContextualBottomToolbar(
     // Subtitles opens the existing speech-recognition/captions panel. Kept
     // optional for source compatibility with standalone toolbar callers.
     onCaptions: () -> Unit = onText,
-    onTemplates: () -> Unit = onEditPack,
+    onProjectVideoTools: () -> Unit = onEditPack,
     onChallenge: () -> Unit = onText,
     onNext: () -> Unit = {},
     // Opens the editor's normal media picker (adds primary media, not a PiP overlay).
@@ -307,9 +306,8 @@ fun ContextualBottomToolbar(
     val secondaryItems: List<CtxToolItem> = listOf(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("SFX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary),
-            CtxToolItem("Enhance", Icons.Default.Tune, onClick = onEnhance),
             CtxToolItem("Color", Icons.Default.Palette, onClick = onColorWorkspace),
-            CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
+            CtxToolItem("Project tools", Icons.Default.Collections, onClick = onProjectVideoTools),
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),
             CtxToolItem("Subtitles", Icons.Default.Subtitles, onClick = onCaptions),
@@ -559,14 +557,17 @@ fun ContextualBottomToolbar(
         ).map(::routed)
         else -> clipItems.map(::routed)
     }
-    val easyMoreItems = listOf(
+    val easyMoreShortcuts = listOf(
         CtxToolItem("AI tools", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
         CtxToolItem("Captions", Icons.Default.Subtitles, tint = ApexPalette.NeonCyan, onClick = onCaptions),
-        CtxToolItem("Enhance", Icons.Default.HighQuality, tint = ApexPalette.NeonCyan, onClick = onEnhance),
         CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, tint = ApexPalette.NeonPink, onClick = onBgRemover),
-        CtxToolItem("Templates", Icons.Default.Collections, onClick = onTemplates),
+        CtxToolItem("Project tools", Icons.Default.Collections, onClick = onProjectVideoTools),
         CtxToolItem("History", Icons.Default.History, onClick = onHistory)
-    ).map(::routed) + moreItems
+    ).map(::routed)
+    // Keep readable shortcuts for shared actions, then append only tools that
+    // are not already represented by one of those shortcuts.
+    val easyMoreRepeatedLabels = setOf("AI", "Subtitles", "BG Remove", "Project tools", "History")
+    val easyMoreItems = easyMoreShortcuts + moreItems.filterNot { it.label in easyMoreRepeatedLabels }
 
     if (showToolbarNotes) {
         AlertDialog(
@@ -1087,8 +1088,7 @@ fun EditorBottomToolbarSection(
     // Optional override for hosts that own a dedicated effects workspace;
     // the default remains the real in-app FX panel route.
     onEffectsWorkspace: () -> Unit = { vm.openFxPanel() },
-    onQuickEnhance: () -> Unit = { vm.openAdjustmentsPanel() },
-    onQuickTemplates: () -> Unit = { vm.openTransmissionTemplatesPanel() },
+    onProjectVideoTools: () -> Unit = { vm.openTransmissionTemplatesPanel() },
     onQuickFilters: () -> Unit = { vm.openFilterPanel() },
     onChallenge: () -> Unit = { vm.openTextPanel() },
     onNext: () -> Unit = {},
@@ -1193,7 +1193,7 @@ fun EditorBottomToolbarSection(
         onDeviceAudio = onDeviceAudio,
         onChromaKey = onChromaKey,
         onCaptions = { vm.openCaptionsPanel() },
-        onTemplates = onQuickTemplates,
+        onProjectVideoTools = onProjectVideoTools,
         onChallenge = onChallenge,
         onNext = onNext,
         onMedia = onMedia,
@@ -1205,7 +1205,6 @@ fun EditorBottomToolbarSection(
         referenceActiveTool = referenceActiveTool,
         horizontalProjectLayout = horizontalProjectLayout,
         onAdjust = { vm.openAdjustmentsPanel() },
-        onEnhance = onQuickEnhance,
         // Overlay: system photo/video picker → overlay (PiP) clip at
         // the playhead. Same picker path as the V2-track "+" button.
         // P4: same overlay (PiP) route and pending flags as before —

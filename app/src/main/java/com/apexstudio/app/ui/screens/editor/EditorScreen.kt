@@ -271,7 +271,6 @@ private fun EditorScreenContent(
         onBack = closeAiPanel
     )
     var showVideoPresets by remember(projectId) { mutableStateOf(false) }
-    var quickPresetSection by remember(projectId) { mutableStateOf<QuickVideoPresetSection?>(null) }
     var showVideoUpscale by remember(projectId) { mutableStateOf(false) }
     var showLocalAnalysis by remember { mutableStateOf(false) }
     var showCropPanel by remember { mutableStateOf(false) }
@@ -1566,13 +1565,9 @@ private fun EditorScreenContent(
                 mediaPicker = mediaPicker,
                 horizontalProjectLayout = horizontalProjectLayout,
                 onEffectsWorkspace = { workspaceIsFilters = false; openEffectsWorkspace(false) },
-                onQuickEnhance = {
-                    quickPresetSection = QuickVideoPresetSection.ENHANCE
-                    activateLocalEditorPanel(EditorPanelKey.QUICK_PRESETS)
-                },
-                onQuickTemplates = {
-                    quickPresetSection = QuickVideoPresetSection.TEMPLATES
-                    activateLocalEditorPanel(EditorPanelKey.QUICK_PRESETS)
+                onProjectVideoTools = {
+                    showVideoPresets = true
+                    activateLocalEditorPanel(EditorPanelKey.VIDEO_PRESETS)
                 },
                 onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace(false) },
                 onChallenge = {
@@ -1721,9 +1716,6 @@ private fun EditorScreenContent(
     if (showLocalChallenge && activeEditorPanel == EditorPanelKey.LOCAL_CHALLENGE) {
         LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
     }
-    if (activeEditorPanel == EditorPanelKey.QUICK_PRESETS) quickPresetSection?.let { section ->
-        QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
-    }
     if (showAiPanel && activeEditorPanel == EditorPanelKey.AI_TOOLS) AiToolsOverlay(
         onClose = closeAiPanel,
         targetVideoName = aiPanelTarget?.name?.takeIf { it.isNotBlank() } ?: aiPanelTarget?.id,
@@ -1760,12 +1752,7 @@ private fun EditorScreenContent(
         },
         onClearReportFeedback = vm::clearAiContentReportFeedback)
     if (showVideoPresets && activeEditorPanel == EditorPanelKey.VIDEO_PRESETS) {
-        ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false },
-            onLearnedUpscale = { _, _ ->
-                showVideoPresets = false
-                showVideoUpscale = true
-                activateLocalEditorPanel(EditorPanelKey.VIDEO_UPSCALE)
-            })
+        ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false })
     }
     if (showVideoUpscale && activeEditorPanel == EditorPanelKey.VIDEO_UPSCALE) {
         VideoUpscaleOverlay(vm, onClose = { showVideoUpscale = false })

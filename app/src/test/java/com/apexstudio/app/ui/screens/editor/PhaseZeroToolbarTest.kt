@@ -64,7 +64,7 @@ class PhaseZeroToolbarTest {
     }
 
     @Test
-    fun `mobile quick tools dispatch music text enhance templates canvas effects stickers captions and filters`() {
+    fun `mobile quick tools dispatch project tools music text canvas effects stickers captions and filters`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent {
             testToolbar(ToolbarSelectionKind.NONE, calls)
@@ -74,40 +74,40 @@ class PhaseZeroToolbarTest {
             composeRule.onNodeWithText(label).assertIsDisplayed().performClick()
         }
         composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
-        listOf("Music", "Enhance", "Templates", "Canvas", "Subtitles").forEach { label ->
+        listOf("Music", "Project tools", "Canvas", "Subtitles").forEach { label ->
             composeRule.onNodeWithText(label).performScrollTo().performClick()
         }
 
         listOf(
-            "music", "text", "enhance", "templates", "crop",
+            "music", "text", "project-tools", "crop",
             "effects", "stickers", "captions", "filters"
         ).forEach { action -> assertEquals("$action callback", 1, calls[action] ?: 0) }
     }
 
-    @Test fun `global Enhance and video Adjust use independent callbacks in stacked dock`() {
+    @Test fun `Project tools and video Adjust use independent callbacks in stacked dock`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.VIDEO, calls) }
         composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
+        composeRule.onNodeWithText("Project tools").performScrollTo().performClick()
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
-        assertEquals(1, calls["enhance"] ?: 0)
+        assertEquals(1, calls["project-tools"] ?: 0)
         assertEquals(1, calls["adjust"] ?: 0)
         composeRule.onNodeWithTag("editor_global_toolbar").assertExists()
         composeRule.onNodeWithTag("editor_clip_toolbar").assertExists()
     }
 
-    @Test fun `editor wrapper keeps quick Enhance separate from actual Adjust panel`() {
+    @Test fun `editor wrapper routes Project tools separately from actual Adjust panel`() {
         val vm = com.apexstudio.app.presentation.viewmodel.EditorViewModel()
         val clip = com.apexstudio.app.domain.model.MediaClip("v", "V", "file:///v.mp4", 5000L, trimEndMs = 5000L)
         vm._state.value = vm.state.value.copy(project = com.apexstudio.app.domain.model.Project("p", "P", 5000L, clips = listOf(clip)), selectedClipId = clip.id)
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
-        var quickEnhance = 0
-        composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onQuickEnhance = { quickEnhance++ }) }
+        var projectTools = 0
+        composeRule.setContent { EditorBottomToolbarSection(vm.state.value, vm, picker, onProjectVideoTools = { projectTools++ }) }
         composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
-        composeRule.onNodeWithText("Enhance").performScrollTo().performClick()
-        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
+        composeRule.onNodeWithText("Project tools").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, projectTools); assertEquals(false, vm.state.value.adjustmentsPanelOpen) }
         composeRule.onNodeWithText("Adjust").performScrollTo().performClick()
-        composeRule.runOnIdle { assertEquals(1, quickEnhance); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
+        composeRule.runOnIdle { assertEquals(1, projectTools); assertEquals(true, vm.state.value.adjustmentsPanelOpen) }
     }
 
     @Test
@@ -171,7 +171,7 @@ class PhaseZeroToolbarTest {
             onEffects = { count("effects") },
             onStickers = { count("stickers") },
             onCaptions = { count("captions") },
-            onTemplates = { count("templates") },
+            onProjectVideoTools = { count("project-tools") },
             onCrop = { count("crop") },
             onArFace = { count("ar-face") },
             onLenses = { count("lenses") },
@@ -179,7 +179,6 @@ class PhaseZeroToolbarTest {
             onAddOverlayImage = { count("add-image") },
             onAddOverlayVideo = { count("add-video") },
             onAdjust = { count("adjust") },
-            onEnhance = { count("enhance") },
             onReplace = { count("replace") },
             onSpeed = { count("speed") },
             onVolume = { count("volume") },

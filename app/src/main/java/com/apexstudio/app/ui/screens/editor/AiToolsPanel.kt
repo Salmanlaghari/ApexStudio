@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.aireport.AI_REPORT_CONTACT
 import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.aireport.isCurrentAiContentReportTarget
 import com.apexstudio.app.data.aireport.openAiContentReportEmail
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.export.ProjectTransitionTimeline
@@ -72,32 +73,37 @@ internal fun resolveAiTargetClip(
     mainPreviewClip?.takeIf { isAiMainTrackVideo(it) }
 }
 
-/** Re-resolve the action target from the latest editor snapshot and live playhead at tap time. */
+/** Resolve the target from the latest editor snapshot using its remembered transition plan. */
 internal fun resolveCurrentAiVideoTarget(
     expectedProjectId: String,
     state: EditorState,
-    playheadMs: Long
+    playheadMs: Long,
+    transitionPlan: ProjectTransitionTimeline.Plan
 ): MediaClip? {
     val project = state.project?.takeIf { it.id == expectedProjectId } ?: return null
     val selectedClip = state.selectedClipId?.let { id -> project.clips.firstOrNull { it.id == id } }
-    val previewClip = ProjectTransitionTimeline.build(project.clips, project.transitions)
-        .entryAt(playheadMs)?.clip ?: timelinePreviewClip(project.clips, playheadMs)
+    val previewClip = transitionPlan.entryAt(playheadMs)?.clip ?: timelinePreviewClip(project.clips, playheadMs)
     return resolveAiTargetClip(selectedClip, state.selectedClipId, previewClip)
         ?.takeIf { isCurrentProjectAiVideoTarget(expectedProjectId, project.id, it) }
+}
+
+/** Keep the sheet's displayed target stable while playback advances; reject it if removed or switched away. */
+internal fun resolveLockedAiVideoTarget(
+    expectedProjectId: String,
+    state: EditorState,
+    lockedClipId: String?
+): MediaClip? {
+    val project = state.project?.takeIf { it.id == expectedProjectId } ?: return null
+    val clipId = lockedClipId?.takeIf(String::isNotBlank) ?: return null
+    val clip = project.clips.firstOrNull { it.id == clipId } ?: return null
+    return clip.takeIf { isCurrentProjectAiVideoTarget(expectedProjectId, project.id, it) }
 }
 
 internal fun isAiReportTargetCurrent(
     expectedProjectId: String,
     currentProject: Project?,
     target: AiContentReportTarget?
-): Boolean {
-    val project = currentProject ?: return false
-    val reportTarget = target ?: return false
-    if (expectedProjectId.isBlank() || project.id != expectedProjectId || reportTarget.projectId != expectedProjectId) return false
-    val clip = project.clips.firstOrNull { it.id == reportTarget.clipId } ?: return false
-    if (!isAiMainTrackVideo(clip) || clip.type.name != reportTarget.clipType) return false
-    return reportTarget.textOverlayId?.let { overlayId -> clip.textOverlays.any { it.id == overlayId } } ?: true
-}
+): Boolean = isCurrentAiContentReportTarget(expectedProjectId, currentProject, target)
 
 internal fun resolveAiVideoReportTarget(
     expectedProjectId: String,

@@ -20,6 +20,7 @@ import com.apexstudio.app.ai.AiCancellationToken
 import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
 import com.apexstudio.app.data.aireport.FileAiContentReportStore
+import com.apexstudio.app.data.aireport.isCurrentAiContentReportTarget
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.Job
@@ -72,7 +73,19 @@ class EditorViewModel(
     val aiContentReportState: StateFlow<AiContentReportUiState> = aiContentReportController.state
 
     fun submitAiContentReport(target: AiContentReportTarget?, reason: AiContentReportReason) {
-        aiContentReportController.submit(target, reason)
+        val expectedProjectId = projectId?.takeIf { it.isNotBlank() } ?: target?.projectId.orEmpty()
+        val isCurrent = {
+            isCurrentAiContentReportTarget(expectedProjectId, _state.value.project, target)
+        }
+        if (target == null || target.projectId.isBlank() || target.clipId.isBlank()) {
+            aiContentReportController.submit(target, reason, isCurrent)
+            return
+        }
+        if (!isCurrent()) {
+            aiContentReportController.rejectStaleTarget()
+            return
+        }
+        aiContentReportController.submit(target, reason, isCurrent)
     }
 
     fun clearAiContentReportFeedback() = aiContentReportController.clearFeedback()

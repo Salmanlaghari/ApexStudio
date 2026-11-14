@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import com.apexstudio.app.data.aireport.AiContentReportTarget
+import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -21,6 +22,9 @@ class AiToolsTargetTest {
         type = type,
         trackIndex = trackIndex
     )
+
+    private fun transitionPlan(project: Project) =
+        ProjectTransitionTimeline.build(project.clips, project.transitions)
 
     @Test
     fun explicitMainTrackVideoWinsOverThePreviewClip() {
@@ -64,19 +68,42 @@ class AiToolsTargetTest {
         val project = Project("project-a", "Edit", 10_000L, clips = listOf(first, latestSelection))
         val state = EditorState(project = project, selectedClipId = latestSelection.id)
 
-        assertEquals(latestSelection, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 0L))
+        assertEquals(latestSelection, resolveCurrentAiVideoTarget(
+            "project-a", state, playheadMs = 0L, transitionPlan = transitionPlan(project)
+        ))
     }
 
     @Test
-    fun actionTargetUsesTheLivePlayheadWhenThereIsNoExplicitSelection() {
+    fun actionTargetUsesTheLivePlayheadPlanAndTailFallbackWhenThereIsNoExplicitSelection() {
         val first = clip("first")
         val second = clip("second")
         val project = Project("project-a", "Edit", 10_000L, clips = listOf(first, second))
         val state = EditorState(project = project, selectedClipId = null, playerPositionMs = 0L)
+        val plan = transitionPlan(project)
 
-        assertEquals(first, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 0L))
-        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 5_000L))
-        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 10_000L))
+        assertEquals(first, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 0L, transitionPlan = plan))
+        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 5_000L, transitionPlan = plan))
+        assertEquals(second, plan.entryAt(9_999L)?.clip)
+        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 9_999L, transitionPlan = plan))
+        assertNull(plan.entryAt(10_000L))
+        assertEquals(second, resolveCurrentAiVideoTarget("project-a", state, playheadMs = 10_000L, transitionPlan = plan))
+    }
+
+    @Test
+    fun displayedPanelTargetStaysLockedAsThePlayheadMovesAndRejectsRemovedClips() {
+        val first = clip("first")
+        val second = clip("second")
+        val project = Project("project-a", "Edit", 10_000L, clips = listOf(first, second))
+        val atOpen = EditorState(project = project, selectedClipId = null, playerPositionMs = 0L)
+
+        assertEquals(first, resolveLockedAiVideoTarget("project-a", atOpen, first.id))
+        assertEquals(first, resolveLockedAiVideoTarget(
+            "project-a", atOpen.copy(playerPositionMs = 5_000L), first.id
+        ))
+        assertNull(resolveLockedAiVideoTarget(
+            "project-a", atOpen.copy(project = project.copy(clips = listOf(second))), first.id
+        ))
+        assertNull(resolveLockedAiVideoTarget("project-b", atOpen, first.id))
     }
 
     @Test
@@ -84,10 +111,14 @@ class AiToolsTargetTest {
         val main = clip("main")
         val overlay = clip("overlay", type = ClipType.OVERLAY, trackIndex = 1)
         val project = Project("project-a", "Edit", 5_000L, clips = listOf(main, overlay))
+        val plan = transitionPlan(project)
 
-        assertNull(resolveCurrentAiVideoTarget("project-b", EditorState(project = project), playheadMs = 0L))
         assertNull(resolveCurrentAiVideoTarget(
-            "project-a", EditorState(project = project, selectedClipId = overlay.id), playheadMs = 0L
+            "project-b", EditorState(project = project), playheadMs = 0L, transitionPlan = plan
+        ))
+        assertNull(resolveCurrentAiVideoTarget(
+            "project-a", EditorState(project = project, selectedClipId = overlay.id),
+            playheadMs = 0L, transitionPlan = plan
         ))
     }
 

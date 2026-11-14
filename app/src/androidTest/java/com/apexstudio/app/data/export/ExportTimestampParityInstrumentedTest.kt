@@ -1327,7 +1327,12 @@ class ExportTimestampParityInstrumentedTest {
         val projectName = "cfr-60-to-30-project-$id.mp4"
         val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
         val bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).apply {
-            eraseColor(Color.GREEN)
+            // Texture makes Ken Burns visibly change frames; a solid field would not.
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    setPixel(x, y, if ((x / 8 + y / 8) % 2 == 0) Color.GREEN else Color.MAGENTA)
+                }
+            }
         }
         var source: File? = null
         var selectedOutput: File? = null

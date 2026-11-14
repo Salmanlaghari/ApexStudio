@@ -185,7 +185,6 @@ data class EditorState(
     // are recalculated when the user requests Beats after loading a project.
     val beatMarkersByTrackUri: Map<String, List<Long>> = emptyMap(),
     val magneticSnapping: Boolean = true,
-    val rippleEditEnabled: Boolean = true,
     val opticalFlowMotionBlur: Boolean = false,
     val opticalFlowBlurIntensity: Float = 0.5f,
     val speedRampCurvePreset: String = "CUSTOM",

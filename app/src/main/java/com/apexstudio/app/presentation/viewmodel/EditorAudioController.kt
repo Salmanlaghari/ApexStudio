@@ -43,13 +43,6 @@ fun EditorViewModel.toggleMagneticSnapping() {
     _state.update { it.copy(magneticSnapping = next) }
 }
 
-
-fun EditorViewModel.toggleRippleEdit() {
-    val next = !_state.value.rippleEditEnabled
-    _state.update { it.copy(rippleEditEnabled = next) }
-}
-
-
 /**
  * Magnetically snaps [timeMs] to adjacent cut points, keyframes, or beat drop markers
  * if within [snapThresholdMs].

@@ -52,6 +52,13 @@ object PhotoVideoEncoder {
         return frames.takeIf { it in 1L..Int.MAX_VALUE.toLong() }?.toInt()
     }
 
+    /** Derive each PTS from its absolute frame index so fractional frame periods do not accumulate. */
+    internal fun presentationTimeUsForFrame(frameIndex: Int, frameRate: Int): Long {
+        require(frameIndex >= 0) { "Frame index must be non-negative" }
+        require(frameRate in 1..120) { "Frame rate must be between 1 and 120" }
+        return frameIndex.toLong() * 1_000_000L / frameRate.toLong()
+    }
+
     /**
      * Encode [bitmap] into a temp .mp4 in the app cache dir lasting approximately
      * [durationMs] (quantized to [frameRate]). Returns the finalized file, or null on failure.
@@ -65,7 +72,6 @@ object PhotoVideoEncoder {
         frameRate: Int = DEFAULT_FRAME_RATE
     ): File? = withContext(Dispatchers.Default) {
         val frameCount = frameCountForDurationMs(durationMs, frameRate) ?: return@withContext null
-        val frameDurationUs = 1_000_000L / frameRate
         val coroutineContext = currentCoroutineContext()
         var codec: MediaCodec? = null
         var muxer: MediaMuxer? = null
@@ -145,7 +151,7 @@ object PhotoVideoEncoder {
                         val frameYuv = yuvForFrame(framesQueued)
                         check(inputBuffer.remaining() >= frameYuv.size) { "Codec input buffer is too small" }
                         inputBuffer.put(frameYuv)
-                        val ptsUs = framesQueued.toLong() * frameDurationUs
+                        val ptsUs = presentationTimeUsForFrame(framesQueued, frameRate)
                         val lastFrame = framesQueued == frameCount - 1
                         codec!!.queueInputBuffer(
                             inputIndex,

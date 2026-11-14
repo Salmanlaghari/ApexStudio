@@ -47,6 +47,7 @@ import com.apexstudio.app.data.template.ShortsTemplateProjectFactory
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ChromaKeySettings
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ExportSettings
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -59,6 +60,7 @@ import com.apexstudio.app.presentation.viewmodel.buildProjectExportConfig
 import com.apexstudio.app.presentation.viewmodel.flushProject
 import com.apexstudio.app.presentation.viewmodel.selectFx
 import com.apexstudio.app.presentation.viewmodel.setFxSpeed
+import com.apexstudio.app.presentation.viewmodel.startPhotoExport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -1311,6 +1313,197 @@ class ExportTimestampParityInstrumentedTest {
             File(outputDir, projectName).delete()
             File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
             File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
+    @Test
+    fun photoStillImageSelectedExportMaintainsVerified60FpsCadenceAndStaticPixels() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val baseContext = instrumentation.targetContext
+        val id = UUID.randomUUID().toString()
+        val root = File(baseContext.cacheDir, "photo-export-60fps-$id").apply { mkdirs() }
+        val context = object : ContextWrapper(baseContext) {
+            override fun getApplicationContext(): android.content.Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getCacheDir(): File = File(root, "cache").apply { mkdirs() }
+            override fun getExternalFilesDir(type: String?): File {
+                val base = File(root, "external")
+                return (if (type == null) base else File(base, type)).apply { mkdirs() }
+            }
+        }
+        val width = 320
+        val height = 180
+        val durationMs = 1_800L
+        val sourceBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val color = when {
+                        x < width / 3 -> Color.RED
+                        x < width * 2 / 3 -> Color.GREEN
+                        else -> Color.BLUE
+                    }
+                    setPixel(x, y, color)
+                }
+            }
+        }
+        val photoFile = File(context.cacheDir, "still-$id.png")
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val store = ViewModelStore()
+        val editorJobs = mutableListOf<Job>()
+        var exportEngine: ExportEngine? = null
+        var photoExportJob: Job? = null
+        var encodedStillSource: File? = null
+        var selectedOutput: File? = null
+        var firstOutputFrame: Bitmap? = null
+        var middleOutputFrame: Bitmap? = null
+        var lastOutputFrame: Bitmap? = null
+
+        try {
+            photoFile.outputStream().use { output ->
+                assertTrue(
+                    "The deterministic photo fixture must encode as PNG",
+                    sourceBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                )
+            }
+            encodedStillSource = withTimeout(120_000L) {
+                requireNotNull(
+                    PhotoVideoEncoder.encodeStillImage(
+                        context = context,
+                        bitmap = sourceBitmap,
+                        durationMs = durationMs,
+                        frameRate = 60
+                    )
+                ) { "The PhotoVideoEncoder must produce an actual 60fps still intermediate." }
+            }
+            val stillTrack = readVideoTrack(encodedStillSource!!)
+            val expectedStillFrames = requireNotNull(
+                PhotoVideoEncoder.frameCountForDurationMs(durationMs, frameRate = 60)
+            )
+            assertEquals("The 60fps photo intermediate must retain every encoded frame", expectedStillFrames, stillTrack.presentationTimesUs.size)
+            assertFalse("The encoded still-image intermediate must not contain audio", hasTrack(encodedStillSource!!, "audio/"))
+            val firstPtsUs = stillTrack.presentationTimesUs.first()
+            stillTrack.presentationTimesUs.forEachIndexed { frameIndex, actualPtsUs ->
+                val expectedPtsUs = firstPtsUs + PhotoVideoEncoder.presentationTimeUsForFrame(frameIndex, frameRate = 60)
+                val ptsErrorUs = abs(actualPtsUs - expectedPtsUs)
+                assertTrue(
+                    "60fps still intermediate frame $frameIndex has $ptsErrorUs us PTS error; expected=$expectedPtsUs actual=$actualPtsUs",
+                    ptsErrorUs <= 50L
+                )
+            }
+            assertOutputTiming(
+                label = "PhotoVideoEncoder 60fps still intermediate",
+                output = stillTrack,
+                expectedDurationUs = durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            val clip = MediaClip(
+                id = "photo-60fps-$id",
+                name = "60fps still fixture",
+                uri = Uri.fromFile(photoFile).toString(),
+                durationMs = durationMs,
+                trimEndMs = durationMs,
+                type = ClipType.IMAGE
+            )
+            instrumentation.runOnMainSync {
+                val viewModel = EditorViewModel(context = context)
+                store.put("photo-export-60fps-$id", viewModel)
+                viewModel.viewModelScope.coroutineContext[Job]?.let(editorJobs::add)
+                exportEngine = requireNotNull(viewModel.exportEngine) {
+                    "The isolated photo-export ViewModel must initialize its export engine."
+                }
+                viewModel.startPhotoExport(
+                    clip = clip,
+                    resolution = "720p",
+                    fps = 60,
+                    quality = "high",
+                    aspectRatio = "16:9",
+                    bitrateMbps = 12
+                )
+                photoExportJob = requireNotNull(viewModel.photoExportJob) {
+                    "The production still-photo export path must start a coroutine."
+                }
+            }
+            withTimeout(240_000L) { requireNotNull(photoExportJob).join() }
+            val exportResult = requireNotNull(exportEngine).exportState.value
+            assertFalse("The production photo-export path must reach a terminal state", exportResult.isExporting)
+            assertNull("Selected still-image export must complete: ${exportResult.error}", exportResult.error)
+            val outputUri = requireNotNull(exportResult.outputUri) { "The photo-export output URI must be present." }
+            selectedOutput = File(requireNotNull(Uri.parse(outputUri).path) { "The photo export must return a file URI." })
+            val selectedTrack = readVideoTrack(selectedOutput!!)
+            assertOutputTiming(
+                label = "selected 60fps still-image export",
+                output = selectedTrack,
+                expectedDurationUs = durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 60
+            )
+            assertActual60FpsCadence("selected still-image export", selectedTrack, durationMs * 1_000L)
+            assertNull("A video-only still export must not synthesize an audio track", selectedTrack.audioDurationUs)
+
+            fun decodeFrame(timeUs: Long): Bitmap {
+                val retriever = MediaMetadataRetriever()
+                return try {
+                    retriever.setDataSource(selectedOutput!!.absolutePath)
+                    requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)) {
+                        "Could not decode the selected still-image export at ${timeUs}us"
+                    }
+                } finally {
+                    retriever.release()
+                }
+            }
+            firstOutputFrame = decodeFrame(0L)
+            middleOutputFrame = decodeFrame(durationMs * 500L)
+            lastOutputFrame = decodeFrame(durationMs * 950L)
+            val first = requireNotNull(firstOutputFrame)
+            assertEquals("Selected still export width", 1_280, first.width)
+            assertEquals("Selected still export height", 720, first.height)
+
+            fun rgbL1Distance(firstColor: Int, secondColor: Int): Int =
+                abs(Color.red(firstColor) - Color.red(secondColor)) +
+                    abs(Color.green(firstColor) - Color.green(secondColor)) +
+                    abs(Color.blue(firstColor) - Color.blue(secondColor))
+
+            assertTrue(
+                "The selected still export must retain its red region within RGB L1 distance 80",
+                rgbL1Distance(first.getPixel(first.width / 6, first.height / 2), Color.RED) <= 80
+            )
+            assertTrue(
+                "The selected still export must retain its green region within RGB L1 distance 80",
+                rgbL1Distance(first.getPixel(first.width / 2, first.height / 2), Color.GREEN) <= 80
+            )
+            assertTrue(
+                "The selected still export must retain its blue region within RGB L1 distance 80",
+                rgbL1Distance(first.getPixel(first.width * 5 / 6, first.height / 2), Color.BLUE) <= 80
+            )
+
+            listOf(requireNotNull(middleOutputFrame), requireNotNull(lastOutputFrame)).forEachIndexed { index, later ->
+                val changedPixels = countPixelsAtRgbL1DistanceAtLeast(first, later, 80)
+                assertTrue(
+                    "Static still frame ${index + 1} changed $changedPixels pixels at RGB L1 distance >=80; " +
+                        "500 changed pixels is the strict regression threshold",
+                    changedPixels < 500
+                )
+            }
+        } finally {
+            val engineSafeToDelete = exportEngine?.cancelAndCheckSafeToDelete() ?: true
+            instrumentation.runOnMainSync { store.clear() }
+            val viewModelJobsStopped = withTimeoutOrNull(20_000L) {
+                photoExportJob?.join()
+                editorJobs.forEach { it.join() }
+                true
+            } ?: false
+            firstOutputFrame?.recycle()
+            middleOutputFrame?.recycle()
+            lastOutputFrame?.recycle()
+            sourceBitmap.recycle()
+            if (engineSafeToDelete && viewModelJobsStopped) {
+                encodedStillSource?.delete()
+                selectedOutput?.delete()
+                photoFile.delete()
+                outputDir.deleteRecursively()
+                root.deleteRecursively()
+            }
         }
     }
 
@@ -2785,6 +2978,27 @@ class ExportTimestampParityInstrumentedTest {
         assertTrue("$label must contain timestamp intervals", intervals.isNotEmpty())
         assertTrue("$label has an interval shorter than the 60 fps cadence", intervals.minOrNull()!! >= 12_500L)
         assertTrue("$label has a gap too large for 60 fps: ${intervals.maxOrNull()} us", intervals.maxOrNull()!! <= 25_000L)
+    }
+
+    private fun countPixelsAtRgbL1DistanceAtLeast(first: Bitmap, second: Bitmap, threshold: Int): Int {
+        assertEquals("Compared frame widths must match", first.width, second.width)
+        assertEquals("Compared frame heights must match", first.height, second.height)
+        val pixelCount = first.width * first.height
+        val firstPixels = IntArray(pixelCount)
+        val secondPixels = IntArray(pixelCount)
+        first.getPixels(firstPixels, 0, first.width, 0, 0, first.width, first.height)
+        second.getPixels(secondPixels, 0, second.width, 0, 0, second.width, second.height)
+        var changedPixels = 0
+        for (index in 0 until pixelCount) {
+            val firstColor = firstPixels[index]
+            val secondColor = secondPixels[index]
+            val rgbL1Distance =
+                abs(Color.red(firstColor) - Color.red(secondColor)) +
+                    abs(Color.green(firstColor) - Color.green(secondColor)) +
+                    abs(Color.blue(firstColor) - Color.blue(secondColor))
+            if (rgbL1Distance >= threshold) changedPixels++
+        }
+        return changedPixels
     }
 
     private fun hasTrack(file: File, mimePrefix: String): Boolean {

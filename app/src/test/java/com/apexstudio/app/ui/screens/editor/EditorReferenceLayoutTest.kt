@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -71,7 +73,8 @@ class EditorReferenceLayoutTest {
         compose.runOnIdle {
             assertEquals(1_000L, vm.state.value.project?.clips?.single()?.trimStartMs)
         }
-        compose.onNodeWithTag("close_trim_panel_button").performClick()
+        compose.onNodeWithTag("close_trim_panel_button", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.waitForIdle()
         compose.runOnIdle {
             assertTrue("The Trim close action must clear the panel state", !vm.state.value.trimPanelOpen)

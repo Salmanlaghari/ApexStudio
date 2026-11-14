@@ -228,9 +228,11 @@ fun AiToolsPanel(
                 }
                 if (reportTarget == null) Text("A current main-track video is required; stale text-layer references are not reportable.",
                     style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary)
-                emailFeedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary) }
-                reportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = if (reportState.saved) MaterialTheme.colorScheme.primary else ApexPalette.TextSecondary) }
+                if (!showReportDialog) {
+                    emailFeedback?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = ApexPalette.TextSecondary) }
+                    reportState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = if (reportState.saved) MaterialTheme.colorScheme.primary else ApexPalette.TextSecondary) }
+                }
             }
         }
     }

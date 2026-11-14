@@ -206,6 +206,8 @@ class AiToolsPanelTest {
         }
         compose.onNodeWithText("Saved on this device. It was not sent to the developer.").assertExists()
         compose.onNodeWithText("Saved locally — not sent").assertExists()
+        compose.onNodeWithText("Cancel").activateVisibleControl()
+        compose.onNodeWithText("Saved on this device. It was not sent to the developer.").assertExists()
     }
 
     @Test

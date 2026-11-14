@@ -27,14 +27,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.apexstudio.app.domain.model.KeyframeParam
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette
 
 /**
- * PR169/170's preview-first shell stacks preview and timeline by default.
- * The side inspector remains available to hosts that explicitly opt into landscape.
+ * The source aspect chooses a stacked preview/timeline workspace. Wide windows
+ * may expose video properties in a dialog without stealing preview or timeline width.
  */
 @Composable
 internal fun ColumnScope.AdaptiveEditorWorkspace(
@@ -48,9 +49,14 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
     compactTimelinePaneHeight: Dp = 160.dp,
     manualTimelinePaneHeight: Dp? = null,
     onManualTimelinePaneHeightChange: (Dp?) -> Unit = {},
+    showVideoPropertiesAction: Boolean = false,
 ) {
     var inspectorOpen by rememberSaveable { mutableStateOf(true) }
+    var propertiesDialogOpen by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().weight(1f).testTag("adaptive-editor-workspace")) {
+        if (showVideoPropertiesAction && propertiesDialogOpen && !fullscreen) {
+            VideoPropertiesDialog(inspector = inspector) { propertiesDialogOpen = false }
+        }
         if (!landscape || fullscreen) {
             if (fullscreen) {
                 preview()
@@ -69,8 +75,12 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
             } else if (focused) {
                 Column(
                     Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-preview-pane"),
-                    content = preview
-                )
+                ) {
+                    if (showVideoPropertiesAction) {
+                        VideoPropertiesAction { propertiesDialogOpen = true }
+                    }
+                    preview()
+                }
                 Column(
                     Modifier.fillMaxWidth().weight(1f).testTag("portrait-timeline-pane"),
                     content = { timeline(false) }
@@ -145,9 +155,13 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                         }
                     ) {
                         Column(
-                            Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane"),
-                            content = preview
-                        )
+                            Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane")
+                        ) {
+                            if (showVideoPropertiesAction) {
+                                VideoPropertiesAction { propertiesDialogOpen = true }
+                            }
+                            preview()
+                        }
                         TimelineResizeHandle(onReset = { onManualTimelinePaneHeightChange(null) })
                         Column(
                             Modifier.fillMaxWidth()
@@ -180,6 +194,55 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                 }
             }
             Column(Modifier.fillMaxWidth().weight(if (focused) 1f else .52f).testTag("landscape-timeline"), content = { timeline(false) })
+        }
+    }
+}
+
+@Composable
+private fun VideoPropertiesAction(onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(48.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            onClick = onClick,
+            modifier = Modifier.semantics { contentDescription = "Open video properties" }
+                .testTag("open-video-properties"),
+        ) {
+            Text("Properties", color = EditorPalette.TextPrimary, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun VideoPropertiesDialog(
+    inspector: @Composable ColumnScope.() -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.widthIn(max = 520.dp).fillMaxWidth()
+                .heightIn(min = 240.dp, max = 560.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(EditorPalette.BgElevated)
+                .padding(16.dp)
+                .testTag("video-properties-dialog"),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Video properties", color = EditorPalette.TextPrimary, fontSize = 16.sp)
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.semantics { contentDescription = "Close video properties" },
+                ) {
+                    Text("Done")
+                }
+            }
+            Column(
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                content = inspector,
+            )
         }
     }
 }

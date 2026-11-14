@@ -20,6 +20,9 @@ data class AiContentReportUiState(
     val saved: Boolean = false
 )
 
+private const val REPORT_TARGET_CHANGED_MESSAGE =
+    "This report target is no longer in the current project. Nothing was submitted; reopen the report for a current clip."
+
 /** Binds an explicit report action to the private local journal; no network client is used. */
 class AiContentReportController(
     private val store: AiContentReportStore?,
@@ -29,10 +32,24 @@ class AiContentReportController(
     private val _state = MutableStateFlow(AiContentReportUiState())
     val state: StateFlow<AiContentReportUiState> = _state.asStateFlow()
 
-    fun submit(target: AiContentReportTarget?, reason: AiContentReportReason) {
+    /** Called by the ViewModel when its synchronous current-project validation rejects a captured target. */
+    fun rejectStaleTarget() {
+        if (!_state.value.isSaving) _state.value = AiContentReportUiState(message = REPORT_TARGET_CHANGED_MESSAGE)
+    }
+
+    /** [isTargetCurrent] is rechecked on the persistence dispatcher immediately before the journal append. */
+    fun submit(
+        target: AiContentReportTarget?,
+        reason: AiContentReportReason,
+        isTargetCurrent: () -> Boolean
+    ) {
         if (_state.value.isSaving) return
         if (target == null || target.projectId.isBlank() || target.clipId.isBlank()) {
             _state.value = AiContentReportUiState(message = "Select a valid project clip before flagging AI content.")
+            return
+        }
+        if (!targetIsCurrent(isTargetCurrent)) {
+            rejectStaleTarget()
             return
         }
         val destination = store
@@ -43,10 +60,21 @@ class AiContentReportController(
         _state.value = AiContentReportUiState(isSaving = true, message = "Saving report on this device…")
         scope.launch {
             try {
-                withContext(ioDispatcher) {
-                    destination.append(AiContentReport(target = target, reason = reason))
+                val appended = withContext(ioDispatcher) {
+                    if (!targetIsCurrent(isTargetCurrent)) false
+                    else {
+                        destination.append(AiContentReport(target = target, reason = reason))
+                        true
+                    }
                 }
-                _state.value = AiContentReportUiState(message = "Saved on this device. It was not sent to the developer.", saved = true)
+                if (!appended) {
+                    _state.value = AiContentReportUiState(message = REPORT_TARGET_CHANGED_MESSAGE)
+                    return@launch
+                }
+                _state.value = AiContentReportUiState(
+                    message = "Saved on this device. It was not sent to the developer.",
+                    saved = true
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -57,5 +85,13 @@ class AiContentReportController(
 
     fun clearFeedback() {
         if (!_state.value.isSaving) _state.value = AiContentReportUiState()
+    }
+
+    private fun targetIsCurrent(check: () -> Boolean): Boolean = try {
+        check()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
     }
 }

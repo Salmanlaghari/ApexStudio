@@ -38,6 +38,22 @@ class AiContentReportTest {
         assertEquals(null, resolveAiContentReportTarget("project-current", project, "clip-current", "stale-overlay")?.textOverlayId)
     }
 
+    @Test fun currentTargetPolicyRejectsSwitchedProjectsRemovedClipsAndNonVideoLayers() {
+        val currentProject = project()
+        val target = resolveAiContentReportTarget(
+            "project-current", currentProject, "clip-current", "caption-current"
+        )!!
+
+        assertTrue(isCurrentAiContentReportTarget("project-current", currentProject, target))
+        assertFalse(isCurrentAiContentReportTarget("other-project", currentProject, target))
+        assertFalse(isCurrentAiContentReportTarget("project-current", currentProject, target.copy(clipId = "removed")))
+        assertFalse(isCurrentAiContentReportTarget("project-current", currentProject, target.copy(clipType = "IMAGE")))
+        assertFalse(isCurrentAiContentReportTarget("project-current", currentProject, target.copy(textOverlayId = "removed")))
+        assertFalse(isCurrentAiContentReportTarget(
+            "project-current", currentProject.copy(clips = listOf(currentProject.clips.single().copy(trackIndex = 1))), target
+        ))
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test fun submissionCallbackPersistsReferenceAndReasonAcrossStoreInstances() = runTest {
         val directory = Files.createTempDirectory("ai-report-test").toFile()
@@ -47,7 +63,9 @@ class AiContentReportTest {
             val controller = AiContentReportController(store, this, dispatcher)
             val target = resolveAiContentReportTarget("project-current", project(), "clip-current", "caption-current")!!
 
-            controller.submit(target, AiContentReportReason.HATEFUL)
+            controller.submit(target, AiContentReportReason.HATEFUL) {
+                isCurrentAiContentReportTarget("project-current", project(), target)
+            }
             assertTrue(controller.state.value.isSaving)
             advanceUntilIdle()
 
@@ -64,6 +82,28 @@ class AiContentReportTest {
         } finally {
             directory.deleteRecursively()
         }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun targetThatBecomesStaleBeforeAsyncAppendIsNotPersisted() = runTest {
+        var targetCurrent = true
+        var persisted: AiContentReport? = null
+        val store = object : AiContentReportStore {
+            override fun append(report: AiContentReport) { persisted = report }
+        }
+        val controller = AiContentReportController(store, this, StandardTestDispatcher(testScheduler))
+        val target = resolveAiContentReportTarget(
+            "project-current", project(), "clip-current", "caption-current"
+        )!!
+
+        controller.submit(target, AiContentReportReason.OTHER) { targetCurrent }
+        assertTrue(controller.state.value.isSaving)
+        targetCurrent = false
+        advanceUntilIdle()
+
+        assertNull(persisted)
+        assertFalse(controller.state.value.saved)
+        assertTrue(controller.state.value.message!!.contains("no longer in the current project"))
     }
 
     @Test fun concurrentEditorStoresDoNotLoseReports() {
@@ -92,13 +132,13 @@ class AiContentReportTest {
         val controller = AiContentReportController(object : AiContentReportStore {
             override fun append(report: AiContentReport) { error("disk unavailable") }
         }, this, StandardTestDispatcher(testScheduler))
-        controller.submit(null, AiContentReportReason.OTHER)
+        controller.submit(null, AiContentReportReason.OTHER) { false }
         assertFalse(controller.state.value.isSaving)
         assertFalse(controller.state.value.saved)
         assertTrue(controller.state.value.message!!.contains("Select a valid"))
 
         val target = AiContentReportTarget("project-current", "clip-current", "VIDEO")
-        controller.submit(target, AiContentReportReason.OTHER)
+        controller.submit(target, AiContentReportReason.OTHER) { true }
         advanceUntilIdle()
         assertFalse(controller.state.value.saved)
         assertTrue(controller.state.value.message!!.contains("Could not save"))

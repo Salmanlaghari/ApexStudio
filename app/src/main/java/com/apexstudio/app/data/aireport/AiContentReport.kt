@@ -1,5 +1,6 @@
 package com.apexstudio.app.data.aireport
 
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Project
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -48,6 +49,19 @@ fun resolveAiContentReportTarget(
     val clip = project.clips.firstOrNull { it.id == clipId } ?: return null
     val textOverlayId = selectedTextOverlayId?.takeIf { id -> clip.textOverlays.any { it.id == id } }
     return AiContentReportTarget(project.id, clip.id, clip.type.name, textOverlayId)
+}
+
+/** Revalidate a captured report pointer against the current editable project before persistence. */
+fun isCurrentAiContentReportTarget(
+    expectedProjectId: String,
+    project: Project?,
+    target: AiContentReportTarget?
+): Boolean {
+    if (expectedProjectId.isBlank() || target == null || target.projectId != expectedProjectId) return false
+    val currentProject = project?.takeIf { it.id == expectedProjectId } ?: return false
+    val clip = currentProject.clips.firstOrNull { it.id == target.clipId } ?: return false
+    if (clip.type != ClipType.VIDEO || clip.trackIndex != 0 || target.clipType != clip.type.name) return false
+    return target.textOverlayId?.let { overlayId -> clip.textOverlays.any { it.id == overlayId } } ?: true
 }
 
 interface AiContentReportStore {

@@ -79,12 +79,30 @@ class ColorStudioExportEffectsTest {
             ColorStudioGrade(),
             createEffects = { throw IllegalArgumentException("malformed LUT source") },
             onInvalidGrade = { reportedInvalidGrade = it },
-            onFailure = { reportedFailure = it }
+            onFailure = { reportedFailure = it },
+            rethrowConstructionFailures = false
         )
 
         assertTrue(effects.isEmpty())
         assertTrue(reportedFailure is IllegalArgumentException)
         assertNull(reportedInvalidGrade)
+    }
+
+    @Test
+    fun `debug preview policy reports then rethrows unexpected construction failures`() {
+        var reportedFailure: Exception? = null
+        val failure = runCatching {
+            safeProjectColorStudioPreviewEffects<Effect>(
+                ColorStudioGrade(),
+                createEffects = { throw IllegalStateException("unexpected effect builder state") },
+                onInvalidGrade = {},
+                onFailure = { reportedFailure = it },
+                rethrowConstructionFailures = true
+            )
+        }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertEquals(failure, reportedFailure)
     }
 
     @Test

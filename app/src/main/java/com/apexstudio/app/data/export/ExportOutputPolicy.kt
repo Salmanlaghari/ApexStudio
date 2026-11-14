@@ -70,9 +70,10 @@ internal data class SourceFrameRateAdjustment(
  * This policy only decides whether to drop frames from a known faster video source. A peak speed
  * enables an item-wide rate limiter, but FrameDropEffect drops only samples arriving above its
  * target cadence; slower/equal sections are not forced to a different rate. Unknown, equal, and
- * lower-rate sources keep their timestamps. Do not use EditedMediaItem.setFrameRate as a video
- * conversion: encoder cadence policy and strict final audits handle that path. Still-photo exports
- * retain their separate image-to-video frame-rate setting.
+ * lower-rate sources keep their timestamps. A post-export CFR repair is considered separately and
+ * only when the full source PTS sequence proves an integer-multiple constant cadence; VFR, unknown,
+ * and speed-changed sources are never normalized this way. Do not use EditedMediaItem.setFrameRate
+ * as a video conversion. Still-photo exports retain their separate image-to-video frame-rate setting.
  */
 internal fun sourceFrameRateAdjustment(
     sourceFrameRate: Float?,
@@ -97,6 +98,35 @@ internal fun sourceFrameRateAdjustment(
     return SourceFrameRateAdjustment(
         dropSourceFrames = difference > SOURCE_FRAME_RATE_TOLERANCE_FPS
     )
+}
+
+/** Scan only sources that can be safely resampled onto the requested interval without fractional drift. */
+internal fun shouldInspectSourceCadenceForCfrNormalization(
+    sourceFrameRate: Float?,
+    requestedFps: Int,
+    speedEffectApplied: Boolean
+): Boolean {
+    if (speedEffectApplied) return false
+    val sourceFps = sourceFrameRate?.takeIf { it.isFinite() && it > 0f } ?: return false
+    val targetFps = effectiveExportFrameRate(requestedFps)
+    if (targetFps >= 60 || sourceFps <= targetFps + SOURCE_FRAME_RATE_TOLERANCE_FPS) return false
+    val ratio = sourceFps / targetFps
+    return ratio >= 1.5f && kotlin.math.abs(ratio - kotlin.math.round(ratio)) <= 0.02f
+}
+
+/** True only when metadata and the complete source PTS sequence prove an integer-multiple CFR input. */
+internal fun isVerifiedFasterCfrSource(
+    sourceFrameRate: Float?,
+    sourceCadence: SourceFrameCadenceAudit?,
+    requestedFps: Int,
+    speedEffectApplied: Boolean
+): Boolean {
+    if (!shouldInspectSourceCadenceForCfrNormalization(sourceFrameRate, requestedFps, speedEffectApplied)) {
+        return false
+    }
+    val reportedFps = sourceFrameRate?.takeIf { it.isFinite() && it > 0f } ?: return false
+    val measuredFps = sourceCadence?.constantFrameRateFps ?: return false
+    return kotlin.math.abs(measuredFps - reportedFps) <= maxOf(0.5f, reportedFps * 0.02f)
 }
 
 /**

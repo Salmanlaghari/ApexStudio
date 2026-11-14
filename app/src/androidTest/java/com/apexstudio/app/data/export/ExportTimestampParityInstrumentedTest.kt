@@ -1188,7 +1188,7 @@ class ExportTimestampParityInstrumentedTest {
             val sourceTrack = readVideoTrack(source)
             assertTrue("Fallback fixture must contain AAC audio", hasTrack(source, "audio/"))
             val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
-            val normalized = ExportCfr60FpsNormalizer.transcode(source, targetBitrate = 6_000_000)
+            val normalized = ExportCfrCadenceNormalizer.transcode(source, targetBitrate = 6_000_000)
             candidate = normalized
 
             val audit = inspectEncodedVideo(
@@ -1205,7 +1205,7 @@ class ExportTimestampParityInstrumentedTest {
                 "CFR fallback audio duration must remain synchronized",
                 abs(requireNotNull(candidateTrack.audioDurationUs) - sourceTrack.audioDurationUs!!) <= 150_000L
             )
-            val audioTracks = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+            val audioTracks = ExportCfrCadenceNormalizer.verifyAudioPreserved(
                 sourceFile = source,
                 candidateFile = normalized,
                 sourceVideoDurationMs = sourceDurationMs,

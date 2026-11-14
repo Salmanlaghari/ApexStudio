@@ -444,6 +444,7 @@ class ExportEngine(private val context: Context) {
                 var partialFile: File? = null
                 var mixedFile: File? = null
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
+                val projectPreparationContext = currentCoroutineContext()
                 try {
                     diagnostics.phase(ExportProgressStage.PREPARING.diagnosticName)
                     diagnostics.stage("project_preparation_started", "clips=${clips.size}")
@@ -488,6 +489,27 @@ class ExportEngine(private val context: Context) {
                                 SourceVideoFormatAudit(null, null, null)
                             }
                         }
+                    val sourceCadencesByUri = mutableMapOf<String, SourceFrameCadenceAudit>()
+                    fun sourceCadenceFor(uri: String, clipId: String, reportedFps: Float?): SourceFrameCadenceAudit =
+                        sourceCadencesByUri.getOrPut(uri) {
+                            try {
+                                inspectSourceFrameCadence(context, uri, reportedFps) {
+                                    projectPreparationContext.ensureActive()
+                                }.also { audit ->
+                                    diagnostics.stage("project_source_frame_cadence", "clipId=$clipId ${audit.diagnosticSummary()}")
+                                }
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                diagnostics.stage(
+                                    "project_source_frame_cadence_unavailable",
+                                    "clipId=$clipId failure=${failure.javaClass.simpleName}"
+                                )
+                                SourceFrameCadenceAudit(0, null, null, null)
+                            }
+                        }
+                    var hasProjectVideoSource = false
+                    var allProjectVideoSourcesVerifiedCfr = true
                     val items = plan.entries.map { entry ->
                         val clip = entry.clip
                         val itemConfig = config.copy(
@@ -505,13 +527,26 @@ class ExportEngine(private val context: Context) {
                         val speedPair = buildSpeedProvider(itemConfig)?.let {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
+                        val sourceFormat = sourceFormatFor(clip.uri, clip.id)
                         val cadenceAdjustment = sourceFrameRateAdjustment(
-                            sourceFrameRate = sourceFormatFor(clip.uri, clip.id).reportedFps,
+                            sourceFrameRate = sourceFormat.reportedFps,
                             requestedFps = config.fps,
                             constantSpeed = itemConfig.clipSpeed,
                             speedPoints = itemConfig.speedPoints,
                             speedEffectApplied = speedPair != null
                         )
+                        if (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
+                            hasProjectVideoSource = true
+                            val sourceCadence = if (shouldInspectSourceCadenceForCfrNormalization(
+                                    sourceFormat.reportedFps, config.fps, speedPair != null
+                                )) {
+                                sourceCadenceFor(clip.uri, clip.id, sourceFormat.reportedFps)
+                            } else null
+                            val verifiedCfr = isVerifiedFasterCfrSource(
+                                sourceFormat.reportedFps, sourceCadence, config.fps, speedPair != null
+                            )
+                            if (!verifiedCfr) allProjectVideoSourcesVerifiedCfr = false
+                        }
                         val keyframeClock = keyframeClockFor(itemConfig)
                         val sharedAnimation = itemConfig.sharedVideoClip
                         val videoEffects = buildList<androidx.media3.common.Effect> {
@@ -852,7 +887,9 @@ class ExportEngine(private val context: Context) {
                     }
                     val validationWarning = validateEncodedOutput(
                         finishedFile, config.fps, renderResult.videoFrameCount,
-                        renderResult.durationMs, diagnostics, config
+                        renderResult.durationMs, diagnostics, config,
+                        normalizeKnownCfrFasterSource =
+                            hasProjectVideoSource && allProjectVideoSourcesVerifiedCfr
                     )
                     check(finishedFile.parentFile?.canonicalPath == destination.parentFile?.canonicalPath) {
                         "Project export candidate must be in the destination directory for atomic publication"
@@ -1152,6 +1189,32 @@ class ExportEngine(private val context: Context) {
                 // Crop before speed changes, on the clipped source clock. This avoids numerical
                 // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
                 val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
+                val sourceCadenceAudit = if (config.pipOverlays.isEmpty() &&
+                    shouldInspectSourceCadenceForCfrNormalization(
+                        sourceAudit?.reportedFps, config.fps, speedPair != null
+                    )
+                ) {
+                    try {
+                        val sourceCadenceContext = currentCoroutineContext()
+                        inspectSourceFrameCadence(context, inputUri, sourceAudit?.reportedFps) {
+                            sourceCadenceContext.ensureActive()
+                        }.also { audit ->
+                            diagnostics.stage("source_frame_cadence", audit.diagnosticSummary())
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        diagnostics.stage(
+                            "source_frame_cadence_unavailable",
+                            "failure=${failure.javaClass.simpleName}"
+                        )
+                        null
+                    }
+                } else null
+                val normalizeKnownCfrFasterSource = config.pipOverlays.isEmpty() &&
+                    isVerifiedFasterCfrSource(
+                        sourceAudit?.reportedFps, sourceCadenceAudit, config.fps, speedPair != null
+                    )
                 val activeFaceCrop = config.faceCropConfig
                 if (activeFaceCrop != null) {
                     videoEffects.add(FaceCropGlEffect.forExport(activeFaceCrop.exportConfig()))
@@ -1441,7 +1504,8 @@ class ExportEngine(private val context: Context) {
                         buildHardwareTransformer(
                             config, outputFile, run, config.musicMixTracks,
                             overlayAudioSources = config.overlayAudioSources,
-                            diagnostics = diagnostics
+                            diagnostics = diagnostics,
+                            normalizeKnownCfrFasterSource = normalizeKnownCfrFasterSource
                         )
                     },
                     start = { it.start(editedMediaItem, outputFile.absolutePath) },
@@ -1937,8 +2001,10 @@ class ExportEngine(private val context: Context) {
         transformerFrameCount: Int?,
         transformerDurationMs: Long?,
         diagnostics: ExportDiagnosticTrace?,
-        config: ExportConfig
+        config: ExportConfig,
+        normalizeKnownCfrFasterSource: Boolean = false
     ): String? {
+        var cfrNormalizationRequired = false
         try {
             val audit = inspectEncodedVideo(
                 context = context,
@@ -1968,64 +2034,86 @@ class ExportEngine(private val context: Context) {
                 if (mismatch != null) throw IllegalStateException(mismatch)
             }
 
-            if (ExportCfr60FpsNormalizer.shouldNormalize(config, audit)) {
-                diagnostics?.stage("cfr60_fallback_started", audit.diagnosticSummary())
-                val candidate = ExportCfr60FpsNormalizer.transcode(
+            cfrNormalizationRequired = ExportCfrCadenceNormalizer.shouldNormalize(
+                config, audit, verifiedFasterCfrSource = normalizeKnownCfrFasterSource
+            )
+            if (cfrNormalizationRequired) {
+                val targetFps = effectiveExportFrameRate(config.fps)
+                diagnostics?.stage("cfr${targetFps}_fallback_started", audit.diagnosticSummary())
+                val candidate = ExportCfrCadenceNormalizer.transcode(
                     inputFile = outputFile,
-                    targetBitrate = exportTargetBitrate(config)
+                    targetBitrate = exportTargetBitrate(config),
+                    targetFps = targetFps
                 )
                 try {
                     val candidateAudit = inspectEncodedVideo(
                         context = context,
                         file = candidate,
-                        requestedFps = 60,
+                        requestedFps = targetFps,
                         // The source transform's frame count is no longer comparable after frame generation.
                         transformerFrameCount = null,
                         transformerDurationMs = transformerDurationMs
                     )
-                    diagnostics?.stage("cfr60_fallback_audited", candidateAudit.diagnosticSummary())
+                    diagnostics?.stage("cfr${targetFps}_fallback_audited", candidateAudit.diagnosticSummary())
                     check(candidateAudit.videoMimeType == audit.videoMimeType &&
                         candidateAudit.videoWidth == audit.videoWidth &&
                         candidateAudit.videoHeight == audit.videoHeight
                     ) {
-                        "The 60 fps conversion changed the rendered video format or dimensions."
+                        "The $targetFps fps conversion changed the rendered video format or dimensions."
                     }
                     val expectedDurationMs = audit.outputDurationMs ?: transformerDurationMs
                     val candidateDurationMs = candidateAudit.outputDurationMs
                     if (expectedDurationMs != null && candidateDurationMs != null) {
                         check(kotlin.math.abs(candidateDurationMs - expectedDurationMs) <= 150L) {
-                            "The 60 fps conversion changed the rendered video duration."
+                            "The $targetFps fps conversion changed the rendered video duration."
                         }
                     }
                     val sourceVideoDurationMs = audit.outputDurationMs
-                        ?: throw IllegalStateException("The source video duration could not be verified before 60 fps conversion.")
+                        ?: throw IllegalStateException("The source video duration could not be verified before $targetFps fps conversion.")
                     val verifiedCandidateDurationMs = candidateDurationMs
                         ?: throw IllegalStateException("The converted video duration could not be verified.")
-                    val audioTrackCount = ExportCfr60FpsNormalizer.verifyAudioPreserved(
+                    val audioTrackCount = ExportCfrCadenceNormalizer.verifyAudioPreserved(
                         sourceFile = outputFile,
                         candidateFile = candidate,
                         sourceVideoDurationMs = sourceVideoDurationMs,
-                        candidateVideoDurationMs = verifiedCandidateDurationMs
+                        candidateVideoDurationMs = verifiedCandidateDurationMs,
+                        targetFps = targetFps
                     )
-                    diagnostics?.stage("cfr60_fallback_audio_verified", "audioTracks=$audioTrackCount")
+                    diagnostics?.stage("cfr${targetFps}_fallback_audio_verified", "audioTracks=$audioTrackCount")
                     val candidateWarning = candidateAudit.warning
                     if (candidateWarning != null) {
-                        throw IllegalStateException("The converted video failed its 60 fps cadence audit: $candidateWarning")
+                        throw IllegalStateException("The converted video failed its $targetFps fps audit: $candidateWarning")
+                    }
+                    val candidateCadenceError = if (targetFps == 60) {
+                        candidateAudit.strict60FpsCadenceError
+                    } else {
+                        ExportCfrCadenceNormalizer.targetCadenceError(candidateAudit, targetFps)
+                    }
+                    if (candidateCadenceError != null) {
+                        throw IllegalStateException("The converted video failed its $targetFps fps cadence audit: $candidateCadenceError")
                     }
                     currentCoroutineContext().ensureActive()
-                    ExportCfr60FpsNormalizer.replaceAtomically(candidate, outputFile)
+                    ExportCfrCadenceNormalizer.replaceAtomically(candidate, outputFile, targetFps)
                     val publishedAudit = inspectEncodedVideo(
                         context = context,
                         file = outputFile,
-                        requestedFps = 60,
+                        requestedFps = targetFps,
                         transformerFrameCount = null,
                         transformerDurationMs = transformerDurationMs
                     )
                     val publishedWarning = publishedAudit.warning
                     if (publishedWarning != null) {
-                        throw IllegalStateException("The published 60 fps video failed its final cadence audit: $publishedWarning")
+                        throw IllegalStateException("The published $targetFps fps video failed its final audit: $publishedWarning")
                     }
-                    diagnostics?.stage("cfr60_fallback_completed", publishedAudit.diagnosticSummary())
+                    val publishedCadenceError = if (targetFps == 60) {
+                        publishedAudit.strict60FpsCadenceError
+                    } else {
+                        ExportCfrCadenceNormalizer.targetCadenceError(publishedAudit, targetFps)
+                    }
+                    if (publishedCadenceError != null) {
+                        throw IllegalStateException("The published $targetFps fps video failed its final cadence audit: $publishedCadenceError")
+                    }
+                    diagnostics?.stage("cfr${targetFps}_fallback_completed", publishedAudit.diagnosticSummary())
                     diagnostics?.stage("encoded_output_validated", publishedAudit.diagnosticSummary())
                     return null
                 } finally {
@@ -2044,9 +2132,9 @@ class ExportEngine(private val context: Context) {
             if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
                 throw IllegalStateException("8K export was blocked because its final video format could not be verified.", failure)
             }
-            if (config.fps == 60) {
+            if (config.fps == 60 || cfrNormalizationRequired) {
                 throw IllegalStateException(
-                    failure.message ?: "The final encoded video could not be verified at 60 fps.",
+                    failure.message ?: "The final encoded video could not be verified at ${effectiveExportFrameRate(config.fps)} fps.",
                     failure
                 )
             }
@@ -2061,7 +2149,8 @@ class ExportEngine(private val context: Context) {
         run: Any,
         musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
         overlayAudioSources: List<AudioExportSource> = emptyList(),
-        diagnostics: ExportDiagnosticTrace? = null
+        diagnostics: ExportDiagnosticTrace? = null,
+        normalizeKnownCfrFasterSource: Boolean = false
     ): Transformer {
         // Let Media3 negotiate the normal profile/level for standard exports.
         // 8K passes the exact hardware encoder verified by Export8kCapability.
@@ -2105,7 +2194,8 @@ class ExportEngine(private val context: Context) {
                     )
                     validateEncodedOutput(
                         outputFile, config.fps, exportResult.videoFrameCount,
-                        exportResult.durationMs, diagnostics, config
+                        exportResult.durationMs, diagnostics, config,
+                        normalizeKnownCfrFasterSource
                     )
                 }
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
@@ -2257,7 +2347,8 @@ class ExportEngine(private val context: Context) {
                         )
                         val mixedOutputWarning = validateEncodedOutput(
                             mixedFile, config.fps, exportResult.videoFrameCount,
-                            exportResult.durationMs, diagnostics, config
+                            exportResult.durationMs, diagnostics, config,
+                            normalizeKnownCfrFasterSource
                         )
                         videoValidationWarning = listOfNotNull(videoValidationWarning, mixedOutputWarning)
                             .distinct().joinToString(" ").ifBlank { null }

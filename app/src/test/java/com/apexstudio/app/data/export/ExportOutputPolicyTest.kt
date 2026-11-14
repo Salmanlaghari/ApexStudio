@@ -85,6 +85,23 @@ class ExportOutputPolicyTest {
         ).last() is FrameDropEffect)
     }
 
+    @Test
+    fun cfrNormalizationRequiresVerifiedIntegerMultipleAndNoSpeedEffect() {
+        assertTrue(shouldInspectSourceCadenceForCfrNormalization(60f, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(60f, 24, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(60f, 30, speedEffectApplied = true))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(null, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForCfrNormalization(30f, 30, speedEffectApplied = false))
+
+        val constant60 = auditSourceFrameTimestamps((0 until 60).map { it * 16_667L }, 60f)
+        val variable60 = auditSourceFrameTimestamps(
+            listOf(0L, 16_667L, 33_334L, 83_334L, 100_001L, 116_668L), 60f
+        )
+        assertTrue(isVerifiedFasterCfrSource(60f, constant60, 30, speedEffectApplied = false))
+        assertFalse(isVerifiedFasterCfrSource(60f, variable60, 30, speedEffectApplied = false))
+        assertFalse(isVerifiedFasterCfrSource(60f, constant60, 30, speedEffectApplied = true))
+    }
+
     @Test fun `8K request uses exact landscape and portrait UHD output dimensions`() {
         assertEquals(7680 to 4320, AspectCropTransformation.targetSizeFor("8K", "16:9"))
         assertEquals(4320 to 7680, AspectCropTransformation.targetSizeFor("8K", "9:16"))

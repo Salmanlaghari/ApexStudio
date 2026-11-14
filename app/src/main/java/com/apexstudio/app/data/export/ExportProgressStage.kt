@@ -13,3 +13,17 @@ enum class ExportProgressStage(
     FINALIZATION("Finalizing export…", "finalization"),
     COMPLETE("Export complete", null)
 }
+
+internal const val PROJECT_VIDEO_RENDER_PROGRESS_OFFSET = 0.01f
+internal const val PROJECT_VIDEO_RENDER_PROGRESS_WEIGHT = 0.89f
+
+internal fun projectVideoRenderProgress(renderFraction: Float): Float =
+    PROJECT_VIDEO_RENDER_PROGRESS_OFFSET + renderFraction.coerceIn(0f, 1f) * PROJECT_VIDEO_RENDER_PROGRESS_WEIGHT
+
+internal fun projectVideoRenderFraction(overallProgress: Float): Float? {
+    val renderEnd = PROJECT_VIDEO_RENDER_PROGRESS_OFFSET + PROJECT_VIDEO_RENDER_PROGRESS_WEIGHT
+    if (!overallProgress.isFinite() || overallProgress < PROJECT_VIDEO_RENDER_PROGRESS_OFFSET || overallProgress > renderEnd) {
+        return null
+    }
+    return ((overallProgress - PROJECT_VIDEO_RENDER_PROGRESS_OFFSET) / PROJECT_VIDEO_RENDER_PROGRESS_WEIGHT).coerceIn(0f, 1f)
+}

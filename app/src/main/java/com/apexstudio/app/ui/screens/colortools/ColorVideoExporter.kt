@@ -13,6 +13,7 @@ import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -112,12 +113,18 @@ internal object ColorVideoExporter {
     }
 
     /** Writes an independent MP4. The input is the full original source, not the project trim or composition. */
-    suspend fun export(context: Context, uri: Uri, grade: ColorStudioGrade): File {
+    suspend fun export(
+        context: Context,
+        uri: Uri,
+        grade: ColorStudioGrade,
+        onProgress: (Int) -> Unit = {}
+    ): File {
         require(grade.hasValidRenderParameters()) { "Color adjustment values are outside the supported range." }
         pruneOrphanedNativeFiles(context)
         val lease = NativeFileLease()
         var nativeLaunchAttempted = false
         var publishedOutput: File? = null
+        val lastReportedProgress = AtomicInteger(0)
         try {
             val info = inspect(context, uri)
             require(info.supported) { info.reason ?: "Selected video is unsupported." }
@@ -141,12 +148,21 @@ internal object ColorVideoExporter {
                 outputFile.absolutePath
             )
             nativeLaunchAttempted = true
-            val session = executeCancellable(args, lease::markNativeFinished)
+            val session = executeCancellable(args, lease::markNativeFinished) { encodedTimeMs ->
+                colorVideoExportPercent(encodedTimeMs, info.durationSeconds * 1_000.0)?.let { measured ->
+                    val percent = updateMaximumProgress(lastReportedProgress, measured)
+                    runCatching { onProgress(percent) }
+                }
+            }
             val returnCode = session.returnCode?.value ?: -1
             check(returnCode == 0 && outputFile.isFile && outputFile.length() > 0L) {
                 "FFmpeg could not finish the standalone Color video export (code $returnCode)."
             }
-            return publishPendingOutput(outputFile).also { publishedOutput = it }
+            return publishPendingOutput(outputFile).also {
+                publishedOutput = it
+                val completedPercent = updateMaximumProgress(lastReportedProgress, 100)
+                runCatching { onProgress(completedPercent) }
+            }
         } catch (failure: Throwable) {
             publishedOutput?.delete()
             throw failure
@@ -202,13 +218,22 @@ internal object ColorVideoExporter {
         return filters.joinToString(",")
     }
 
-    private suspend fun executeCancellable(arguments: Array<String>, onNativeFinished: () -> Unit): FFmpegSession =
+    private suspend fun executeCancellable(
+        arguments: Array<String>,
+        onNativeFinished: () -> Unit,
+        onStatistics: (Double) -> Unit
+    ): FFmpegSession =
         executeCancellableNativeSession(
             startSession = { onComplete ->
-                val session = FFmpegKit.executeWithArgumentsAsync(arguments) { completed ->
-                    if (completed == null) onComplete(null, IllegalStateException("FFmpegKit returned no session result."))
-                    else onComplete(completed, null)
-                }
+                val session = FFmpegKit.executeWithArgumentsAsync(
+                    arguments,
+                    { completed ->
+                        if (completed == null) onComplete(null, IllegalStateException("FFmpegKit returned no session result."))
+                        else onComplete(completed, null)
+                    },
+                    null,
+                    { statistics -> onStatistics(statistics.time.toDouble()) }
+                )
                 session.sessionId
             },
             cancelSession = { sessionId -> FFmpegKit.cancel(sessionId) },
@@ -218,6 +243,14 @@ internal object ColorVideoExporter {
                 Log.w(TAG, "FFmpeg cancellation callback timed out; retaining staged Color files until native completion.")
             }
         )
+
+    private fun updateMaximumProgress(progress: AtomicInteger, candidate: Int): Int {
+        while (true) {
+            val previous = progress.get()
+            val next = maxOf(previous, candidate)
+            if (previous == next || progress.compareAndSet(previous, next)) return next
+        }
+    }
 
     internal suspend fun <T : Any> executeCancellableNativeSession(
         startSession: (onComplete: (T?, Throwable?) -> Unit) -> Long,

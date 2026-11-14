@@ -5,6 +5,7 @@ import com.apexstudio.app.domain.model.ColorStudioGrade
 import com.apexstudio.app.presentation.state.EditorState
 import kotlinx.coroutines.flow.MutableStateFlow
 
+/** Bounds synchronous UI work while tolerating a short burst of playhead/autosave/analysis updates. */
 private const val MAX_PROJECT_COLOR_GRADE_COMMIT_ATTEMPTS = 8
 
 internal sealed class ProjectColorGradeCommitResult {

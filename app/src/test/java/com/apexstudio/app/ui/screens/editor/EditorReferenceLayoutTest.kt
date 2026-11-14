@@ -72,6 +72,10 @@ class EditorReferenceLayoutTest {
             assertEquals(1_000L, vm.state.value.project?.clips?.single()?.trimStartMs)
         }
         compose.onNodeWithTag("close_trim_panel_button").performClick()
+        compose.waitForIdle()
+        compose.runOnIdle {
+            assertTrue("The Trim close action must clear the panel state", !vm.state.value.trimPanelOpen)
+        }
         assertTrue(
             "Trim panel must close before returning to editing tools",
             compose.onAllNodesWithTag("close_trim_panel_button").fetchSemanticsNodes().isEmpty()

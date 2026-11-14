@@ -693,7 +693,7 @@ class ExportEngine(private val context: Context) {
                             // Grade footage pixels before clip-attached titles and stickers so
                             // overlay colors remain authored; project signatures/drawings are
                             // likewise composed above the grade below.
-                            config.colorStudioGrade?.let { grade ->
+                            projectColorStudioGradeForClip(clip, config.colorStudioGrade)?.let { grade ->
                                 addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                             }
                             // These windows are clip-output-relative: the trimmed sequence item starts at 0,

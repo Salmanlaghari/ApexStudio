@@ -8,6 +8,7 @@ import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -46,6 +47,36 @@ class ColorStudioExportEffectsTest {
             createColorStudioVideoEffects(context, ColorStudioGrade(sharpness = Float.NaN))
         }.exceptionOrNull()
         assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `malformed persisted grade skips preview effect construction`() {
+        var constructed = false
+        var reportedFailure: Exception? = null
+
+        val effects = safeProjectColorStudioPreviewEffects(
+            ColorStudioGrade(brightness = Float.NaN),
+            createEffects = { constructed = true; listOf("preview") },
+            onFailure = { reportedFailure = it }
+        )
+
+        assertTrue(effects.isEmpty())
+        assertFalse(constructed)
+        assertTrue(reportedFailure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `preview effect construction failure falls back without throwing`() {
+        var reportedFailure: Exception? = null
+
+        val effects = safeProjectColorStudioPreviewEffects(
+            ColorStudioGrade(),
+            createEffects = { throw IllegalArgumentException("malformed LUT source") },
+            onFailure = { reportedFailure = it }
+        )
+
+        assertTrue(effects.isEmpty())
+        assertTrue(reportedFailure is IllegalArgumentException)
     }
 
     @Test

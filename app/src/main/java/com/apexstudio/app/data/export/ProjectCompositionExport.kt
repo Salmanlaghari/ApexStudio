@@ -22,7 +22,9 @@ import com.apexstudio.app.domain.model.toVideoAdjustments
 import com.apexstudio.app.domain.model.hasValidParameters as hasValidChromaParameters
 import com.apexstudio.app.domain.model.MaskModel
 import com.apexstudio.app.domain.model.MaskShape
+import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.data.color.hasValidRenderParameters
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
 import com.apexstudio.app.data.gl.PackedTransitionGlEffect
 
 /** Monotonic, finite progress for multi-phase project export (0..99% before completion). */
@@ -46,6 +48,12 @@ internal fun backgroundReplaceExportIssue(clip: MediaClip): String? {
     }
     return null
 }
+
+/** Keep the project Color grade scoped to V1 video footage, even if still-image export is added later. */
+internal fun projectColorStudioGradeForClip(
+    clip: MediaClip,
+    grade: ColorStudioGrade?
+): ColorStudioGrade? = grade?.takeIf { clip.isProjectColorGradeTarget() }
 
 /**
  * Pure, fail-closed gate for the deliberately small sequential V1 export path.

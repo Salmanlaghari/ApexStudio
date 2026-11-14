@@ -384,6 +384,15 @@ class ProjectCompositionExportTest {
     }
 
     @Test
+    fun `project Color Studio grade is scoped to main-track videos`() {
+        val grade = ColorStudioGrade(brightness = 0.1f)
+
+        assertEquals(grade, projectColorStudioGradeForClip(clip(), grade))
+        assertNull(projectColorStudioGradeForClip(clip(type = ClipType.IMAGE), grade))
+        assertNull(projectColorStudioGradeForClip(clip(track = 1), grade))
+    }
+
+    @Test
     fun `per clip GPU filter state stays attached to its own project item`() {
         val first = clip().copy(gpuFilterConfig = GpuFilterConfig(
             stylisticEffect = StylisticEffectType.VIGNETTE,

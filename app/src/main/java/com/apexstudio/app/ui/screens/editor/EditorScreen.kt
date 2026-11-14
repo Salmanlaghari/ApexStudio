@@ -37,6 +37,7 @@ import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.color.isProjectColorGradeTarget
 import com.apexstudio.app.data.color.projectColorGradeEffectsByClipId
+import com.apexstudio.app.data.color.safeProjectColorStudioPreviewEffects
 import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
@@ -680,7 +681,15 @@ private fun EditorScreenContent(
         val grade = projectColorGrade ?: return@produceState
         if (!shouldGradeMainPreview) return@produceState
         value = withContext(Dispatchers.Default) {
-            com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+            safeProjectColorStudioPreviewEffects(
+                grade,
+                createEffects = {
+                    com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+                },
+                onFailure = { failure ->
+                    Log.e("EditorScreen", "Project Color grade preview could not be prepared", failure)
+                }
+            )
         }
     }
     val transitionColorGradeTargetClips = remember(projectTransitionPlan) {
@@ -693,8 +702,16 @@ private fun EditorScreenContent(
         val grade = projectColorGrade ?: return@produceState
         if (transitionColorGradeTargetClips.isEmpty()) return@produceState
         value = withContext(Dispatchers.Default) {
-            projectColorGradeEffectsByClipId(transitionColorGradeTargetClips) {
-                com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+            projectColorGradeEffectsByClipId(transitionColorGradeTargetClips) { clip ->
+                safeProjectColorStudioPreviewEffects(
+                    grade,
+                    createEffects = {
+                        com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+                    },
+                    onFailure = { failure ->
+                        Log.e("EditorScreen", "Project Color grade preview failed for ${clip.id}", failure)
+                    }
+                )
             }
         }
     }

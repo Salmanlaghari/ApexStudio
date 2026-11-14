@@ -27,6 +27,7 @@ class EditorProjectColorStudioControllerTest {
         assertTrue(viewModel.applyProjectColorStudioGrade(grade))
         assertEquals(grade, viewModel.state.value.project?.colorStudioGrade)
         assertTrue(viewModel.state.value.canUndo)
+        assertNull(viewModel.undoStack.last().project.colorStudioGrade)
 
         assertFalse(viewModel.applyProjectColorStudioGrade(grade.copy(brightness = Float.NaN)))
         assertEquals(grade, viewModel.state.value.project?.colorStudioGrade)

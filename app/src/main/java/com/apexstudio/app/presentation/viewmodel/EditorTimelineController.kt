@@ -1512,8 +1512,7 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
     }
     persistProject(refreshLegacyClipFields = true)
 }
-internal fun EditorViewModel.pushUndo() {
-    val state = _state.value
+internal fun EditorViewModel.pushUndo(state: EditorState = _state.value) {
     val project = state.project ?: return
     val current = EditorUndoSnapshot(
         project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers,

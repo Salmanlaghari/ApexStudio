@@ -1,5 +1,6 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import androidx.lifecycle.ViewModelStore
 import com.apexstudio.app.data.aireport.AiContentReportReason
 import com.apexstudio.app.data.aireport.AiContentReportTarget
 import com.apexstudio.app.domain.model.ClipType
@@ -25,6 +26,7 @@ class EditorViewModelAiContentReportTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun submitRejectsReportTargetFromAnotherProjectBeforePersistence() = runTest {
+        val viewModelStore = ViewModelStore()
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         try {
             val clip = MediaClip(
@@ -36,6 +38,7 @@ class EditorViewModelAiContentReportTest {
                 type = ClipType.VIDEO
             )
             val viewModel = EditorViewModel(projectId = "current-project")
+            viewModelStore.put("ai-report-test", viewModel)
             viewModel._state.value = EditorState(
                 project = Project("current-project", "Current", 5_000L, clips = listOf(clip))
             )
@@ -50,6 +53,7 @@ class EditorViewModelAiContentReportTest {
             assertFalse(result.saved)
             assertTrue(result.message!!.contains("no longer in the current project"))
         } finally {
+            viewModelStore.clear()
             Dispatchers.resetMain()
         }
     }

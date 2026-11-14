@@ -1317,6 +1317,143 @@ class ExportTimestampParityInstrumentedTest {
     }
 
     @Test
+    fun selectedAndProjectExportsCapKnown60FpsSourcesAt30Fps() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val engine = ExportEngine(context)
+        val id = UUID.randomUUID().toString()
+        val durationMs = 1_000L
+        val selectedName = "cfr-60-to-30-selected-$id.mp4"
+        val projectName = "cfr-60-to-30-project-$id.mp4"
+        val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        val bitmap = Bitmap.createBitmap(320, 180, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.GREEN)
+        }
+        var source: File? = null
+        var selectedOutput: File? = null
+        var projectOutput: File? = null
+
+        try {
+            source = withTimeout(120_000L) {
+                requireNotNull(
+                    PhotoVideoEncoder.encodeStillImage(
+                        context = context,
+                        bitmap = bitmap,
+                        durationMs = durationMs,
+                        frameRate = 60
+                    )
+                ) { "The deterministic 60-fps source fixture must encode." }
+            }
+            val sourceTrack = readVideoTrack(source!!)
+            assertEquals("The fixture must contain 60 source frames", 60, sourceTrack.presentationTimesUs.size)
+            val sourceTimestampsUs = sourceTrack.presentationTimesUs.sorted()
+            val sourceFps = requireNotNull(
+                inspectSourceVideoFormat(context, Uri.fromFile(source!!).toString()).reportedFps
+            )
+            assertTrue(
+                "The fixture metadata must identify its 60-fps source cadence",
+                sourceFps in 59.5f..60.5f
+            )
+
+            val config = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                aspectRatio = "16:9",
+                trimEndMs = durationMs
+            )
+            engine.startExport(Uri.fromFile(source!!).toString(), config, selectedName)
+            val selectedResult = awaitTerminalState(engine)
+            assertNull("Selected 60-to-30 export must complete: ${selectedResult.error}", selectedResult.error)
+            selectedOutput = File(requireNotNull(Uri.parse(selectedResult.outputUri).path))
+            val selectedTrack = readVideoTrack(selectedOutput!!)
+            assertOutputTiming(
+                label = "selected 60-to-30 fps export",
+                output = selectedTrack,
+                expectedDurationUs = durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 30
+            )
+            assertCapped60FpsSourceTo30Fps("Selected export", sourceTimestampsUs, selectedTrack)
+            val selectedAverageFps = selectedTrack.presentationTimesUs.size * 1_000_000.0 /
+                selectedTrack.videoTrackDurationUs
+            assertTrue(
+                "Selected export should average near 30 fps, got $selectedAverageFps",
+                selectedAverageFps in 28.0..31.5
+            )
+
+            val clip = MediaClip(
+                id = "cfr-60-to-30-$id",
+                name = "60 fps cadence fixture",
+                uri = Uri.fromFile(source!!).toString(),
+                durationMs = durationMs,
+                trimEndMs = durationMs
+            )
+            val projectConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                aspectRatio = "16:9"
+            )
+            engine.startProjectExport(
+                clips = listOf(clip),
+                config = projectConfig,
+                outputFileName = projectName
+            )
+            val projectResult = awaitTerminalState(engine)
+            assertNull("Whole-project 60-to-30 export must complete: ${projectResult.error}", projectResult.error)
+            projectOutput = File(requireNotNull(Uri.parse(projectResult.outputUri).path))
+            val projectTrack = readVideoTrack(projectOutput!!)
+            assertOutputTiming(
+                label = "whole-project 60-to-30 fps export",
+                output = projectTrack,
+                expectedDurationUs = durationMs * 1_000L,
+                expectedSourceAnchorsUs = emptyList(),
+                requestedFps = 30
+            )
+            assertCapped60FpsSourceTo30Fps("Whole-project export", sourceTimestampsUs, projectTrack)
+            val projectAverageFps = projectTrack.presentationTimesUs.size * 1_000_000.0 /
+                projectTrack.videoTrackDurationUs
+            assertTrue(
+                "Whole-project export should average near 30 fps, got $projectAverageFps",
+                projectAverageFps in 28.0..31.5
+            )
+        } finally {
+            instrumentation.runOnMainSync { engine.release() }
+            bitmap.recycle()
+            source?.delete()
+            selectedOutput?.delete()
+            projectOutput?.delete()
+            File(outputDir, selectedName).delete()
+            File(outputDir, projectName).delete()
+            File(outputDir, selectedName.removeSuffix(".mp4") + "_music.mp4").delete()
+            File(outputDir, projectName.removeSuffix(".mp4") + "_music.mp4").delete()
+        }
+    }
+
+    private fun assertCapped60FpsSourceTo30Fps(
+        label: String,
+        sourceTimestampsUs: List<Long>,
+        output: VideoTrack
+    ) {
+        val outputTimestampsUs = output.presentationTimesUs
+        assertTrue(
+            "$label must encode approximately 30 samples, got ${outputTimestampsUs.size}",
+            outputTimestampsUs.size in 29..31
+        )
+        assertTrue(
+            "$label output PTS must be preserved source-frame anchors",
+            outputTimestampsUs.all { outputUs ->
+                sourceTimestampsUs.any { sourceUs -> abs(sourceUs - outputUs) <= 1_000L }
+            }
+        )
+        assertTrue(
+            "$label must drop at least one 60-fps source frame at 30-fps output",
+            sourceTimestampsUs.any { sourceUs ->
+                outputTimestampsUs.none { outputUs -> abs(sourceUs - outputUs) <= 1_000L }
+            }
+        )
+    }
+
+    @Test
     fun photoStillImageSelectedExportMaintainsVerified60FpsCadenceAndStaticPixels() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val baseContext = instrumentation.targetContext

@@ -473,6 +473,21 @@ class ExportEngine(private val context: Context) {
                         com.apexstudio.app.data.effect.AspectCropTransformation.targetSizeFor(
                             config.resolution, config.aspectRatio
                         )
+                    val sourceFormatsByUri = mutableMapOf<String, SourceVideoFormatAudit>()
+                    fun sourceFormatFor(uri: String, clipId: String): SourceVideoFormatAudit =
+                        sourceFormatsByUri.getOrPut(uri) {
+                            try {
+                                inspectSourceVideoFormat(context, uri)
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                diagnostics.stage(
+                                    "project_source_video_format_unavailable",
+                                    "clipId=$clipId failure=${failure.javaClass.simpleName}"
+                                )
+                                SourceVideoFormatAudit(null, null, null)
+                            }
+                        }
                     val items = plan.entries.map { entry ->
                         val clip = entry.clip
                         val itemConfig = config.copy(
@@ -490,6 +505,13 @@ class ExportEngine(private val context: Context) {
                         val speedPair = buildSpeedProvider(itemConfig)?.let {
                             Effects.createExperimentalSpeedChangingEffect(it)
                         }
+                        val cadenceAdjustment = sourceFrameRateAdjustment(
+                            sourceFrameRate = sourceFormatFor(clip.uri, clip.id).reportedFps,
+                            requestedFps = config.fps,
+                            constantSpeed = itemConfig.clipSpeed,
+                            speedPoints = itemConfig.speedPoints,
+                            speedEffectApplied = speedPair != null
+                        )
                         val keyframeClock = keyframeClockFor(itemConfig)
                         val sharedAnimation = itemConfig.sharedVideoClip
                         val videoEffects = buildList<androidx.media3.common.Effect> {
@@ -669,8 +691,11 @@ class ExportEngine(private val context: Context) {
                                     androidx.media3.effect.BitmapOverlay.createStaticBitmapOverlay(drawingBitmap)
                                 )))
                             }
-                            // Project compositions must retain each source PTS for later clips and
-                            // overlays. Keep frame-cadence dropping confined to selected-clip export.
+                            if (cadenceAdjustment.dropSourceFrames) {
+                                add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
+                                    effectiveExportFrameRate(config.fps).toFloat()
+                                ))
+                            }
                         }
                         val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
                         val input = MediaItem.Builder()
@@ -683,7 +708,6 @@ class ExportEngine(private val context: Context) {
                             )
                             .build()
                         EditedMediaItem.Builder(input)
-                            .setFrameRate(effectiveExportFrameRate(config.fps))
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
@@ -1066,15 +1090,20 @@ class ExportEngine(private val context: Context) {
                 val diagnostics = ExportDiagnosticTrace(emit = { Log.i(TAG, it) })
                 diagnostics.phase(ExportProgressStage.PREPARING.diagnosticName)
                 diagnostics.stage("video_preparation_started")
-                try {
-                    val sourceAudit = inspectSourceVideoFormat(context, inputUri)
-                    diagnostics.stage("source_video_format", "${sourceAudit.diagnosticSummary()} requestedFps=${effectiveExportFrameRate(config.fps)}")
+                val sourceAudit = try {
+                    inspectSourceVideoFormat(context, inputUri).also { audit ->
+                        diagnostics.stage(
+                            "source_video_format",
+                            "${audit.diagnosticSummary()} requestedFps=${effectiveExportFrameRate(config.fps)}"
+                        )
+                    }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
                     // A missing metadata field is not a decoded-frame failure. Transformer
                     // remains responsible for decoding and reports real codec errors below.
                     diagnostics.stage("source_video_format_unavailable", "failure=${failure.javaClass.simpleName}")
+                    null
                 }
                 currentCoroutineContext().ensureActive()
                 val verifiedDownloadedFxEffect =
@@ -1385,7 +1414,11 @@ class ExportEngine(private val context: Context) {
                     )
                 }
                 val composedVideoEffects = composeVideoEffectLayers(
-                    mainVideoEffects = videoEffects + selectedVideoOutputEffects(config),
+                    mainVideoEffects = videoEffects + selectedVideoOutputEffects(
+                        config,
+                        sourceAudit?.reportedFps,
+                        speedEffectApplied = speedPair != null
+                    ),
                     pipOverlayEffects = pipOverlayEffects,
                     foregroundEffects = foregroundEffects,
                     mainArtworkEffects = drawingEffects
@@ -1393,7 +1426,11 @@ class ExportEngine(private val context: Context) {
                 currentCoroutineContext().ensureActive()
                 diagnostics.stage("video_preparation_completed")
                 val editedMediaItem = EditedMediaItem.Builder(inputMediaItem)
-                    .setFrameRate(effectiveExportFrameRate(config.fps))
+                    .apply {
+                        if (config.isPhotoExport) {
+                            setFrameRate(effectiveExportFrameRate(config.fps))
+                        }
+                    }
                     .setEffects(Effects(audioProcessors, composedVideoEffects))
                     .build()
 

@@ -7,6 +7,8 @@ import androidx.media3.effect.FrameDropEffect
 import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.effect.GlMatrixTransformation
 import com.apexstudio.app.data.effect.AspectCropTransformation
+import com.apexstudio.app.domain.model.SpeedCurveMath
+import com.apexstudio.app.domain.model.SpeedPoint
 
 /** Output settings expose 24–120 fps; clamp stale or programmatic values to that range. */
 internal fun effectiveExportFrameRate(requestedFps: Int): Int = requestedFps.coerceIn(24, 120)
@@ -56,22 +58,75 @@ internal fun exportVideoEncoderSettings(config: ExportEngine.ExportConfig): Vide
         .setRepeatPreviousFrameIntervalUs(exportRepeatPreviousFrameIntervalUs(config.fps))
         .build()
 
+/** A 0.5-fps metadata tolerance avoids changing cadence for nominal/rounded source rates. */
+private const val SOURCE_FRAME_RATE_TOLERANCE_FPS = 0.5f
+
+internal data class SourceFrameRateAdjustment(
+    val dropSourceFrames: Boolean
+)
+
+/**
+ * Compare the reported source rate after its fastest playback segment with the requested output.
+ * This policy only decides whether to drop frames from a known faster video source. A peak speed
+ * enables an item-wide rate limiter, but FrameDropEffect drops only samples arriving above its
+ * target cadence; slower/equal sections are not forced to a different rate. Unknown, equal, and
+ * lower-rate sources keep their timestamps. Do not use EditedMediaItem.setFrameRate as a video
+ * conversion: encoder cadence policy and strict final audits handle that path. Still-photo exports
+ * retain their separate image-to-video frame-rate setting.
+ */
+internal fun sourceFrameRateAdjustment(
+    sourceFrameRate: Float?,
+    requestedFps: Int,
+    constantSpeed: Float = 1f,
+    speedPoints: List<SpeedPoint> = emptyList(),
+    speedEffectApplied: Boolean = true
+): SourceFrameRateAdjustment {
+    val sourceFps = sourceFrameRate?.takeIf { it.isFinite() && it > 0f }
+        ?: return SourceFrameRateAdjustment(dropSourceFrames = false)
+    if (!speedEffectApplied) {
+        return SourceFrameRateAdjustment(
+            dropSourceFrames = sourceFps > effectiveExportFrameRate(requestedFps) + SOURCE_FRAME_RATE_TOLERANCE_FPS
+        )
+    }
+    val curve = SpeedCurveMath.sanitize(speedPoints)
+    val peakSpeed = if (curve.size >= 2) curve.maxOf { it.speed }
+        else SpeedCurveMath.sanitizeConstantSpeed(constantSpeed)
+    val effectiveSourceFps = sourceFps * peakSpeed
+    if (!effectiveSourceFps.isFinite()) return SourceFrameRateAdjustment(dropSourceFrames = false)
+    val difference = effectiveSourceFps - effectiveExportFrameRate(requestedFps)
+    return SourceFrameRateAdjustment(
+        dropSourceFrames = difference > SOURCE_FRAME_RATE_TOLERANCE_FPS
+    )
+}
+
 /**
  * Run after source geometry/speed/animation but before PiP and foreground overlays.
  * A fixed output size avoids accidentally encoding a 4K source for a 720p request.
- * FrameDropEffect lowers the average real-video frame rate toward the target; it
- * does not enforce a minimum PTS gap for every pair in a VFR source. The accompanying
- * EditedMediaItem.setFrameRate remains only a hint for sources without a frame rate.
+ * Only a known source cadence above the target gets FrameDropEffect; equal/lower/unknown sources
+ * retain their presentation timestamps. The effect reduces average rate, not every VFR gap.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-internal fun selectedVideoOutputEffects(config: ExportEngine.ExportConfig): List<Effect> {
+internal fun selectedVideoOutputEffects(
+    config: ExportEngine.ExportConfig,
+    sourceFrameRate: Float? = null,
+    speedEffectApplied: Boolean = true
+): List<Effect> {
     val (width, height) = AspectCropTransformation.targetSizeFor(config.resolution, config.aspectRatio)
-    return listOf(
-        if (config.preserveInputAspectRatio || config.faceCropConfig != null)
-            PreservingOutputSizeTransformation(maxOf(width, height))
-        else ProjectOutputSizeTransformation(width, height, config.videoFitMode),
-        FrameDropEffect.createDefaultFrameDropEffect(effectiveExportFrameRate(config.fps).toFloat())
+    val cadence = sourceFrameRateAdjustment(
+        sourceFrameRate,
+        config.fps,
+        config.clipSpeed,
+        config.speedPoints,
+        speedEffectApplied
     )
+    return buildList {
+        add(if (config.preserveInputAspectRatio || config.faceCropConfig != null)
+            PreservingOutputSizeTransformation(maxOf(width, height))
+        else ProjectOutputSizeTransformation(width, height, config.videoFitMode))
+        if (cadence.dropSourceFrames) {
+            add(FrameDropEffect.createDefaultFrameDropEffect(effectiveExportFrameRate(config.fps).toFloat()))
+        }
+    }
 }
 
 /** Drawing pixels share the post-crop viewport, including preserve-input and face-crop exports. */

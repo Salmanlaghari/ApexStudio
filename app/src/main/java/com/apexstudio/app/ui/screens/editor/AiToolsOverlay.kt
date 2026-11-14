@@ -69,15 +69,16 @@ internal fun aiToolCards(inventory: List<AiFeatureAvailability>): List<AiToolCar
 @Composable
 fun AiToolsOverlay(
     onClose: () -> Unit,
+    targetVideoName: String? = null,
     onOpenLocalAnalysis: (() -> Unit)? = null,
-    onOpenVideoPresets: (() -> Unit)? = null,
     onOpenVideoUpscale: (() -> Unit)? = null,
     onOpenCaptions: (() -> Unit)? = null,
     onOpenBackgroundReplace: (() -> Unit)? = null,
     reportTarget: AiContentReportTarget?,
     reportState: AiContentReportUiState,
-    onSubmitReport: (AiContentReportReason) -> Unit,
+    onSubmitReport: (AiContentReportTarget, AiContentReportReason) -> Unit,
     onClearReportFeedback: () -> Unit,
+    isReportTargetCurrent: ((AiContentReportTarget) -> Boolean)? = null,
 ) {
     val context = LocalContext.current.applicationContext
     var cards by remember { mutableStateOf(aiToolCards(AiFeatureId.entries.map { id ->
@@ -96,15 +97,15 @@ fun AiToolsOverlay(
             message = "Could not check AI availability. Your project is unchanged."
         }
     }
-    AiToolsPanel(tools = cards, message = message,
+    AiToolsPanel(tools = cards, message = message, targetVideoName = targetVideoName,
         onClose = onClose, onOpenLocalAnalysis = onOpenLocalAnalysis,
-        onOpenVideoPresets = onOpenVideoPresets,
         onOpenVideoUpscale = onOpenVideoUpscale,
         onOpenCaptions = onOpenCaptions,
         onOpenBackgroundReplace = onOpenBackgroundReplace,
         onOpenDownloads = { showDownloads = true },
         reportTarget = reportTarget, reportState = reportState,
-        onSubmitReport = onSubmitReport, onClearReportFeedback = onClearReportFeedback)
+        onSubmitReport = onSubmitReport, onClearReportFeedback = onClearReportFeedback,
+        isReportTargetCurrent = isReportTargetCurrent ?: { true })
     if (showDownloads) ModelDownloadsDialog(onDismiss = {
         showDownloads = false
         inventoryRevision++

@@ -2223,7 +2223,7 @@ private fun TimelineVideoLayerRow(
                             .clickable { if (multiSelectMode) onToggleSelectedClip(clip.id) else onSelectClip(clip.id) }
                             .semantics {
                                 contentDescription = "Overlay clip ${clip.name}, track V${layerIndex + 1}"
-                                selected = isSelected
+                                selected = isSelected || isMultiSelected
                             }
                     ) {
                         // Filmstrip thumbnails inside the PiP block:
@@ -2246,6 +2246,36 @@ private fun TimelineVideoLayerRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.align(Alignment.BottomStart).padding(start = 13.dp, bottom = 2.dp)
                                 .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
+                        if (isSelected) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopStart)
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .background(EditorPalette.NeonCyan)
+                                    .testTag("timeline-selection-accent-${clip.id}")
+                            )
+                            Text(
+                                text = if (clipWidthDp >= 96.dp) "SELECTED · V${layerIndex + 1}" else "V${layerIndex + 1}",
+                                color = Color(0xFF061A22),
+                                fontSize = 7.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 5.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(EditorPalette.NeonCyan)
+                                    .border(0.75.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                                    .testTag("timeline-selection-chip-${clip.id}")
+                                    .semantics {
+                                        contentDescription = "Selected overlay clip ${clip.name} (V${layerIndex + 1})"
+                                        selected = true
+                                    }
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
                         if (isLocked) {
                             Icon(
                                 Icons.Default.Lock,
@@ -2874,6 +2904,10 @@ private fun TimelineVideoTrack(
                         .width(clipWidth)
                         .fillMaxHeight()
                         .testTag("timeline-clip-${clip.id}")
+                        .semantics {
+                            contentDescription = "Main-track clip ${clip.name}, V1"
+                            selected = isSelected || isMultiSelected
+                        }
                         .onGloballyPositioned { coords ->
                             val pos = coords.positionInParent()
                             val width = coords.size.width.toFloat()
@@ -2960,6 +2994,37 @@ private fun TimelineVideoTrack(
                             )
                         )
                     )
+
+                    if (isSelected) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopStart)
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .background(EditorPalette.NeonCyan)
+                                .testTag("timeline-selection-accent-${clip.id}")
+                        )
+                        Text(
+                            text = if (clipWidth >= 96.dp) "SELECTED · V1" else "V1",
+                            color = Color(0xFF061A22),
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 5.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(EditorPalette.NeonCyan)
+                                .border(0.75.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                                .testTag("timeline-selection-chip-${clip.id}")
+                                .semantics {
+                                    contentDescription = "Selected main-track clip ${clip.name} (V1)"
+                                    selected = true
+                                }
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
 
                     // Persisted source-time looks are visible as colored, labeled range
                     // bands on the clip itself. The strip is decorative and leaves the

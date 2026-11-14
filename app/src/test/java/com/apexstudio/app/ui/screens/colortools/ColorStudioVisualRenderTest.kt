@@ -1,14 +1,17 @@
 package com.apexstudio.app.ui.screens.colortools
 
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import com.github.takahirom.roborazzi.RoborazziComposeOptions
 import com.github.takahirom.roborazzi.RoborazziComposeSizeOption
@@ -51,6 +54,24 @@ class ColorStudioVisualRenderTest {
         compose.onNodeWithTag("color_adjustment_controls").performScrollToNode(hasText("Tone Map (SDR)"))
         compose.onNodeWithText("Tone Map (SDR)").assertIsDisplayed()
         compose.onNodeWithText("Sharpness").assertIsDisplayed()
+    }
+
+    @Test fun selectedSourceExportActionDoesNotWaitForPreviewDecode() {
+        val vm = EditorViewModel()
+        val clip = MediaClip(
+            "missing-image", "Unavailable preview", "file:///missing-color-preview.png", 1_000L,
+            trimEndMs = 1_000L, type = ClipType.IMAGE
+        )
+        vm._state.value = EditorState(
+            project = Project("fixture", "Host only", 1_000L, clips = listOf(clip)),
+            selectedClipId = clip.id
+        )
+        compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
+
+        compose.onNodeWithText("Selected source").performClick()
+        compose.onNodeWithText("Export").performClick()
+
+        compose.onNodeWithText("Export still").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test fun productionColorWorkspaceFitsCompactPhoneEditorArea() {

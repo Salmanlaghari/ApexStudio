@@ -1017,7 +1017,7 @@ class ExportEngine(private val context: Context) {
                 }
                 diagnostics.stage("project_transformer_started")
                 startProgressTracking(active!!, diagnostics) { progress ->
-                    publishProjectProgress(run, 0.01f + progress * 0.89f)
+                    publishProjectProgress(run, projectVideoRenderProgress(progress))
                 }
             } catch (failure: Exception) {
                 active?.let {

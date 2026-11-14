@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -41,6 +42,8 @@ import com.apexstudio.app.data.fx.DownloadedFxEffect
 import com.apexstudio.app.data.fx.FxPreset
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+
+private const val FX_PANEL_LOG_TAG = "FxPanel"
 
 /**
  * Bottom-sheet FX picker: "Original" + every real-time FX preset,
@@ -205,8 +208,7 @@ fun FxPanel(
         }
         val displayedDownloadedEffects = remember(activeCategory, downloadedEffects) {
             if (activeCategory == "Downloaded" || activeCategory == "All") {
-                val seenIds = FxPreset.values().mapTo(mutableSetOf()) { it.id }
-                downloadedEffects.filter { seenIds.add(it.id) }
+                uniqueDownloadedFxEffects(downloadedEffects)
             } else emptyList()
         }
 
@@ -335,6 +337,25 @@ fun FxPanel(
             }
         }
     }
+}
+
+private fun uniqueDownloadedFxEffects(downloadedEffects: List<DownloadedFxEffect>): List<DownloadedFxEffect> {
+    val seenIds = FxPreset.values().mapTo(mutableSetOf()) { it.id }
+    val omittedIds = mutableListOf<String>()
+    val visible = downloadedEffects.filter { effect ->
+        if (seenIds.add(effect.id)) true else {
+            omittedIds += effect.id
+            false
+        }
+    }
+    if (omittedIds.isNotEmpty()) {
+        Log.w(
+            FX_PANEL_LOG_TAG,
+            "Omitted ${omittedIds.size} downloaded FX profile(s) with duplicate or built-in IDs: " +
+                omittedIds.distinct().joinToString()
+        )
+    }
+    return visible
 }
 
 @Composable

@@ -7,11 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -146,7 +148,9 @@ class FxFilterPanelTest {
         compose.onNodeWithTag("fx-category-downloaded").performClick()
         compose.onNodeWithText("Download 30 effects · 5.2 KB").performScrollTo().performClick()
 
-        compose.onNodeWithTag("fx-category-all").performScrollTo().performClick()
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-all"))
+        compose.onNodeWithTag("fx-category-all").performClick()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
         compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
         compose.runOnIdle {
@@ -154,7 +158,9 @@ class FxFilterPanelTest {
             assertEquals(effect.id, selectedFx.value)
         }
 
-        compose.onNodeWithTag("fx-category-downloaded").performScrollTo().performClick()
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-downloaded"))
+        compose.onNodeWithTag("fx-category-downloaded").performClick()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
         compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }

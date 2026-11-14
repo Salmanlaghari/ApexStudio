@@ -40,6 +40,7 @@ import com.apexstudio.app.data.gl.TransitionGlEffect
 import com.apexstudio.app.data.template.TimelineTemplate
 import com.apexstudio.app.data.template.TimelineTemplateManager
 import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.color.hasValidRenderParameters
 import com.apexstudio.app.data.color.toLutTexture
 import com.apexstudio.app.domain.model.DenoiseStrength
 import com.apexstudio.app.domain.model.ChromaKeySettings
@@ -332,7 +333,9 @@ class ExportEngine(private val context: Context) {
         /** Canonical typed video clips used by whole-project export, keyed by clip id. */
         val sharedVideoClips: Map<String, com.apexstudio.app.domain.model.timeline.VideoClip> = emptyMap(),
         /** Optional Color Studio project grade. Applied to every eligible composed main-track clip. */
-        val colorStudioGrade: ColorStudioGrade? = null
+        val colorStudioGrade: ColorStudioGrade? = null,
+        /** Selected-clip export must explicitly confirm its source is a main-track video. */
+        val isProjectColorGradeTarget: Boolean = false
     )
 
     /**
@@ -692,7 +695,7 @@ class ExportEngine(private val context: Context) {
                             // Grade footage pixels before clip-attached titles and stickers so
                             // overlay colors remain authored; project signatures/drawings are
                             // likewise composed above the grade below.
-                            config.colorStudioGrade?.let { grade ->
+                            projectColorStudioGradeForClip(clip, config.colorStudioGrade)?.let { grade ->
                                 addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                             }
                             // These windows are clip-output-relative: the trimmed sequence item starts at 0,
@@ -1162,6 +1165,9 @@ class ExportEngine(private val context: Context) {
                 require(config.chromaKeySettings == null || config.chromaKeySettings.hasValidChromaParameters()) {
                     "Invalid chroma-key parameters; export stopped rather than changing the keyed result."
                 }
+                require(config.colorStudioGrade?.hasValidRenderParameters() != false) {
+                    "Invalid Color Studio grade; export stopped rather than dropping the project grade."
+                }
                 require(config.chromaKeySettings?.enabled != true) {
                     "Apply chroma key and its wallpaper to the clip before exporting."
                 }
@@ -1424,6 +1430,9 @@ class ExportEngine(private val context: Context) {
                 speedPair?.let {
                     // Its paired audio processor is already in the production chain.
                     videoEffects.add(it.second)
+                }
+                selectedClipColorStudioGradeForExportIfEligible(config)?.let { grade ->
+                    videoEffects.addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                 }
 
                 // 7. Caption / Text Overlays & Stickers

@@ -1,5 +1,6 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import com.apexstudio.app.data.color.ColorStudioGrade
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.EditorState
 import org.junit.Assert.*
@@ -12,6 +13,21 @@ class SelectedExportPreflightTest {
         clips = listOf(video("first"), video("second")) + extra), selectedClipId = "second")
     @Test fun plainLaterClipCanExportWithoutProjectTimeLayers() {
         assertNull(selectedVideoExportUnsupportedReason(state()))
+    }
+    @Test fun invalidProjectGradeBlocksOnlySelectedMainVideoExport() {
+        val invalidGrade = ColorStudioGrade(brightness = Float.NaN)
+        val invalidVideo = state().let { editorState ->
+            editorState.copy(project = editorState.project!!.copy(colorStudioGrade = invalidGrade))
+        }
+        assertTrue(selectedVideoExportUnsupportedReason(invalidVideo)!!.contains("invalid Color Studio grade"))
+
+        val invalidPhoto = state(listOf(video("photo", ClipType.IMAGE))).let { editorState ->
+            editorState.copy(
+                project = editorState.project!!.copy(colorStudioGrade = invalidGrade),
+                selectedClipId = "photo"
+            )
+        }
+        assertNull(selectedVideoExportUnsupportedReason(invalidPhoto))
     }
     @Test fun laterClipWithVisiblePipIsBlockedRatherThanMispositioned() {
         val s = state(listOf(video("pip", ClipType.OVERLAY, 1)))

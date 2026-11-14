@@ -3,33 +3,24 @@ package com.apexstudio.app.data.color
 import android.graphics.Bitmap
 import java.io.File
 import java.util.Locale
-import kotlinx.serialization.Serializable
 import com.apexstudio.app.data.filter.LutTexture
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import kotlin.math.*
 
-@Serializable
-data class ColorWheelVector(val x: Float = 0f, val y: Float = 0f)
+typealias ColorWheelVector = com.apexstudio.app.domain.model.ColorWheelVector
+typealias ColorStudioGrade = com.apexstudio.app.domain.model.ColorStudioGrade
 
-/** Standalone SDR grade. HDR control is a soft-shoulder tone map, not HDR mastering/output. */
-@Serializable
-data class ColorStudioGrade(
-    val brightness: Float = 0f,
-    val contrast: Float = 1f,
-    val saturation: Float = 1f,
-    val shadows: ColorWheelVector = ColorWheelVector(),
-    val midtones: ColorWheelVector = ColorWheelVector(),
-    val highlights: ColorWheelVector = ColorWheelVector(),
-    val rCurve: List<Float> = IDENTITY_CURVE,
-    val gCurve: List<Float> = IDENTITY_CURVE,
-    val bCurve: List<Float> = IDENTITY_CURVE,
-    val lumaCurve: List<Float> = IDENTITY_CURVE,
-    /** HDR-style SDR tone mapping, 0..1; output remains conventional SDR. */
-    val hdr: Float = 0f,
-    /** Spatial unsharp amount, 0..1; deliberately not encoded in the 3D LUT. */
-    val sharpness: Float = 0f
-) {
-    companion object { val IDENTITY_CURVE = listOf(0f, 0.25f, 0.5f, 0.75f, 1f) }
-}
+internal fun MediaClip.isProjectColorGradeTarget(): Boolean =
+    trackIndex == 0 && type == ClipType.VIDEO
+
+internal fun <EffectT> projectColorGradeEffectsByClipId(
+    clips: List<MediaClip>,
+    createEffects: (MediaClip) -> List<EffectT>
+): Map<String, List<EffectT>> = clips
+    .filter { it.isProjectColorGradeTarget() }
+    .distinctBy { it.id }
+    .associate { clip -> clip.id to createEffects(clip) }
 
 /** Reject malformed values before a project render instead of relying on LUT-side clamping. */
 fun ColorStudioGrade.hasValidRenderParameters(): Boolean =

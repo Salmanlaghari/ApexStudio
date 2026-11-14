@@ -34,6 +34,10 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.CompositionPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
+import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
+import com.apexstudio.app.data.color.projectColorGradeEffectsByClipId
+import com.apexstudio.app.data.color.safeProjectColorStudioPreviewEffects
 import com.apexstudio.app.data.export.ProjectTransitionTimeline
 import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
@@ -694,6 +698,72 @@ private fun EditorScreenContent(
     val globalFxBinding = remember(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed) {
         globalFxPreviewBinding(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed)
     }
+    val projectColorGrade = state.project?.colorStudioGrade
+    var colorPreviewFailureNotified by rememberSaveable(projectId, projectColorGrade) { mutableStateOf(false) }
+    fun reportColorPreviewFailure(message: String) {
+        scope.launch {
+            if (!colorPreviewFailureNotified) {
+                try {
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                    colorPreviewFailureNotified = true
+                } catch (failure: Exception) {
+                    Log.w("EditorScreen", "Project Color preview warning could not be shown", failure)
+                }
+            }
+        }
+    }
+    val shouldGradeMainPreview = mainPreviewClip?.isProjectColorGradeTarget() == true
+    val projectColorEffects by produceState<List<androidx.media3.common.Effect>>(
+        initialValue = emptyList(), projectColorGrade, shouldGradeMainPreview
+    ) {
+        value = emptyList()
+        val grade = projectColorGrade ?: return@produceState
+        if (!shouldGradeMainPreview) return@produceState
+        value = withContext(Dispatchers.Default) {
+            safeProjectColorStudioPreviewEffects(
+                grade,
+                createEffects = {
+                    com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+                },
+                onInvalidGrade = { failure ->
+                    Log.w("EditorScreen", "Invalid persisted Color grade; main preview effect was skipped", failure)
+                    reportColorPreviewFailure("Saved project Color grade is invalid. Reset it in Color Studio.")
+                },
+                onFailure = { failure ->
+                    Log.e("EditorScreen", "Project Color grade preview could not be prepared", failure)
+                    reportColorPreviewFailure("Project Color preview could not be prepared.")
+                }
+            )
+        }
+    }
+    val transitionColorGradeTargetClips = remember(projectTransitionPlan) {
+        projectTransitionPlan.entries.map { it.clip }.distinctBy { it.id }
+    }
+    val transitionProjectColorEffectsByClipId by produceState<
+        Map<String, List<androidx.media3.common.Effect>>
+    >(initialValue = emptyMap(), projectColorGrade, transitionColorGradeTargetClips) {
+        value = emptyMap()
+        val grade = projectColorGrade ?: return@produceState
+        if (transitionColorGradeTargetClips.isEmpty()) return@produceState
+        value = withContext(Dispatchers.Default) {
+            projectColorGradeEffectsByClipId(transitionColorGradeTargetClips) { clip ->
+                safeProjectColorStudioPreviewEffects(
+                    grade,
+                    createEffects = {
+                        com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+                    },
+                    onInvalidGrade = { failure ->
+                        Log.w("EditorScreen", "Invalid persisted Color grade; transition preview effect was skipped for ${clip.id}", failure)
+                        reportColorPreviewFailure("Saved project Color grade is invalid. Reset it in Color Studio.")
+                    },
+                    onFailure = { failure ->
+                        Log.e("EditorScreen", "Project Color grade preview failed for ${clip.id}", failure)
+                        reportColorPreviewFailure("Project Color preview could not be prepared.")
+                    }
+                )
+            }
+        }
+    }
 
     val currentEffects = remember(
         activePreset,
@@ -704,7 +774,8 @@ private fun EditorScreenContent(
         globalFxBinding,
         state.adjustments,
         selectedKeyframes,
-        sharedPreviewClip
+        sharedPreviewClip,
+        projectColorEffects
     ) {
         buildList<androidx.media3.common.Effect> {
             // Match project export's per-clip LUT/adjustment stages when the
@@ -781,6 +852,7 @@ private fun EditorScreenContent(
                 }
             }
             globalFxBinding?.createEffect()?.let(::add)
+            addAll(projectColorEffects)
             val hasSharedAnimation = sharedPreviewClip?.let {
                 it.animationKeyframeTimes().isNotEmpty()
             } == true
@@ -808,6 +880,7 @@ private fun EditorScreenContent(
         state.project?.videoAspectRatio,
         activePreset,
         globalFxBinding,
+        transitionProjectColorEffectsByClipId,
         state.filterIntensity,
         state.adjustments,
         state.gpuFilterCompareMode,
@@ -919,6 +992,7 @@ private fun EditorScreenContent(
                         }
                     }
                 )?.let(::add)
+                addAll(transitionProjectColorEffectsByClipId[clip.id].orEmpty())
                 val captions = clip.textOverlays.filter { it.text.isNotBlank() }
                 if (captions.isNotEmpty()) {
                     add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))

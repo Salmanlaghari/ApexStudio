@@ -61,6 +61,9 @@ class EditorViewModel(
     )
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
+    /** Serializes project Color commits so concurrent grade applications preserve undo order. */
+    internal val projectColorGradeCommitLock = Any()
+
     private companion object {
         const val SELECTED_CLIP_IDS_KEY = "editor.selectedClipIds"
         const val MULTI_SELECT_MODE_KEY = "editor.multiSelectMode"

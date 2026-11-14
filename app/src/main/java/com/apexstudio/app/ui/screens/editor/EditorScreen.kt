@@ -673,6 +673,15 @@ private fun EditorScreenContent(
         globalFxPreviewBinding(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed)
     }
     val projectColorGrade = state.project?.colorStudioGrade
+    var colorPreviewFailureNotified by remember(projectId, projectColorGrade) { mutableStateOf(false) }
+    fun reportColorPreviewFailure(message: String) {
+        scope.launch {
+            if (!colorPreviewFailureNotified) {
+                colorPreviewFailureNotified = true
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     val shouldGradeMainPreview = mainPreviewClip?.isProjectColorGradeTarget() == true
     val projectColorEffects by produceState<List<androidx.media3.common.Effect>>(
         initialValue = emptyList(), projectColorGrade, shouldGradeMainPreview
@@ -688,9 +697,11 @@ private fun EditorScreenContent(
                 },
                 onInvalidGrade = { failure ->
                     Log.w("EditorScreen", "Invalid persisted Color grade; main preview effect was skipped", failure)
+                    reportColorPreviewFailure("Saved project Color grade is invalid. Reset it in Color Studio.")
                 },
                 onFailure = { failure ->
                     Log.e("EditorScreen", "Project Color grade preview could not be prepared", failure)
+                    reportColorPreviewFailure("Project Color preview could not be prepared.")
                 }
             )
         }
@@ -713,9 +724,11 @@ private fun EditorScreenContent(
                     },
                     onInvalidGrade = { failure ->
                         Log.w("EditorScreen", "Invalid persisted Color grade; transition preview effect was skipped for ${clip.id}", failure)
+                        reportColorPreviewFailure("Saved project Color grade is invalid. Reset it in Color Studio.")
                     },
                     onFailure = { failure ->
                         Log.e("EditorScreen", "Project Color grade preview failed for ${clip.id}", failure)
+                        reportColorPreviewFailure("Project Color preview could not be prepared.")
                     }
                 )
             }

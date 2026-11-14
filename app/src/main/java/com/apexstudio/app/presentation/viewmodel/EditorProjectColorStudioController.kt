@@ -5,7 +5,7 @@ import com.apexstudio.app.domain.model.ColorStudioGrade
 import com.apexstudio.app.presentation.state.EditorState
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Bounds synchronous UI work while tolerating a short burst of playhead/autosave/analysis updates. */
+/** Bounds small synchronous UI work while tolerating short playhead/autosave/analysis update bursts. */
 private const val MAX_PROJECT_COLOR_GRADE_COMMIT_ATTEMPTS = 8
 
 internal sealed class ProjectColorGradeCommitResult {
@@ -27,8 +27,8 @@ internal sealed class ProjectColorGradeCommitResult {
 }
 
 /**
- * Merge only the project grade into the latest editor snapshot. Eight quick, yielded CAS attempts
- * tolerate short bursts of playhead/autosave/analysis updates without spinning indefinitely.
+ * Merge only the project grade into the latest editor snapshot. Eight immediate CAS attempts keep
+ * UI-thread work bounded and fail closed on sustained contention without scheduling a thread yield.
  */
 internal fun commitProjectColorStudioGrade(
     state: MutableStateFlow<EditorState>,
@@ -41,7 +41,7 @@ internal fun commitProjectColorStudioGrade(
     repeat(MAX_PROJECT_COLOR_GRADE_COMMIT_ATTEMPTS) {
         val before = state.value
         val project = before.project
-            ?: return ProjectColorGradeCommitResult.ProjectChanged(targetProjectId, actualProjectId = null)
+            ?: return ProjectColorGradeCommitResult.NoActiveProject
         if (project.id != targetProjectId) {
             return ProjectColorGradeCommitResult.ProjectChanged(targetProjectId, project.id)
         }
@@ -53,7 +53,6 @@ internal fun commitProjectColorStudioGrade(
         if (state.compareAndSet(before, updated)) {
             return ProjectColorGradeCommitResult.Applied(targetProjectId, before)
         }
-        Thread.yield()
     }
     return ProjectColorGradeCommitResult.ContentionExhausted
 }

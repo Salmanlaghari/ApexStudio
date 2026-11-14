@@ -92,6 +92,20 @@ class EditorProjectColorStudioControllerTest {
     }
 
     @Test
+    fun `grade commit reports no active project if it disappears during a failed compare and set`() {
+        val original = Project("color-project", "Color project", 4_000L)
+        val state = ConflictingStateFlow(
+            backing = MutableStateFlow(EditorState(project = original)),
+            updateOnCompareAndSet = { it.copy(project = null) }
+        )
+
+        val result = commitProjectColorStudioGrade(state, ColorStudioGrade(brightness = .2f))
+
+        assertEquals(ProjectColorGradeCommitResult.NoActiveProject, result)
+        assertNull(state.value.project)
+    }
+
+    @Test
     fun `grade commit reports exhausted contention without applying grade`() {
         val project = Project("color-project", "Color project", 4_000L)
         val state = ConflictingStateFlow(

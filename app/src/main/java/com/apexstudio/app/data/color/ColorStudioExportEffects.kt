@@ -3,7 +3,6 @@ package com.apexstudio.app.data.color
 import android.content.Context
 import androidx.media3.common.Effect
 import androidx.media3.common.util.UnstableApi
-import com.apexstudio.app.BuildConfig
 import com.apexstudio.app.data.adjust.AdjustmentsGlEffect
 import com.apexstudio.app.data.filter.LutFilterGlEffect
 import com.apexstudio.app.domain.model.VideoAdjustments
@@ -24,13 +23,12 @@ internal fun createColorStudioVideoEffects(
     }
 }
 
-/** Invalid grades get a typed fallback; unexpected construction errors rethrow in debug and fall back in release. */
+/** Invalid grades and construction failures are reported to the editor and fall back safely for preview. */
 internal fun <EffectT> safeProjectColorStudioPreviewEffects(
     grade: ColorStudioGrade,
     createEffects: () -> List<EffectT>,
     onInvalidGrade: (IllegalArgumentException) -> Unit,
-    onFailure: (Exception) -> Unit,
-    rethrowConstructionFailures: Boolean = BuildConfig.DEBUG
+    onFailure: (Exception) -> Unit
 ): List<EffectT> {
     if (!grade.hasValidRenderParameters()) {
         onInvalidGrade(IllegalArgumentException("Persisted Color Studio grade is invalid; preview was skipped."))
@@ -42,7 +40,6 @@ internal fun <EffectT> safeProjectColorStudioPreviewEffects(
         throw cancelled
     } catch (failure: Exception) {
         onFailure(failure)
-        if (rethrowConstructionFailures) throw failure
         emptyList()
     }
 }

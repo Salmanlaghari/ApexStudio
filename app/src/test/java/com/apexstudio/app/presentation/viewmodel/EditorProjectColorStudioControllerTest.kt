@@ -42,7 +42,7 @@ class EditorProjectColorStudioControllerTest {
 
     @Test fun `grade commit retries unrelated state conflict and returns latest undo snapshot`() {
         val project = Project("color-project", "Color project", 4_000L)
-        val state = ConflictingStateFlow(EditorState(project = project)) { current ->
+        val state = ConflictingStateFlow(MutableStateFlow(EditorState(project = project))) { current ->
             current.copy(playerPositionMs = 271L)
         }
         val grade = ColorStudioGrade(brightness = .2f)
@@ -58,7 +58,7 @@ class EditorProjectColorStudioControllerTest {
     @Test fun `grade commit rejects a project switch during a failed compare and set`() {
         val original = Project("color-project", "Color project", 4_000L)
         val replacement = Project("replacement", "Replacement", 4_000L)
-        val state = ConflictingStateFlow(EditorState(project = original)) { current ->
+        val state = ConflictingStateFlow(MutableStateFlow(EditorState(project = original))) { current ->
             current.copy(project = replacement)
         }
 

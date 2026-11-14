@@ -202,7 +202,10 @@ fun FxPanel(
             else FxPreset.values().filter { it.category == activeCategory }
         }
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().testTag("fx-preset-list")
+        ) {
             item {
                 FxChip(
                     label = "Original",
@@ -212,17 +215,8 @@ fun FxPanel(
                     onClick = { onFxSelected(null) }
                 )
             }
-            items(displayedPresets, key = { it.id }) { preset ->
-                FxChip(
-                    label = preset.label,
-                    icon = iconFor(preset),
-                    colors = colorsFor(preset),
-                    selected = activeFxId == preset.id,
-                    onClick = { onFxSelected(preset.id) }
-                )
-            }
             items(
-                if (activeCategory == "Downloaded") downloadedEffects else emptyList(),
+                if (activeCategory == "Downloaded" || activeCategory == "All") downloadedEffects else emptyList(),
                 key = { it.id }
             ) { effect ->
                 FxChip(
@@ -231,6 +225,15 @@ fun FxPanel(
                     colors = colorsForFamily(effect.family),
                     selected = activeFxId == effect.id,
                     onClick = { onFxSelected(effect.id) }
+                )
+            }
+            items(displayedPresets, key = { it.id }) { preset ->
+                FxChip(
+                    label = preset.label,
+                    icon = iconFor(preset),
+                    colors = colorsFor(preset),
+                    selected = activeFxId == preset.id,
+                    onClick = { onFxSelected(preset.id) }
                 )
             }
         }

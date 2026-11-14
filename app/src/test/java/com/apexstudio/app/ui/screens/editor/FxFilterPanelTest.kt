@@ -96,7 +96,7 @@ class FxFilterPanelTest {
     }
 
     @Test
-    fun `downloaded effects can be fetched and selected from the FX category`() {
+    fun `downloaded effects can be fetched and selected from All and Downloaded categories`() {
         val effect = DownloadedFxEffect(
             id = "dl_apex-fx-vol-01_prism_sample",
             label = "Prism Sample",
@@ -145,11 +145,19 @@ class FxFilterPanelTest {
         }
         compose.onNodeWithTag("fx-category-downloaded").performClick()
         compose.onNodeWithText("Download 30 effects · 5.2 KB").performScrollTo().performClick()
-        compose.onNodeWithText("Prism Sample").performScrollTo().performClick()
+
+        compose.onNodeWithTag("fx-category-all").performScrollTo().performClick()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertEquals(1, downloadRequests)
             assertEquals(effect.id, selectedFx.value)
         }
+
+        compose.onNodeWithTag("fx-category-downloaded").performScrollTo().performClick()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
         compose.onNodeWithText("1.2x").performScrollTo().assertIsDisplayed()
     }
 

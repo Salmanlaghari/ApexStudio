@@ -39,6 +39,9 @@ class AdaptiveEditorWorkspaceTest {
         }
     }
 
+    private fun paneHeight(tag: String): Float =
+        compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height
+
     @Test fun landscapeKeepsPreviewAboveFullWidthTimelineWithCollapsibleInspector() {
         render(true)
         val preview = compose.onNodeWithTag("landscape-preview").fetchSemanticsNode().boundsInRoot

@@ -192,9 +192,9 @@ fun ColorStudioScreen(
                     .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     item {
-                        Column(Modifier.width(246.dp).height(138.dp).clip(RoundedCornerShape(14.dp))
+                        Column(Modifier.width(246.dp).height(146.dp).clip(RoundedCornerShape(14.dp))
                             .background(ApexPalette.BgSurface).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
-                            .padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            .padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text("SOURCE • PAUSED VIDEO FRAME",
                                 color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             Text(clip?.name.orEmpty(), color = ApexPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)

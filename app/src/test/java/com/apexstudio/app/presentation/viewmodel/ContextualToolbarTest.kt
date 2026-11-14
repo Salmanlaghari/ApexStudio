@@ -84,9 +84,10 @@ class ContextualToolbarTest {
     @Test
     fun `More retains the supported secondary tool routes`() {
         assertEquals("Music", CONTEXTUAL_MORE_TOOL_ORDER.first())
+        assertEquals(CONTEXTUAL_MORE_TOOL_ORDER.size, CONTEXTUAL_MORE_TOOL_ORDER.distinct().size)
         assertTrue(CONTEXTUAL_MORE_TOOL_ORDER.containsAll(listOf(
             "Draw", "AI", "Canvas", "Mask", "Add Image", "Add Video", "Transition",
-            "SFX", "Device Music", "Audio Mix", "Voiceover", "History", "Templates", "Scopes", "BG Remove", "Info"
+            "SFX", "Device Music", "Audio Mix", "Voiceover", "History", "Project tools", "Scopes", "BG Remove", "Info"
         )))
     }
 

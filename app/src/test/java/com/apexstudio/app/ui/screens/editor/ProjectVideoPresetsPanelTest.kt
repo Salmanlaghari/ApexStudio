@@ -5,7 +5,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.apexstudio.app.data.template.ProjectVideoPresets
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,12 +27,10 @@ class ProjectVideoPresetsPanelTest {
         var effectId: String? = null
         var templateId: String? = null
         var motionId: String? = null
-        var upscaleCalls = 0
         compose.setContent { MaterialTheme {
             ProjectVideoPresetsPanel(
                 true, "Existing clip", null, { textId = it }, { effectId = it }, {},
                 onVideoTemplate = { templateId = it }, onTextMotion = { motionId = it },
-                onLearnedUpscale = { upscaleCalls++ },
             )
         } }
         compose.mainClock.advanceTimeBy(1_000)
@@ -47,11 +50,34 @@ class ProjectVideoPresetsPanelTest {
         val enhancement = ProjectVideoPresets.videoEnhancements.first()
         compose.onNodeWithTag("video_enhancement_${enhancement.id}").activateVisibleControl()
         compose.runOnIdle { assertEquals(enhancement.id, effectId) }
-        compose.onNodeWithTag("video_learned_upscale").activateVisibleControl()
-        compose.runOnIdle { assertEquals(1, upscaleCalls) }
         compose.onNodeWithText("Video Enhance · Deterministic Color").assertExists()
-        compose.onNodeWithText("Learned Video Upscale · Separate").assertExists()
+        compose.onNodeWithText("Learned Video Upscale").assertDoesNotExist()
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+    }
+
+    @Test fun projectOverlayEditsThePreviewVideoWhenAnOverlayIsSelected() {
+        val main = MediaClip("main", "Main footage", "file:///main.mp4", 10_000L, trimEndMs = 10_000L)
+        val overlay = MediaClip("pip", "Overlay", "file:///pip.mp4", 4_000L, trimEndMs = 4_000L)
+            .copy(type = ClipType.OVERLAY, trackIndex = 1)
+        val project = Project("project", "Project", 10_000L, clips = listOf(main, overlay))
+        val vm = EditorViewModel().also {
+            it._state.value = it.state.value.copy(
+                project = project, selectedClipId = overlay.id, playerPositionMs = 1_000L
+            )
+        }
+        compose.setContent { MaterialTheme { ProjectVideoPresetsOverlay(vm, onClose = {}) } }
+        compose.mainClock.advanceTimeBy(1_000)
+
+        compose.onNodeWithText("Selected video: Main footage").assertExists()
+        val effect = ProjectVideoPresets.effects.first()
+        compose.onNodeWithTag("video_effect_${effect.id}").activateVisibleControl()
+        compose.runOnIdle {
+            val edited = vm.state.value.project!!
+            assertNotEquals(main, edited.clips.first { it.id == main.id })
+            assertEquals(overlay, edited.clips.first { it.id == overlay.id })
+            assertEquals(overlay.id, vm.state.value.selectedClipId)
+            assertEquals(1, vm.undoStack.size)
+        }
     }
 
     @Test fun unsafeMontageSourceKeepsSafeTitleAndEffectActionsEnabled() {

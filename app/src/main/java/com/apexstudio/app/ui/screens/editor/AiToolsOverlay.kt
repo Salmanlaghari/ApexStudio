@@ -14,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal const val AI_PROTECTED_BLOCKER =
-    "Available actions work with selected project media. Features shown as unavailable will not run. Review suggestions before applying them; some actions are still restricted."
+    "Available actions work with selected project media. Review suggestions before applying them; some actions are still restricted."
 internal const val AI_PROTECTED_STATUS_LABEL = "Availability details"
 internal const val LOCAL_REVIEW_ACTION_LABEL = "Review video suggestions"
 

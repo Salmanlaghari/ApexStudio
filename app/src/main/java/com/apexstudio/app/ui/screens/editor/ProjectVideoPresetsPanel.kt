@@ -10,7 +10,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
-import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.projectVideoTemplateBlockReason
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTemplate
@@ -24,11 +23,14 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 fun ProjectVideoPresetsOverlay(
     vm: EditorViewModel,
     onClose: () -> Unit,
-    onLearnedUpscale: ((String, MediaClip) -> Unit)? = null,
 ) {
     val target = remember { vm.state.value.let { state ->
         state.project?.let { project ->
-            project.clips.firstOrNull { it.id == state.selectedClipId }?.let { project.id to it }
+            val selected = project.clips.firstOrNull { it.id == state.selectedClipId }
+                ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+            val preview = timelinePreviewClip(project.clips, state.playerPositionMs)
+                ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+            (selected ?: preview)?.let { project.id to it }
         }
     } }
     var feedback by remember { mutableStateOf<String?>(null) }
@@ -49,10 +51,7 @@ fun ProjectVideoPresetsOverlay(
         onVideoEffect = { id -> finish(target?.let { vm.applyProjectVideoEffect(it.first, it.second, id) } == true) },
         onClose = onClose,
         onVideoTemplate = { id -> finish(target?.let { vm.applyProjectVideoTemplate(it.first, it.second, id) } == true) },
-        onTextMotion = { id -> finish(target?.let { vm.applyProjectVideoTextMotion(it.first, it.second, id) } == true) },
-        onLearnedUpscale = if (target != null && onLearnedUpscale != null) {
-            { onLearnedUpscale.invoke(target.first, target.second) }
-        } else null
+        onTextMotion = { id -> finish(target?.let { vm.applyProjectVideoTextMotion(it.first, it.second, id) } == true) }
     )
 }
 
@@ -67,7 +66,6 @@ internal fun ProjectVideoPresetsPanel(
     onClose: () -> Unit,
     onVideoTemplate: (String) -> Unit = {},
     onTextMotion: (String) -> Unit = {},
-    onLearnedUpscale: (() -> Unit)? = null,
     templateEligible: Boolean = eligible,
     templateBlockReason: String? = null
 ) {
@@ -120,21 +118,12 @@ internal fun ProjectVideoPresetsPanel(
                 }
             }
             Text("Video Enhance · Deterministic Color", style = MaterialTheme.typography.titleMedium)
-            Text("A fixed contrast, saturation and exposure color matrix. Learned video upscaling is a separate tool.",
+            Text("A fixed contrast, saturation and exposure color matrix; it changes color, not resolution or recovered detail.",
                 style = MaterialTheme.typography.bodySmall)
             ProjectVideoPresets.videoEnhancements.forEach { preset ->
                 OutlinedButton(onClick = { onVideoEffect(preset.id) }, enabled = eligible,
                     modifier = Modifier.fillMaxWidth().testTag("video_enhancement_${preset.id}")) {
                     Text(preset.label)
-                }
-            }
-            Text("Learned Video Upscale · Separate", style = MaterialTheme.typography.titleMedium)
-            Text("This learned upscaling tool is separate from the deterministic color preset.",
-                style = MaterialTheme.typography.bodySmall)
-            onLearnedUpscale?.let { callback ->
-                OutlinedButton(onClick = callback, enabled = eligible,
-                    modifier = Modifier.fillMaxWidth().testTag("video_learned_upscale")) {
-                    Text("Learned Video Upscale")
                 }
             }
             feedback?.let { Text(it, color = MaterialTheme.colorScheme.error) }

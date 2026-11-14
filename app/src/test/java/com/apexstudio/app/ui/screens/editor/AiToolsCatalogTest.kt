@@ -15,7 +15,7 @@ class AiToolsCatalogTest {
         assertEquals(cards.size, cards.map { it.id }.distinct().size)
         assertTrue(cards.all { it.statusLabel == AI_PROTECTED_STATUS_LABEL })
         assertTrue(AI_PROTECTED_BLOCKER.contains("selected project media"))
-        assertTrue(AI_PROTECTED_BLOCKER.contains("Features shown as unavailable will not run"))
+        assertFalse(AI_PROTECTED_BLOCKER.contains("unavailable"))
         assertTrue(AI_PROTECTED_BLOCKER.contains("Review suggestions before applying"))
     }
 

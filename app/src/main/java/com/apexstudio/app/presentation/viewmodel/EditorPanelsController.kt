@@ -294,7 +294,7 @@ internal enum class EditorPanelKey(val stateBacked: Boolean = true) {
     COLOR_SCOPES, BG_REMOVER, BACKGROUND_REPLACE, AUTO_CLIP, MUSIC_LIBRARY, SFX_LIBRARY,
     HISTORY_DRAFTS,
     AI_TOOLS(false), VIDEO_PRESETS(false), VIDEO_UPSCALE(false), LOCAL_ANALYSIS(false),
-    CROP(false), VIDEO_DRAWING(false), QUICK_PRESETS(false), ADD_MEDIA_MENU(false),
+    CROP(false), VIDEO_DRAWING(false), ADD_MEDIA_MENU(false),
     ROYALTY_MUSIC_SHEET(false), LOCAL_CHALLENGE(false)
 }
 

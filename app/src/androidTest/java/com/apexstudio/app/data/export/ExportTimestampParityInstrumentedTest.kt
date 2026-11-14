@@ -1340,6 +1340,7 @@ class ExportTimestampParityInstrumentedTest {
                         context = context,
                         bitmap = bitmap,
                         durationMs = durationMs,
+                        kenBurns = true,
                         frameRate = 60
                     )
                 ) { "The deterministic 60-fps source fixture must encode." }
@@ -1436,7 +1437,8 @@ class ExportTimestampParityInstrumentedTest {
     ) {
         val outputTimestampsUs = output.presentationTimesUs
         assertTrue(
-            "$label must encode approximately 30 samples, got ${outputTimestampsUs.size}",
+            "$label must encode approximately 30 samples, got ${outputTimestampsUs.size}; " +
+                "duration=${output.videoTrackDurationUs}us, pts=${outputTimestampsUs.joinToString()}",
             outputTimestampsUs.size in 29..31
         )
         assertTrue(

@@ -27,10 +27,11 @@ internal fun createColorStudioVideoEffects(
 internal fun <EffectT> safeProjectColorStudioPreviewEffects(
     grade: ColorStudioGrade,
     createEffects: () -> List<EffectT>,
-    onFailure: (Exception) -> Unit = {}
+    onInvalidGrade: (IllegalArgumentException) -> Unit,
+    onFailure: (Exception) -> Unit
 ): List<EffectT> {
     if (!grade.hasValidRenderParameters()) {
-        onFailure(IllegalArgumentException("Persisted Color Studio grade is invalid; preview was skipped."))
+        onInvalidGrade(IllegalArgumentException("Persisted Color Studio grade is invalid; preview was skipped."))
         return emptyList()
     }
     return try {

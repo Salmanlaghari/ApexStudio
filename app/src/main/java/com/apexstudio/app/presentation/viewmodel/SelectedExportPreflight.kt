@@ -1,5 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import com.apexstudio.app.data.color.hasValidRenderParameters
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
 import com.apexstudio.app.data.engine.AudioPlaybackMix
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.presentation.state.EditorState
@@ -8,6 +10,10 @@ import com.apexstudio.app.presentation.state.EditorState
 internal fun selectedVideoExportUnsupportedReason(state: EditorState): String? {
     val project = state.project ?: return "No project is open."
     val base = resolveExportBaseClip(state) ?: return "Select a main video or photo before exporting."
+    val grade = project.colorStudioGrade
+    if (grade != null && base.isProjectColorGradeTarget() && !grade.hasValidRenderParameters()) {
+        return "The selected video has an invalid Color Studio grade; reset or adjust it before exporting."
+    }
     if (0 in state.hiddenVideoLayers) return "The main video track is hidden. Show it before exporting."
     if (project.clips.any { it.type == ClipType.AUDIO || it.type == ClipType.SFX }) {
         return "Legacy audio/sound-effect clips are not supported by video export. Move them to the Music timeline before exporting."

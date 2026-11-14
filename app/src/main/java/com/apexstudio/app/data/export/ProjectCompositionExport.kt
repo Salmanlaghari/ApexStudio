@@ -56,7 +56,7 @@ internal fun projectColorStudioGradeForClip(
 ): ColorStudioGrade? = grade?.takeIf { clip.isProjectColorGradeTarget() }
 
 /** Fail closed in selected-item export unless the caller confirmed a main-track video source. */
-internal fun selectedClipColorStudioGradeForExport(
+internal fun selectedClipColorStudioGradeForExportIfEligible(
     config: ExportEngine.ExportConfig
 ): ColorStudioGrade? = config.colorStudioGrade?.takeIf {
     !config.isPhotoExport && config.isProjectColorGradeTarget

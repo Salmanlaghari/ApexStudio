@@ -106,6 +106,7 @@ fun EditorViewModel.startExport(
     val resolvedResolution = ExportResolution.canonical(resolution)
     val s = _state.value
     val selected = resolveExportBaseClip(s)
+    val selectedColorGradeTarget = selected?.isProjectColorGradeTarget() == true
     val scopeReason = selectedVideoExportUnsupportedReason(s)
     if (scopeReason != null) {
         _export.update { it.copy(error = scopeReason, outputUri = null, warning = null) }
@@ -243,8 +244,8 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             signature = s.project?.signature,
-            isProjectColorGradeTarget = selected?.isProjectColorGradeTarget() == true,
-            colorStudioGrade = s.project?.colorStudioGrade.takeIf { selected?.isProjectColorGradeTarget() == true },
+            isProjectColorGradeTarget = selectedColorGradeTarget,
+            colorStudioGrade = s.project?.colorStudioGrade.takeIf { selectedColorGradeTarget },
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),
             videoDrawingClipId = selected?.id,

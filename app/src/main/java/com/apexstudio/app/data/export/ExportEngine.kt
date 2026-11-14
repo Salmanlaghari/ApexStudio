@@ -1431,7 +1431,7 @@ class ExportEngine(private val context: Context) {
                     // Its paired audio processor is already in the production chain.
                     videoEffects.add(it.second)
                 }
-                selectedClipColorStudioGradeForExport(config)?.let { grade ->
+                selectedClipColorStudioGradeForExportIfEligible(config)?.let { grade ->
                     videoEffects.addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                 }
 

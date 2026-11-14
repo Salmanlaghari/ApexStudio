@@ -396,13 +396,13 @@ class ProjectCompositionExportTest {
     fun `selected clip Color grade requires an explicit non-photo video target`() {
         val grade = ColorStudioGrade(brightness = 0.1f)
 
-        assertEquals(grade, selectedClipColorStudioGradeForExport(
+        assertEquals(grade, selectedClipColorStudioGradeForExportIfEligible(
             ExportEngine.ExportConfig(colorStudioGrade = grade, isProjectColorGradeTarget = true)
         ))
-        assertNull(selectedClipColorStudioGradeForExport(
+        assertNull(selectedClipColorStudioGradeForExportIfEligible(
             ExportEngine.ExportConfig(colorStudioGrade = grade)
         ))
-        assertNull(selectedClipColorStudioGradeForExport(
+        assertNull(selectedClipColorStudioGradeForExportIfEligible(
             ExportEngine.ExportConfig(
                 colorStudioGrade = grade,
                 isPhotoExport = true,

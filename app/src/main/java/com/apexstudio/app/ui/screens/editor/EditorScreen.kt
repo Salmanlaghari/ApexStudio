@@ -686,6 +686,9 @@ private fun EditorScreenContent(
                 createEffects = {
                     com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
                 },
+                onInvalidGrade = { failure ->
+                    Log.w("EditorScreen", "Invalid persisted Color grade; main preview effect was skipped", failure)
+                },
                 onFailure = { failure ->
                     Log.e("EditorScreen", "Project Color grade preview could not be prepared", failure)
                 }
@@ -707,6 +710,9 @@ private fun EditorScreenContent(
                     grade,
                     createEffects = {
                         com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+                    },
+                    onInvalidGrade = { failure ->
+                        Log.w("EditorScreen", "Invalid persisted Color grade; transition preview effect was skipped for ${clip.id}", failure)
                     },
                     onFailure = { failure ->
                         Log.e("EditorScreen", "Project Color grade preview failed for ${clip.id}", failure)

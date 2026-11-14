@@ -11,6 +11,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -53,31 +54,37 @@ class ColorStudioExportEffectsTest {
     @Test
     fun `malformed persisted grade skips preview effect construction`() {
         var constructed = false
-        var reportedFailure: Exception? = null
+        var reportedInvalidGrade: IllegalArgumentException? = null
+        var reportedConstructionFailure: Exception? = null
 
         val effects = safeProjectColorStudioPreviewEffects(
             ColorStudioGrade(brightness = Float.NaN),
             createEffects = { constructed = true; listOf("preview") },
-            onFailure = { reportedFailure = it }
+            onInvalidGrade = { reportedInvalidGrade = it },
+            onFailure = { reportedConstructionFailure = it }
         )
 
         assertTrue(effects.isEmpty())
         assertFalse(constructed)
-        assertTrue(reportedFailure is IllegalArgumentException)
+        assertTrue(reportedInvalidGrade is IllegalArgumentException)
+        assertNull(reportedConstructionFailure)
     }
 
     @Test
     fun `preview effect construction failure falls back without throwing`() {
         var reportedFailure: Exception? = null
+        var reportedInvalidGrade: IllegalArgumentException? = null
 
         val effects = safeProjectColorStudioPreviewEffects<Effect>(
             ColorStudioGrade(),
             createEffects = { throw IllegalArgumentException("malformed LUT source") },
+            onInvalidGrade = { reportedInvalidGrade = it },
             onFailure = { reportedFailure = it }
         )
 
         assertTrue(effects.isEmpty())
         assertTrue(reportedFailure is IllegalArgumentException)
+        assertNull(reportedInvalidGrade)
     }
 
     @Test

@@ -111,10 +111,13 @@ fun ColorStudioScreen(
     var curvePoint by remember(clip?.id) { mutableIntStateOf(2) }
     val sourceUri = clip?.let(ColorMediaIO::sourceUri)
     var processingError by remember(sourceUri, frameTime, grade) { mutableStateOf<String?>(null) }
+    fun applyGradeThen(onSuccess: () -> Unit) {
+        val failureMessage = vm.applyProjectColorStudioGrade(grade).failureMessage
+        if (failureMessage == null) onSuccess() else processingError = failureMessage
+    }
     LaunchedEffect(exportRequest) {
         if (exportRequest > 0) {
-            if (vm.applyProjectColorStudioGrade(grade)) onExport()
-            else processingError = "Color grade couldn't be applied to this project. Reset or adjust it, then try again."
+            applyGradeThen(onExport)
         }
     }
     val frameResult by produceState<Result<SourceFrame>?>(null, sourceUri, frameTime, clip?.type) {
@@ -159,16 +162,10 @@ fun ColorStudioScreen(
                     modifier = Modifier.weight(1f))
                 TextButton(onClick = { grade = ColorStudioGrade(); processingError = null }) { Text("Reset") }
                 TextButton(onClick = onBack) { Text("Close") }
-                TextButton(onClick = {
-                    if (vm.applyProjectColorStudioGrade(grade)) onBack()
-                    else processingError = "Color grade couldn't be applied to this project. Reset or adjust it, then try again."
-                }) { Text("Apply") }
+                TextButton(onClick = { applyGradeThen(onBack) }) { Text("Apply") }
             }
         } else AppTopBar(title = "Color", subtitle = "ApexStudio • Color Grading", onBack = onBack,
-            onExport = {
-                if (vm.applyProjectColorStudioGrade(grade)) onExport()
-                else processingError = "Color grade couldn't be applied to this project. Reset or adjust it, then try again."
-            })
+            onExport = { applyGradeThen(onExport) })
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
                 .padding(horizontal = if (embedded) 6.dp else 12.dp, vertical = if (embedded) 4.dp else 8.dp),

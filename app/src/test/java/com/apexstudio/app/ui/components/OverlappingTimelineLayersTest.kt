@@ -2,6 +2,10 @@ package com.apexstudio.app.ui.components
 
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -81,6 +85,42 @@ class OverlappingTimelineLayersTest {
         compose.onNodeWithTag("timeline-audio-track-music", useUnmergedTree = true).assertIsDisplayed()
         assertTrue(mainBounds.bottom <= pipBounds.top)
         assertTrue(pipBounds.bottom <= musicBounds.top)
+    }
+
+    @Test fun selectedClipMarkerFollowsTheCurrentMainOrOverlayProjectClip() {
+        val main = MediaClip("main", "Main", "file:///main.mp4", 10_000L,
+            trimEndMs = 10_000L, type = ClipType.VIDEO, trackIndex = 0)
+        val pip = main.copy(id = "pip", name = "PiP", uri = "file:///pip.mp4",
+            type = ClipType.OVERLAY, trackIndex = 1, timelineOffsetMs = 1_000L,
+            trimStartMs = 0L, trimEndMs = 4_000L)
+        compose.setContent {
+            var selectedClipId by remember { mutableStateOf(main.id) }
+            VideoTimeline(
+                clips = listOf(main, pip),
+                totalDurationMs = 10_000L,
+                playheadMs = 1_000L,
+                selectedClipId = selectedClipId,
+                onSelectClip = { selectedClipId = it },
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                modifier = Modifier.requiredSize(840.dp, 400.dp),
+            )
+        }
+
+        compose.onNodeWithText("SELECTED · V1", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-selection-chip-main", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-selection-accent-main", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).assertIsSelected()
+        compose.onNodeWithTag("timeline-selection-chip-pip", useUnmergedTree = true).assertDoesNotExist()
+
+        compose.onNodeWithTag("timeline-overlay-clip-pip", useUnmergedTree = true).performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText("SELECTED · V2", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-selection-chip-pip", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-selection-accent-pip", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).assertIsNotSelected()
+        compose.onNodeWithTag("timeline-overlay-clip-pip", useUnmergedTree = true).assertIsSelected()
     }
 
     @Test fun selectedStickerRangeHandleCommitsTrimmedProjectRange() {

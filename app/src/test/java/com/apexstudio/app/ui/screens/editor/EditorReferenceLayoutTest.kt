@@ -1,9 +1,10 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -75,7 +76,10 @@ class EditorReferenceLayoutTest {
 
         compose.onNodeWithTag("workspace-panel").assertIsDisplayed()
         compose.onNodeWithTag("workspace-presets-card").assertIsDisplayed()
-        compose.onNodeWithText("Export Color result").assertDoesNotExist()
+        assertTrue(
+            "Effects must not launch the Color Studio export dialog",
+            compose.onAllNodesWithText("Export Color result").fetchSemanticsNodes().isEmpty()
+        )
         compose.runOnIdle { assertEquals("edit", activeWorkspace.value) }
     }
 
@@ -121,7 +125,10 @@ class EditorReferenceLayoutTest {
             compose.onNodeWithText(it).assertIsDisplayed()
         }
         compose.onNodeWithContentDescription("Play playback").assertIsDisplayed()
-        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        assertTrue(
+            "Compact timeline mode must not render the expanded timeline header",
+            compose.onAllNodesWithTag("timeline-header").fetchSemanticsNodes().isEmpty()
+        )
         val rootBounds = compose.onRoot().fetchSemanticsNode().boundsInRoot
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot

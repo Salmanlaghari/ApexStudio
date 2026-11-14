@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
@@ -31,6 +32,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -181,7 +183,11 @@ class FxFilterPanelTest {
             .performScrollToNode(hasTestTag("fx-category-animated"))
         val animatedCategory = compose.onNodeWithTag("fx-category-animated")
         animatedCategory.performScrollTo()
-        animatedCategory.assertIsDisplayed().assertIsNotSelected()
+        animatedCategory.assertIsDisplayed()
+        assertFalse(
+            "Animated category should start unselected",
+            animatedCategory.fetchSemanticsNode().config[SemanticsProperties.Selected]
+        )
         animatedCategory.performClick()
         compose.waitForIdle()
         animatedCategory.assertIsSelected()

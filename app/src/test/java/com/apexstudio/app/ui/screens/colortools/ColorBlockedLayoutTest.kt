@@ -71,7 +71,7 @@ class ColorBlockedLayoutTest {
         val close = compose.onNodeWithText("Close").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val mode = compose.onNodeWithText("Project-wide video grade").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertTrue("Body starts below the fixed header", close.bottom <= mode.top)
-        compose.onNodeWithText("Applies to main-track videos; no separate Color MP4.")
+        compose.onNodeWithText("Finish editing, then export the project once.", substring = true)
             .performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Drag to compare before and after").assertDoesNotExist()
         compose.onNodeWithText("Compare selected source only").performScrollTo().assertIsDisplayed().performClick()

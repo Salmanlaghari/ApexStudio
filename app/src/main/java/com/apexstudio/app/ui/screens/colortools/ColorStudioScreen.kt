@@ -186,7 +186,7 @@ fun ColorStudioScreen(
                 BeforeAfterPreview(sourceFrame?.bitmap, gradedFrame, split, { split = it.coerceIn(0f, 1f) },
                     if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth(),
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
-                Text("This is a selected source-frame preview. Apply saves the grade to all current and future main-track videos; export the full project once when editing is complete.",
+                Text("Source-frame preview only. Apply saves the grade to all current and future main-track videos. Finish editing, then export the project once.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
                     .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -223,7 +223,6 @@ fun ColorStudioScreen(
                                     }
                                 }
                             } else Text("Project-wide video grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
-                            Text("Applies to main-track videos; no separate Color MP4.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
                         }
                     }
                     item {

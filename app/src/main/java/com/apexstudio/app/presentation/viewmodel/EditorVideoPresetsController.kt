@@ -16,9 +16,12 @@ fun EditorViewModel.applyProjectVideoTextTemplate(
     projectId: String,
     expectedClip: MediaClip,
     templateId: String,
+    allowUnselectedMainTrackTarget: Boolean = false,
 ): Boolean = synchronized(this) {
     val template = ProjectVideoPresets.textTemplate(templateId) ?: return@synchronized false
-    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(
+        projectId, expectedClip, requireSelectedClip = !allowUnselectedMainTrackTarget,
+    ) ?: return@synchronized false
     val overlay = template.createTextOverlay()
 
     pushUndo()
@@ -32,9 +35,12 @@ fun EditorViewModel.applyProjectVideoTextMotion(
     projectId: String,
     expectedClip: MediaClip,
     motionId: String,
+    allowUnselectedMainTrackTarget: Boolean = false,
 ): Boolean = synchronized(this) {
     val motion = ProjectVideoPresets.textMotion(motionId) ?: return@synchronized false
-    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(
+        projectId, expectedClip, requireSelectedClip = !allowUnselectedMainTrackTarget,
+    ) ?: return@synchronized false
     val title = ProjectVideoPresets.textTemplate("title-bold") ?: return@synchronized false
     val overlay = title.createTextOverlay(motion)
 
@@ -152,9 +158,12 @@ fun EditorViewModel.applyProjectVideoEffect(
     projectId: String,
     expectedClip: MediaClip,
     effectId: String,
+    allowUnselectedMainTrackTarget: Boolean = false,
 ): Boolean = synchronized(this) {
     val effect = ProjectVideoPresets.effect(effectId) ?: return@synchronized false
-    val target = validatedVideoPresetTarget(projectId, expectedClip) ?: return@synchronized false
+    val target = validatedVideoPresetTarget(
+        projectId, expectedClip, requireSelectedClip = !allowUnselectedMainTrackTarget,
+    ) ?: return@synchronized false
     if (target.projectVideoEffectId == effect.id) return@synchronized true
 
     pushUndo()

@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.data.template.ProjectVideoPresets
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.projectVideoTemplateBlockReason
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTemplate
@@ -17,6 +18,12 @@ import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextMotion
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoEffect
 import com.apexstudio.app.presentation.viewmodel.applyProjectVideoTextTemplate
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+
+private data class CapturedProjectVideoTarget(
+    val projectId: String,
+    val clip: MediaClip,
+    val allowUnselectedMainTrackTarget: Boolean,
+)
 
 /** A frozen target prevents a delayed selection from editing a different clip or project. */
 @Composable
@@ -30,12 +37,14 @@ fun ProjectVideoPresetsOverlay(
                 ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
             val preview = timelinePreviewClip(project.clips, state.playerPositionMs)
                 ?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
-            (selected ?: preview)?.let { project.id to it }
+            (selected ?: preview)?.let { clip ->
+                CapturedProjectVideoTarget(project.id, clip, allowUnselectedMainTrackTarget = selected == null)
+            }
         }
     } }
     var feedback by remember { mutableStateOf<String?>(null) }
-    val templateBlockReason = target?.second?.let(::projectVideoTemplateBlockReason)
-    val videoEligible = target?.second?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+    val templateBlockReason = target?.clip?.let(::projectVideoTemplateBlockReason)
+    val videoEligible = target?.clip?.let { it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
         it.durationMs > 0L && it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs } == true
     fun finish(applied: Boolean) {
         if (applied) onClose()
@@ -44,14 +53,34 @@ fun ProjectVideoPresetsOverlay(
     ProjectVideoPresetsPanel(
         eligible = videoEligible,
         templateEligible = videoEligible && templateBlockReason == null,
-        targetName = target?.second?.name,
+        targetName = target?.clip?.name,
         feedback = feedback,
         templateBlockReason = templateBlockReason,
-        onTextTemplate = { id -> finish(target?.let { vm.applyProjectVideoTextTemplate(it.first, it.second, id) } == true) },
-        onVideoEffect = { id -> finish(target?.let { vm.applyProjectVideoEffect(it.first, it.second, id) } == true) },
+        onTextTemplate = { id -> finish(target?.let {
+            vm.applyProjectVideoTextTemplate(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
+        onVideoEffect = { id -> finish(target?.let {
+            vm.applyProjectVideoEffect(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
         onClose = onClose,
-        onVideoTemplate = { id -> finish(target?.let { vm.applyProjectVideoTemplate(it.first, it.second, id) } == true) },
-        onTextMotion = { id -> finish(target?.let { vm.applyProjectVideoTextMotion(it.first, it.second, id) } == true) }
+        onVideoTemplate = { id -> finish(target?.let {
+            vm.applyProjectVideoTemplate(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) },
+        onTextMotion = { id -> finish(target?.let {
+            vm.applyProjectVideoTextMotion(
+                it.projectId, it.clip, id,
+                allowUnselectedMainTrackTarget = it.allowUnselectedMainTrackTarget,
+            )
+        } == true) }
     )
 }
 
@@ -77,7 +106,7 @@ internal fun ProjectVideoPresetsPanel(
             Text("Project video tools", style = MaterialTheme.typography.titleLarge)
             Text("Fixed local editing choices; no text or prompt input. Color presets are deterministic, not AI.",
                 style = MaterialTheme.typography.bodySmall)
-            Text(if (eligible) "Selected video: $targetName"
+            Text(if (eligible) "Target video: $targetName"
                 else "Select an existing main-track video clip in this project. Still images, audio and overlays are not supported.")
             Text("Video Templates · Fixed Combo", style = MaterialTheme.typography.titleMedium)
             Text(when {

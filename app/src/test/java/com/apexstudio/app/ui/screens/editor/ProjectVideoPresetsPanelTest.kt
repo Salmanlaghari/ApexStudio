@@ -68,7 +68,7 @@ class ProjectVideoPresetsPanelTest {
         compose.setContent { MaterialTheme { ProjectVideoPresetsOverlay(vm, onClose = {}) } }
         compose.mainClock.advanceTimeBy(1_000)
 
-        compose.onNodeWithText("Selected video: Main footage").assertExists()
+        compose.onNodeWithText("Target video: Main footage").assertExists()
         val effect = ProjectVideoPresets.effects.first()
         compose.onNodeWithTag("video_effect_${effect.id}").activateVisibleControl()
         compose.runOnIdle {

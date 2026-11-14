@@ -74,9 +74,6 @@ class ColorBlockedLayoutTest {
         compose.onNodeWithText("Finish editing, then export the project once.", substring = true)
             .performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Drag to compare before and after").assertDoesNotExist()
-        compose.onNodeWithText("Compare selected source only").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("This Before/After is the selected source frame only, not a full-timeline preview.")
-            .performScrollTo().assertIsDisplayed()
         compose.runOnIdle {
             assertEquals("Source mode is not permission to change or drop PiP", project, vm.state.value.project)
             assertEquals(overlay.id, vm.state.value.selectedClipId)

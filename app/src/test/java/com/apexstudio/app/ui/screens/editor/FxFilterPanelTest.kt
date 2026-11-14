@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasTestTag
@@ -135,7 +136,11 @@ class FxFilterPanelTest {
                     onDownloadEffectsPack = {
                         downloadRequests++
                         packState.value = PackManager.PackState.Downloaded
-                        profiles.value = listOf(effect)
+                        profiles.value = listOf(
+                            effect,
+                            effect.copy(label = "Duplicate Prism"),
+                            effect.copy(id = FxPreset.HUE_CYCLE.id, label = "Built-in ID collision")
+                        )
                     },
                     onClose = {}
                 )
@@ -153,11 +158,15 @@ class FxFilterPanelTest {
         compose.onNodeWithTag("fx-category-all").performClick()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
         compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Duplicate Prism").assertDoesNotExist()
+        compose.onNodeWithText("Built-in ID collision").assertDoesNotExist()
         compose.runOnIdle {
             assertEquals(1, downloadRequests)
             assertEquals(effect.id, selectedFx.value)
         }
 
+        compose.onNodeWithText("Original").performClick()
+        compose.runOnIdle { assertEquals(null, selectedFx.value) }
         compose.onNodeWithTag("fx-category-list")
             .performScrollToNode(hasTestTag("fx-category-downloaded"))
         compose.onNodeWithTag("fx-category-downloaded").performClick()
@@ -165,6 +174,12 @@ class FxFilterPanelTest {
         compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
         compose.onNodeWithText("1.2x").performScrollTo().assertIsDisplayed()
+
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-animated"))
+        compose.onNodeWithTag("fx-category-animated").performClick()
+        compose.onNodeWithTag("fx-preset-list").performScrollTo()
+        compose.onNodeWithText("Prism Sample").assertDoesNotExist()
     }
 
     @Test

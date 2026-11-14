@@ -201,6 +201,12 @@ fun FxPanel(
             if (activeCategory == "All") FxPreset.values().toList()
             else FxPreset.values().filter { it.category == activeCategory }
         }
+        val displayedDownloadedEffects = remember(activeCategory, downloadedEffects) {
+            if (activeCategory == "Downloaded" || activeCategory == "All") {
+                val seenIds = FxPreset.values().mapTo(mutableSetOf()) { it.id }
+                downloadedEffects.filter { seenIds.add(it.id) }
+            } else emptyList()
+        }
 
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -216,7 +222,7 @@ fun FxPanel(
                 )
             }
             items(
-                if (activeCategory == "Downloaded" || activeCategory == "All") downloadedEffects else emptyList(),
+                displayedDownloadedEffects,
                 key = { it.id }
             ) { effect ->
                 FxChip(

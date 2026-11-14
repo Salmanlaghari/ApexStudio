@@ -4,10 +4,23 @@ import android.graphics.Bitmap
 import java.io.File
 import java.util.Locale
 import com.apexstudio.app.data.filter.LutTexture
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import kotlin.math.*
 
 typealias ColorWheelVector = com.apexstudio.app.domain.model.ColorWheelVector
 typealias ColorStudioGrade = com.apexstudio.app.domain.model.ColorStudioGrade
+
+internal fun MediaClip.isProjectColorGradeTarget(): Boolean =
+    trackIndex == 0 && type == ClipType.VIDEO
+
+internal fun <EffectT> projectColorGradeEffectsByClipId(
+    clips: List<MediaClip>,
+    createEffects: (MediaClip) -> List<EffectT>
+): Map<String, List<EffectT>> = clips
+    .filter { it.isProjectColorGradeTarget() }
+    .distinctBy { it.id }
+    .associate { clip -> clip.id to createEffects(clip) }
 
 /** Reject malformed values before a project render instead of relying on LUT-side clamping. */
 fun ColorStudioGrade.hasValidRenderParameters(): Boolean =

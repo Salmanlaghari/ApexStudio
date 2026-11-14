@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.CircularProgressIndicator
@@ -178,8 +177,8 @@ fun ColorStudioScreen(
             if (candidates.isEmpty()) {
                 GlassCard(Modifier.fillMaxWidth(), cornerRadius = 14.dp) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("No project video or image", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
-                        Text("Add or select existing media in the project editor. Color does not create placeholder media.",
+                        Text("No project video", color = ApexPalette.TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("Add or select a main-track video in the project editor. Color does not create placeholder media.",
                             color = ApexPalette.TextSecondary, fontSize = 12.sp)
                     }
                 }
@@ -187,7 +186,7 @@ fun ColorStudioScreen(
                 BeforeAfterPreview(sourceFrame?.bitmap, gradedFrame, split, { split = it.coerceIn(0f, 1f) },
                     if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth(),
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
-                Text("This is a selected source-frame preview. Apply saves the grade to all current and future main-track clips; export the full project once when editing is complete.",
+                Text("This is a selected source-frame preview. Apply saves the grade to all current and future main-track videos; export the full project once when editing is complete.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
                     .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -196,7 +195,7 @@ fun ColorStudioScreen(
                         Column(Modifier.width(246.dp).height(138.dp).clip(RoundedCornerShape(14.dp))
                             .background(ApexPalette.BgSurface).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
                             .padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("SOURCE • ${if (clip?.type == ClipType.IMAGE) "STILL" else "PAUSED VIDEO FRAME"}",
+                            Text("SOURCE • PAUSED VIDEO FRAME",
                                 color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
                             Text(clip?.name.orEmpty(), color = ApexPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)
                             if (clip?.type == ClipType.VIDEO) {
@@ -212,19 +211,19 @@ fun ColorStudioScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 candidates.forEach { candidate ->
                                     val active = candidate.id == clip?.id
-                                    val icon = if (candidate.type == ClipType.IMAGE) Icons.Default.Image else Icons.Default.VideoLibrary
+                                    val icon = Icons.Default.VideoLibrary
                                     Row(Modifier.clip(RoundedCornerShape(7.dp))
                                         .background(if (active) ApexPalette.NeonCyan.copy(.15f) else ApexPalette.BgElevated)
                                         .clickable { chosenClipId = candidate.id; frameTime = ColorMediaIO.previewTimeMs(candidate, candidate.trimStartMs) }
                                         .padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                         androidx.compose.material3.Icon(icon, null, tint = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, modifier = Modifier.size(12.dp))
                                         Spacer(Modifier.width(3.dp))
-                                        Text(candidate.name.ifBlank { if (candidate.type == ClipType.IMAGE) "Image" else "Video" },
+                                        Text(candidate.name.ifBlank { "Video" },
                                             color = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, maxLines = 1, fontSize = 9.sp)
                                     }
                                 }
-                            } else Text("Project-wide grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
-                            Text("Applies to the main-track project; no separate Color MP4.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                            } else Text("Project-wide video grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                            Text("Applies to main-track videos; no separate Color MP4.", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
                         }
                     }
                     item {

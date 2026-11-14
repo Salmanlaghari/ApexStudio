@@ -9,6 +9,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import androidx.exifinterface.media.ExifInterface
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import java.io.File
@@ -16,7 +17,7 @@ import java.io.InputStream
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Color Studio previews one main-track source while committing its grade to the whole project track. */
+/** Color Studio previews one main-track video while committing its grade to current and future main-track videos. */
 internal object ColorMediaIO {
     const val PREVIEW_MAX_DIMENSION = 1280
     const val MAX_STILL_EXPORT_PIXELS = 12_000_000L
@@ -26,7 +27,7 @@ internal object ColorMediaIO {
     data class ImageBounds(val width: Int, val height: Int, val exifOrientation: Int)
 
     fun selectedSources(clips: List<MediaClip>): List<MediaClip> =
-        clips.filter { it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE) }
+        clips.filter { it.isProjectColorGradeTarget() }
 
     fun sourceUri(clip: MediaClip): String = clip.backgroundReplace?.sourceUri
         ?.takeIf(String::isNotBlank) ?: clip.uri

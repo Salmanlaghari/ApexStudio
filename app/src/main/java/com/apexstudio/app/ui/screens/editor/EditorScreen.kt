@@ -35,6 +35,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.CompositionPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
+import com.apexstudio.app.data.color.projectColorGradeEffectsByClipId
 import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
@@ -670,9 +672,7 @@ private fun EditorScreenContent(
         globalFxPreviewBinding(state.activeFxId, activeDownloadedFx, state.fxIntensity, state.fxSpeed)
     }
     val projectColorGrade = state.project?.colorStudioGrade
-    val shouldGradeMainPreview = mainPreviewClip?.let {
-        it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
-    } == true
+    val shouldGradeMainPreview = mainPreviewClip?.isProjectColorGradeTarget() == true
     val projectColorEffects by produceState<List<androidx.media3.common.Effect>>(
         initialValue = emptyList(), projectColorGrade, shouldGradeMainPreview
     ) {
@@ -681,6 +681,21 @@ private fun EditorScreenContent(
         if (!shouldGradeMainPreview) return@produceState
         value = withContext(Dispatchers.Default) {
             com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+        }
+    }
+    val transitionColorGradeTargetClips = remember(projectTransitionPlan) {
+        projectTransitionPlan.entries.map { it.clip }.distinctBy { it.id }
+    }
+    val transitionProjectColorEffectsByClipId by produceState<
+        Map<String, List<androidx.media3.common.Effect>>
+    >(initialValue = emptyMap(), projectColorGrade, transitionColorGradeTargetClips) {
+        value = emptyMap()
+        val grade = projectColorGrade ?: return@produceState
+        if (transitionColorGradeTargetClips.isEmpty()) return@produceState
+        value = withContext(Dispatchers.Default) {
+            projectColorGradeEffectsByClipId(transitionColorGradeTargetClips) {
+                com.apexstudio.app.data.color.createColorStudioVideoEffects(context.applicationContext, grade)
+            }
         }
     }
 
@@ -799,7 +814,7 @@ private fun EditorScreenContent(
         state.project?.videoAspectRatio,
         activePreset,
         globalFxBinding,
-        projectColorEffects,
+        transitionProjectColorEffectsByClipId,
         state.filterIntensity,
         state.adjustments,
         state.gpuFilterCompareMode,
@@ -911,7 +926,7 @@ private fun EditorScreenContent(
                         }
                     }
                 )?.let(::add)
-                addAll(projectColorEffects)
+                addAll(transitionProjectColorEffectsByClipId[clip.id].orEmpty())
                 val captions = clip.textOverlays.filter { it.text.isNotBlank() }
                 if (captions.isNotEmpty()) {
                     add(com.apexstudio.app.data.effect.TextOverlayGlEffect(context, captions, aspect))

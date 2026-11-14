@@ -5,7 +5,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import com.apexstudio.app.data.adjust.AdjustmentsGlEffect
 import com.apexstudio.app.data.filter.LutFilterGlEffect
+import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.MediaClip
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,5 +46,20 @@ class ColorStudioExportEffectsTest {
             createColorStudioVideoEffects(context, ColorStudioGrade(sharpness = Float.NaN))
         }.exceptionOrNull()
         assertTrue(failure is IllegalArgumentException)
+    }
+
+    @Test
+    fun `transition grade effects are separate for main videos and exclude stills and PiP`() {
+        val first = MediaClip("first", "First", "file:///first.mp4", 1_000L, trimEndMs = 1_000L)
+        val second = first.copy(id = "second", name = "Second", uri = "file:///second.mp4")
+        val pip = first.copy(id = "pip", trackIndex = 1)
+        val still = first.copy(id = "still", type = ClipType.IMAGE)
+
+        val effectsByClip = projectColorGradeEffectsByClipId(listOf(first, second, pip, still)) {
+            listOf(Any())
+        }
+
+        assertEquals(setOf(first.id, second.id), effectsByClip.keys)
+        assertNotSame(effectsByClip.getValue(first.id).single(), effectsByClip.getValue(second.id).single())
     }
 }

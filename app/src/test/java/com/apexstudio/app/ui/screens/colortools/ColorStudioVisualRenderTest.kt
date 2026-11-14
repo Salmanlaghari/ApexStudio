@@ -41,7 +41,7 @@ class ColorStudioVisualRenderTest {
         vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
         compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
 
-        compose.onNodeWithText("This is a selected source-frame preview. Apply saves the grade to all current and future main-track clips; export the full project once when editing is complete.")
+        compose.onNodeWithText("This is a selected source-frame preview. Apply saves the grade to all current and future main-track videos; export the full project once when editing is complete.")
             .assertIsDisplayed()
     }
 

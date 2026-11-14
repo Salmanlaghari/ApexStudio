@@ -10,6 +10,7 @@ import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.data.export.eightKCapabilityRequestForSettings
 import com.apexstudio.app.data.export.projectCompositionUnsupportedReason
 import com.apexstudio.app.data.color.ColorStudioGrade
+import com.apexstudio.app.data.color.isProjectColorGradeTarget
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.data.photoedit.PhotoVideoEncoder
 import com.apexstudio.app.domain.model.*
@@ -242,7 +243,7 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             signature = s.project?.signature,
-            colorStudioGrade = s.project?.colorStudioGrade.takeIf { selected?.trackIndex == 0 },
+            colorStudioGrade = s.project?.colorStudioGrade.takeIf { selected?.isProjectColorGradeTarget() == true },
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),
             videoDrawingClipId = selected?.id,
@@ -616,7 +617,6 @@ internal fun buildPhotoExportConfig(
         arFilterCustomText = s.arFilterCustomText,
         textOverlays = clip.textOverlays,
         signature = s.project?.signature,
-        colorStudioGrade = s.project?.colorStudioGrade.takeIf { clip.trackIndex == 0 },
         stickers = stickers,
         videoDrawings = selectedExportDrawings(s, clip.id),
         videoDrawingClipId = clip.id,

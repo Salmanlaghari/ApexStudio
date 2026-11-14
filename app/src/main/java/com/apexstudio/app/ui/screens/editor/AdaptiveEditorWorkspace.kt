@@ -1,19 +1,30 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.KeyframeParam
@@ -32,15 +43,18 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
     focused: Boolean,
     fullscreen: Boolean,
     preview: @Composable ColumnScope.() -> Unit,
-    timeline: @Composable ColumnScope.() -> Unit,
+    timeline: @Composable ColumnScope.(fillTimelinePane: Boolean) -> Unit,
     inspector: @Composable ColumnScope.() -> Unit,
+    compactTimelinePaneHeight: Dp = 160.dp,
+    manualTimelinePaneHeight: Dp? = null,
+    onManualTimelinePaneHeightChange: (Dp?) -> Unit = {},
 ) {
     var inspectorOpen by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth().weight(1f).testTag("adaptive-editor-workspace")) {
         if (!landscape || fullscreen) {
             if (fullscreen) {
                 preview()
-                timeline()
+                timeline(false)
             } else if (horizontalProjectMode && !focused) {
                 Column(Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-workspace")) {
                     Column(
@@ -49,7 +63,7 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                     )
                     Column(
                         Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-timeline-pane"),
-                        content = timeline
+                        content = { timeline(true) }
                     )
                 }
             } else if (focused) {
@@ -59,17 +73,93 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                 )
                 Column(
                     Modifier.fillMaxWidth().weight(1f).testTag("portrait-timeline-pane"),
-                    content = timeline
+                    content = { timeline(false) }
                 )
             } else {
-                Column(
-                    Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane"),
-                    content = preview
-                )
-                Column(
-                    Modifier.fillMaxWidth().wrapContentHeight().testTag("portrait-timeline-pane"),
-                    content = timeline
-                )
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                    val availableWorkspaceHeight = maxHeight
+                    val effectiveTimelineHeight = manualTimelinePaneHeight?.let {
+                        clampTimelinePaneHeight(
+                            requestedTimelinePaneHeight = it,
+                            availableWorkspaceHeight = availableWorkspaceHeight,
+                            compactTimelinePaneHeight = compactTimelinePaneHeight,
+                        )
+                    }
+                    val currentHeightState = rememberUpdatedState(effectiveTimelineHeight)
+                    val availableHeightState = rememberUpdatedState(availableWorkspaceHeight)
+                    val compactHeightState = rememberUpdatedState(compactTimelinePaneHeight)
+                    val onHeightChangeState = rememberUpdatedState(onManualTimelinePaneHeightChange)
+                    val density = LocalDensity.current
+                    Column(
+                        Modifier.fillMaxSize().pointerInput(
+                            availableWorkspaceHeight, compactTimelinePaneHeight, density
+                        ) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(
+                                    requireUnconsumed = false,
+                                    pass = PointerEventPass.Initial,
+                                )
+                                val startHeight = clampTimelinePaneHeight(
+                                    requestedTimelinePaneHeight =
+                                        currentHeightState.value ?: compactHeightState.value,
+                                    availableWorkspaceHeight = availableHeightState.value,
+                                    compactTimelinePaneHeight = compactHeightState.value,
+                                )
+                                val startHeightPx = with(density) { startHeight.toPx() }
+                                val handleHeightPx = with(density) { TIMELINE_RESIZE_HANDLE_HEIGHT.toPx() }
+                                val handleHitSlopPx = with(density) { 12.dp.toPx() }
+                                val handleTop = size.height - startHeightPx - handleHeightPx
+                                val handleBottom = size.height - startHeightPx
+                                if (down.position.y >= handleTop - handleHitSlopPx &&
+                                    down.position.y <= handleBottom + handleHitSlopPx
+                                ) {
+                                    var dragging = false
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        val delta = change.position - down.position
+                                        if (!dragging &&
+                                            kotlin.math.abs(delta.y) > viewConfiguration.touchSlop &&
+                                            kotlin.math.abs(delta.y) >= kotlin.math.abs(delta.x)
+                                        ) {
+                                            dragging = true
+                                        }
+                                        if (dragging) {
+                                            val requested = with(density) {
+                                                (startHeightPx - delta.y).toDp()
+                                            }
+                                            val bounded = clampTimelinePaneHeight(
+                                                requestedTimelinePaneHeight = requested,
+                                                availableWorkspaceHeight = availableHeightState.value,
+                                                compactTimelinePaneHeight = compactHeightState.value,
+                                            )
+                                            val isCompact =
+                                                bounded.value <= compactHeightState.value.value + 1f
+                                            onHeightChangeState.value(if (isCompact) null else bounded)
+                                            change.consume()
+                                        }
+                                        if (!change.pressed) break
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        Column(
+                            Modifier.fillMaxWidth().weight(1f).testTag("portrait-preview-pane"),
+                            content = preview
+                        )
+                        TimelineResizeHandle(onReset = { onManualTimelinePaneHeightChange(null) })
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .then(
+                                    if (effectiveTimelineHeight == null) Modifier.wrapContentHeight()
+                                    else Modifier.height(effectiveTimelineHeight)
+                                )
+                                .testTag("portrait-timeline-pane"),
+                            content = { timeline(effectiveTimelineHeight != null) }
+                        )
+                    }
+                }
             }
         } else {
             Row(Modifier.fillMaxWidth().weight(if (focused) .001f else .48f).testTag("landscape-preview-row")) {
@@ -89,8 +179,42 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().weight(if (focused) 1f else .52f).testTag("landscape-timeline"), content = timeline)
+            Column(Modifier.fillMaxWidth().weight(if (focused) 1f else .52f).testTag("landscape-timeline"), content = { timeline(false) })
         }
+    }
+}
+
+private val TIMELINE_RESIZE_HANDLE_HEIGHT = 32.dp
+private val TIMELINE_PREVIEW_MIN_HEIGHT = 180.dp
+
+internal fun clampTimelinePaneHeight(
+    requestedTimelinePaneHeight: Dp,
+    availableWorkspaceHeight: Dp,
+    compactTimelinePaneHeight: Dp,
+    minimumPreviewHeight: Dp = TIMELINE_PREVIEW_MIN_HEIGHT,
+    resizeHandleHeight: Dp = TIMELINE_RESIZE_HANDLE_HEIGHT,
+): Dp {
+    val maximumTimelineHeight =
+        (availableWorkspaceHeight - minimumPreviewHeight - resizeHandleHeight).coerceAtLeast(0.dp)
+    val minimumTimelineHeight = compactTimelinePaneHeight.coerceAtLeast(0.dp).coerceAtMost(maximumTimelineHeight)
+    return requestedTimelinePaneHeight.coerceIn(minimumTimelineHeight, maximumTimelineHeight)
+}
+
+@Composable
+private fun TimelineResizeHandle(onReset: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(TIMELINE_RESIZE_HANDLE_HEIGHT)
+            .semantics { contentDescription = "Resize timeline. Drag up or down; tap to reset to compact." }
+            .clickable(role = Role.Button, onClick = onReset)
+            .testTag("timeline-resize-handle"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
+                .background(EditorPalette.TextSecondary.copy(alpha = 0.7f))
+        )
     }
 }
 

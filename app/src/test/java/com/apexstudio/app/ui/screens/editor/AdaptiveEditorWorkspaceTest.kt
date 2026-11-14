@@ -2,10 +2,15 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.*
 import org.junit.Rule
@@ -24,14 +29,18 @@ class AdaptiveEditorWorkspaceTest {
             Column(Modifier.requiredSize(if (landscape) 840.dp else 375.dp, 400.dp)) {
                 AdaptiveEditorWorkspace(landscape, focused = focused, fullscreen = fullscreen,
                     preview = { Box(Modifier.fillMaxWidth().height(180.dp).testTag("preview-content")) },
-                    timeline = {
-                        if (focused) Box(Modifier.fillMaxSize().testTag("timeline-content"))
+                    timeline = { fillTimelinePane ->
+                        if (focused || fillTimelinePane) Box(Modifier.fillMaxSize().testTag("timeline-content"))
                         else Box(Modifier.fillMaxWidth().height(160.dp).testTag("timeline-content"))
                     },
-                    inspector = { Text("Real properties") })
+                    inspector = { Text("Real properties") },
+                    compactTimelinePaneHeight = 160.dp)
             }
         }
     }
+
+    private fun paneHeight(tag: String): Float =
+        compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height
 
     @Test fun landscapeKeepsPreviewAboveFullWidthTimelineWithCollapsibleInspector() {
         render(true)
@@ -61,10 +70,80 @@ class AdaptiveEditorWorkspaceTest {
         val workspace = compose.onNodeWithTag("adaptive-editor-workspace").fetchSemanticsNode().boundsInRoot.height
         val preview = compose.onNodeWithTag("portrait-preview-pane").fetchSemanticsNode().boundsInRoot.height
         val timeline = compose.onNodeWithTag("portrait-timeline-pane").fetchSemanticsNode().boundsInRoot.height
+        val handle = compose.onNodeWithTag("timeline-resize-handle").fetchSemanticsNode().boundsInRoot.height
         assertTrue(preview > 0f)
         assertEquals(160f, timeline, 1f)
+        assertEquals(32f, handle, 1f)
         assertTrue("Normal portrait preview should be larger than the row-bounded timeline", preview > timeline)
-        assertTrue("portrait panes should fill the available editor height", kotlin.math.abs(preview + timeline - workspace) < 2f)
+        assertTrue("portrait panes and resize grip should fill the available editor height",
+            kotlin.math.abs(preview + timeline + handle - workspace) < 2f)
+    }
+
+    @Test fun portraitTimelineCanBeDraggedUpAndDownAndResetToCompact() {
+        compose.setContent {
+            var manualHeight by remember { mutableStateOf<Dp?>(null) }
+            Column(Modifier.requiredSize(375.dp, 600.dp)) {
+                AdaptiveEditorWorkspace(
+                    landscape = false,
+                    focused = false,
+                    fullscreen = false,
+                    preview = { Box(Modifier.fillMaxSize().testTag("resize-preview-content")) },
+                    timeline = { fillTimelinePane ->
+                        Box(
+                            Modifier.fillMaxWidth()
+                                .then(if (fillTimelinePane) Modifier.fillMaxSize() else Modifier.height(160.dp))
+                                .testTag("resize-timeline-content")
+                        )
+                    },
+                    inspector = {},
+                    compactTimelinePaneHeight = 160.dp,
+                    manualTimelinePaneHeight = manualHeight,
+                    onManualTimelinePaneHeightChange = { manualHeight = it },
+                )
+            }
+        }
+
+        val compactPreview = paneHeight("portrait-preview-pane")
+        val compactTimeline = paneHeight("portrait-timeline-pane")
+        compose.onNodeWithTag("timeline-resize-handle").assertIsDisplayed().assertHasClickAction()
+        compose.onNodeWithTag("timeline-resize-handle").performTouchInput {
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y - 100f), delayMillis = 120)
+            up()
+        }
+
+        val expandedPreview = paneHeight("portrait-preview-pane")
+        val expandedTimeline = paneHeight("portrait-timeline-pane")
+        assertTrue("Dragging up should grow the timeline viewport", expandedTimeline > compactTimeline + 60f)
+        assertTrue("Resizing should give height back from the preview pane", expandedPreview < compactPreview)
+        assertTrue("The preview pane remains useful after resizing", expandedPreview >= 180f)
+
+        compose.onNodeWithTag("timeline-resize-handle").performTouchInput {
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y + 200f), delayMillis = 120)
+            up()
+        }
+        assertEquals("Dragging down clamps back to the content-bounded timeline", compactTimeline,
+            paneHeight("portrait-timeline-pane"), 1f)
+
+        compose.onNodeWithTag("timeline-resize-handle").performTouchInput {
+            val start = center
+            down(start)
+            moveTo(start.copy(y = start.y - 100f), delayMillis = 120)
+            up()
+        }
+        compose.onNodeWithTag("timeline-resize-handle").performClick()
+        assertEquals("Tapping the grip restores compact height", compactTimeline, paneHeight("portrait-timeline-pane"), 1f)
+    }
+
+    @Test fun timelinePaneHeightClampKeepsCompactRowsAndUsefulPreviewBounds() {
+        assertEquals(160.dp, clampTimelinePaneHeight(90.dp, 500.dp, 160.dp, 180.dp, 32.dp))
+        assertEquals(288.dp, clampTimelinePaneHeight(400.dp, 500.dp, 160.dp, 180.dp, 32.dp))
+        assertEquals(160.dp, clampTimelinePaneHeight(160.dp, 500.dp, 160.dp, 180.dp, 32.dp))
+        assertEquals(288.dp, clampTimelinePaneHeight(288.dp, 500.dp, 160.dp, 180.dp, 32.dp))
+        assertEquals(0.dp, clampTimelinePaneHeight(120.dp, 190.dp, 160.dp, 180.dp, 32.dp))
     }
 
     @Test fun focusedPortraitExpandsTimelineWithoutCollapsingPreview() {

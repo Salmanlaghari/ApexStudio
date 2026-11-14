@@ -243,6 +243,7 @@ fun EditorViewModel.startExport(
             mask = selected?.mask,
             textOverlays = selected?.textOverlays ?: emptyList(),
             signature = s.project?.signature,
+            isProjectColorGradeTarget = selected?.isProjectColorGradeTarget() == true,
             colorStudioGrade = s.project?.colorStudioGrade.takeIf { selected?.isProjectColorGradeTarget() == true },
             stickers = stickers,
             videoDrawings = selectedExportDrawings(s, selected?.id),

@@ -55,6 +55,13 @@ internal fun projectColorStudioGradeForClip(
     grade: ColorStudioGrade?
 ): ColorStudioGrade? = grade?.takeIf { clip.isProjectColorGradeTarget() }
 
+/** Fail closed in selected-item export unless the caller confirmed a main-track video source. */
+internal fun selectedClipColorStudioGradeForExport(
+    config: ExportEngine.ExportConfig
+): ColorStudioGrade? = config.colorStudioGrade?.takeIf {
+    !config.isPhotoExport && config.isProjectColorGradeTarget
+}
+
 /**
  * Pure, fail-closed gate for the deliberately small sequential V1 export path.
  * Every item is accounted for; this never filters or silently normalizes clips.

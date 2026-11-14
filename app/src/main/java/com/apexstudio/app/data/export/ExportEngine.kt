@@ -333,7 +333,9 @@ class ExportEngine(private val context: Context) {
         /** Canonical typed video clips used by whole-project export, keyed by clip id. */
         val sharedVideoClips: Map<String, com.apexstudio.app.domain.model.timeline.VideoClip> = emptyMap(),
         /** Optional Color Studio project grade. Applied to every eligible composed main-track clip. */
-        val colorStudioGrade: ColorStudioGrade? = null
+        val colorStudioGrade: ColorStudioGrade? = null,
+        /** Selected-clip export must explicitly confirm its source is a main-track video. */
+        val isProjectColorGradeTarget: Boolean = false
     )
 
     /**
@@ -1429,7 +1431,7 @@ class ExportEngine(private val context: Context) {
                     // Its paired audio processor is already in the production chain.
                     videoEffects.add(it.second)
                 }
-                config.colorStudioGrade?.let { grade ->
+                selectedClipColorStudioGradeForExport(config)?.let { grade ->
                     videoEffects.addAll(com.apexstudio.app.data.color.createColorStudioVideoEffects(context, grade))
                 }
 

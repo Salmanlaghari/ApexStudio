@@ -393,6 +393,25 @@ class ProjectCompositionExportTest {
     }
 
     @Test
+    fun `selected clip Color grade requires an explicit non-photo video target`() {
+        val grade = ColorStudioGrade(brightness = 0.1f)
+
+        assertEquals(grade, selectedClipColorStudioGradeForExport(
+            ExportEngine.ExportConfig(colorStudioGrade = grade, isProjectColorGradeTarget = true)
+        ))
+        assertNull(selectedClipColorStudioGradeForExport(
+            ExportEngine.ExportConfig(colorStudioGrade = grade)
+        ))
+        assertNull(selectedClipColorStudioGradeForExport(
+            ExportEngine.ExportConfig(
+                colorStudioGrade = grade,
+                isPhotoExport = true,
+                isProjectColorGradeTarget = true
+            )
+        ))
+    }
+
+    @Test
     fun `per clip GPU filter state stays attached to its own project item`() {
         val first = clip().copy(gpuFilterConfig = GpuFilterConfig(
             stylisticEffect = StylisticEffectType.VIGNETTE,

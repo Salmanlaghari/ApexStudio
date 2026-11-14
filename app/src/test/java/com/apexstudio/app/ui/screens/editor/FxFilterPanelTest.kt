@@ -5,10 +5,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -158,8 +159,8 @@ class FxFilterPanelTest {
         compose.onNodeWithTag("fx-category-all").performClick()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
         compose.onNodeWithText("Prism Sample").assertIsDisplayed().performClick()
-        compose.onNodeWithText("Duplicate Prism").assertDoesNotExist()
-        compose.onNodeWithText("Built-in ID collision").assertDoesNotExist()
+        compose.onAllNodesWithText("Duplicate Prism").assertCountEquals(0)
+        compose.onAllNodesWithText("Built-in ID collision").assertCountEquals(0)
         compose.runOnIdle {
             assertEquals(1, downloadRequests)
             assertEquals(effect.id, selectedFx.value)
@@ -179,7 +180,7 @@ class FxFilterPanelTest {
             .performScrollToNode(hasTestTag("fx-category-animated"))
         compose.onNodeWithTag("fx-category-animated").performClick()
         compose.onNodeWithTag("fx-preset-list").performScrollTo()
-        compose.onNodeWithText("Prism Sample").assertDoesNotExist()
+        compose.onAllNodesWithText("Prism Sample").assertCountEquals(0)
     }
 
     @Test

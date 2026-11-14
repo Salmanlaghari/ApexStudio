@@ -1,6 +1,10 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.StickerOverlay
+import com.apexstudio.app.data.export.ProjectStickerTimeline
+import com.apexstudio.app.domain.model.timeline.sharedStickerItem
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import com.apexstudio.app.domain.model.timeline.updateSharedStickerItem
 import kotlinx.coroutines.flow.update
 
 /** Applies one validated property edit to a sticker and records exactly one undo snapshot. */
@@ -35,6 +39,38 @@ fun EditorViewModel.setStickerPropertyRange(stickerId: String, startMs: Long, en
         val start = startMs.coerceIn(0L, duration - 1L)
         sticker.copy(startMs = start, endMs = endMs.coerceIn(start + 1L, duration))
     }
+
+/** Persist a timeline drag for a clip-attached sticker in that clip's output-local clock. */
+fun EditorViewModel.setClipStickerPropertyRange(
+    ownerClipId: String,
+    stickerId: String,
+    projectStartMs: Long,
+    projectEndMs: Long,
+) {
+    val original = _state.value.project ?: return
+    val owner = original.clips.firstOrNull { it.id == ownerClipId } ?: return
+    if (owner.stickers.none { it.id == stickerId }) return
+    val matches = (original.stickers + original.clips.flatMap { it.stickers }).count { it.id == stickerId }
+    if (matches != 1) return
+    val range = ProjectStickerTimeline.clipOutputRange(
+        original.clips,
+        ownerClipId,
+        projectStartMs,
+        projectEndMs,
+    ) ?: return
+    val project = original.syncSharedTimeline(importLegacyAnimation = true)
+    if (project.sharedStickerItem(stickerId) == null) return
+    val currentRange = owner.stickers.first { it.id == stickerId }
+    if (currentRange.startMs == range.startMs && currentRange.endMs == range.endMs) return
+    pushUndo()
+    val updatedProject = project.updateSharedStickerItem(stickerId) { sticker ->
+        sticker.copy(startMs = range.startMs, endMs = range.endMs)
+    }
+    _state.update { state ->
+        if (state.project?.id == original.id) state.copy(project = updatedProject) else state
+    }
+    persistProject(refreshLegacyTextStickerFields = true)
+}
 
 /** Duplicate the selected sticker as a separately editable project/clip sticker. */
 fun EditorViewModel.duplicateSticker(stickerId: String) {

@@ -163,4 +163,71 @@ class OverlappingTimelineLayersTest {
             assertEquals(sticker.endMs, end)
         }
     }
+
+    @Test fun clipAttachedStickerSelectsItsV1OwnerAndTrimsUsingProjectTime() {
+        val first = MediaClip(
+            id = "first", name = "First", uri = "file:///first.mp4", durationMs = 10_000L,
+            trimStartMs = 1_000L, trimEndMs = 9_000L, speedMultiplier = 2f,
+            type = ClipType.VIDEO, trackIndex = 0,
+        )
+        val sticker = StickerOverlay(
+            id = "clip-sticker", name = "Clip Star", symbolOrUri = "*", startMs = 1_000L,
+            endMs = 3_000L, keyframes = KeyframeTrack(listOf(Keyframe.identity(1_500L, id = "clip-key"))),
+        )
+        val owner = MediaClip(
+            id = "owner", name = "Owner", uri = "file:///owner.mp4", durationMs = 6_000L,
+            trimEndMs = 6_000L, type = ClipType.VIDEO, trackIndex = 0, stickers = listOf(sticker),
+        )
+        val editedRanges = mutableListOf<Pair<Long, Long>>()
+        val editedTargets = mutableListOf<Pair<String, String>>()
+        compose.setContent {
+            var selectedClipId by remember { mutableStateOf(first.id) }
+            var selectedStickerId by remember { mutableStateOf<String?>(null) }
+            var selectedStickerOwner by remember { mutableStateOf<String?>(null) }
+            val configuration = LocalViewConfiguration.current
+            CompositionLocalProvider(
+                LocalDensity provides Density(1f),
+                LocalViewConfiguration provides object : androidx.compose.ui.platform.ViewConfiguration by configuration {
+                    override val touchSlop = 0f
+                },
+            ) {
+                VideoTimeline(
+                    clips = listOf(first, owner),
+                    totalDurationMs = 10_000L,
+                    playheadMs = 6_000L,
+                    selectedClipId = selectedClipId,
+                    selectedStickerId = selectedStickerId,
+                    selectedStickerOwnerClipId = selectedStickerOwner,
+                    onSelectClip = { id -> selectedClipId = id; selectedStickerOwner = id },
+                    onSelectSticker = { selectedStickerId = it },
+                    onSetClipStickerRange = { ownerId, id, start, end ->
+                        editedTargets += ownerId to id
+                        editedRanges += start to end
+                    },
+                    onToggleClipStickerKeyframeAtPlayhead = { _, _ -> },
+                    onMoveClipStickerKeyframe = { _, _, _, _ -> },
+                    onOpenSpeed = {},
+                    onOpenTrim = {},
+                    modifier = Modifier.requiredSize(840.dp, 420.dp),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("timeline-keyframe-layer-sticker-clip-owner-clip-sticker", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Sticker Clip Star").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Sticker Clip Star").assertIsSelected()
+        compose.onNodeWithTag("timeline-sticker-range-handle-start-clip-owner-clip-sticker", useUnmergedTree = true)
+            .performTouchInput {
+                down(center)
+                moveBy(Offset(54f, 0f))
+                up()
+            }
+
+        compose.runOnIdle {
+            assertEquals("owner" to "clip-sticker", editedTargets.last())
+            assertEquals(6_000L to 7_000L, editedRanges.last())
+        }
+    }
 }

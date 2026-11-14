@@ -138,13 +138,6 @@ fun MaskPanel(
             }
         }
 
-        Text(
-            "Blur Faces unavailable: face-region detection is not wired to preview/export.",
-            color = ApexPalette.TextPrimary.copy(alpha = 0.5f),
-            fontSize = 10.sp,
-            modifier = Modifier.padding(top = 5.dp)
-        )
-
         if (mask == null) {
             Spacer(Modifier.height(9.dp))
             Text("Choose a preset or shape to add a centered mask.", color = ApexPalette.TextPrimary.copy(alpha = 0.56f), fontSize = 11.sp)

@@ -47,6 +47,30 @@ class AnimatedStickerGridTest {
     }
 
     @Test
+    fun editorPackChoicesHideComingSoonButKeepDownloadableAndInstalledPacks() {
+        val availablePack = PackManifestRepo.RemotePack(
+            id = "available-stickers",
+            name = "Available stickers",
+            category = "stickers",
+            sizeBytes = 100L,
+            url = "https://example.invalid/available.zip",
+            sha256 = "a".repeat(64),
+            entry = "manifest.json",
+            itemCount = 1
+        )
+        val comingSoonPack = availablePack.copy(id = "future-stickers", name = "Future stickers")
+        val visible = editorStickerPackItems(
+            listOf(
+                PackManager.PackUiItem(comingSoonPack, PackManager.PackState.ComingSoon),
+                PackManager.PackUiItem(availablePack, PackManager.PackState.NotDownloaded),
+                PackManager.PackUiItem(availablePack.copy(id = "installed-stickers"), PackManager.PackState.Downloaded)
+            )
+        )
+
+        assertEquals(listOf("available-stickers", "installed-stickers"), visible.map { it.pack.id })
+    }
+
+    @Test
     fun activeDownloadCardShowsProgressAndCancelAction() {
         val pack = PackManifestRepo.RemotePack(
             id = "animated-stickers-vol-01",

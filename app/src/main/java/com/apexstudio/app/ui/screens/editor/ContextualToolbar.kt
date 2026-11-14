@@ -502,7 +502,7 @@ fun ContextualBottomToolbar(
         selectionKind == ToolbarSelectionKind.AUDIO && isLegacyAudioClipSelected ->
             "Fade, Beats, Mute, and Volume are available for project audio tracks only."
         selectionKind == ToolbarSelectionKind.VIDEO && isOverlaySelected ->
-            "Overlay speed editing is not available yet; use Properties for overlay volume."
+            "Speed editing applies to main video clips; use Properties for overlay volume."
         else -> null
     }
 

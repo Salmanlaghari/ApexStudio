@@ -4,6 +4,9 @@ import com.apexstudio.app.domain.model.ColorStudioGrade
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -64,6 +67,38 @@ class EditorProjectColorStudioControllerTest {
         assertEquals(ProjectColorGradeCommitResult.Rejected, result)
         assertEquals("replacement", state.value.project?.id)
         assertNull(state.value.project?.colorStudioGrade)
+    }
+
+    @Test fun `concurrent grade commits preserve undo transition order`() {
+        val viewModel = EditorViewModel()
+        viewModel._state.value = EditorState(project = Project("color-project", "Color project", 4_000L))
+        val grades = listOf(ColorStudioGrade(brightness = .2f), ColorStudioGrade(brightness = .4f))
+        val ready = CountDownLatch(grades.size)
+        val start = CountDownLatch(1)
+        val results = Collections.synchronizedList(mutableListOf<Boolean>())
+        val workers = grades.map { grade ->
+            Thread {
+                ready.countDown()
+                if (start.await(5, TimeUnit.SECONDS)) {
+                    results.add(viewModel.applyProjectColorStudioGrade(grade))
+                }
+            }.apply { start() }
+        }
+
+        val allReady = ready.await(5, TimeUnit.SECONDS)
+        start.countDown()
+        workers.forEach { it.join(5_000L) }
+
+        assertTrue(allReady)
+        assertTrue(workers.none { it.isAlive })
+        assertEquals(2, results.size)
+        assertTrue(results.all { it })
+        val undoSnapshots = viewModel.undoStack.toList()
+        assertEquals(2, undoSnapshots.size)
+        assertNull(undoSnapshots.first().project.colorStudioGrade)
+        val intermediateGrade = undoSnapshots.last().project.colorStudioGrade
+        assertTrue(intermediateGrade == grades[0] || intermediateGrade == grades[1])
+        assertTrue(intermediateGrade != viewModel.state.value.project?.colorStudioGrade)
     }
 
     private class ConflictingStateFlow(

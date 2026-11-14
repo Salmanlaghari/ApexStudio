@@ -40,15 +40,18 @@ internal fun commitProjectColorStudioGrade(
 
 /** Commit a Color Studio draft as the project-wide grade used by preview and the normal final export. */
 fun EditorViewModel.applyProjectColorStudioGrade(grade: ColorStudioGrade): Boolean =
-    when (val commit = commitProjectColorStudioGrade(_state, grade)) {
-        ProjectColorGradeCommitResult.Rejected -> false
-        is ProjectColorGradeCommitResult.Unchanged -> true
-        is ProjectColorGradeCommitResult.Applied -> {
-            // Capture the latest pre-edit state; only append undo history after a successful commit.
-            pushUndo(commit.previousState)
-            persistProject()
-            _state.value.project?.let {
-                it.id == commit.projectId && it.colorStudioGrade == grade.takeUnless { value -> value == ColorStudioGrade() }
-            } == true
+    synchronized(_state) {
+        // Keep the successful state transition adjacent to its undo entry so concurrent grades
+        // cannot append snapshots in the opposite order.
+        when (val commit = commitProjectColorStudioGrade(_state, grade)) {
+            ProjectColorGradeCommitResult.Rejected -> false
+            is ProjectColorGradeCommitResult.Unchanged -> true
+            is ProjectColorGradeCommitResult.Applied -> {
+                pushUndo(commit.previousState)
+                persistProject()
+                _state.value.project?.let {
+                    it.id == commit.projectId && it.colorStudioGrade == grade.takeUnless { value -> value == ColorStudioGrade() }
+                } == true
+            }
         }
     }

@@ -1330,7 +1330,7 @@ class ExportTimestampParityInstrumentedTest {
             // Texture makes Ken Burns visibly change frames; a solid field would not.
             for (y in 0 until height) {
                 for (x in 0 until width) {
-                    setPixel(x, y, if ((x / 8 + y / 8) % 2 == 0) Color.GREEN else Color.MAGENTA)
+                    setPixel(x, y, if ((x / 32 + y / 32) % 2 == 0) Color.GREEN else Color.MAGENTA)
                 }
             }
         }
@@ -1353,6 +1353,11 @@ class ExportTimestampParityInstrumentedTest {
             val sourceTrack = readVideoTrack(source!!)
             assertEquals("The fixture must contain 60 source frames", 60, sourceTrack.presentationTimesUs.size)
             val sourceTimestampsUs = sourceTrack.presentationTimesUs.sorted()
+            val sourceFrameIntervalsUs = sourceTimestampsUs.zipWithNext { first, second -> second - first }
+            assertTrue(
+                "The 60-fps fixture must have contiguous source-frame PTS: $sourceFrameIntervalsUs",
+                sourceFrameIntervalsUs.size == 59 && sourceFrameIntervalsUs.all { it in 16_000L..17_000L }
+            )
             val sourceFps = requireNotNull(
                 inspectSourceVideoFormat(context, Uri.fromFile(source!!).toString()).reportedFps
             )
@@ -1364,7 +1369,7 @@ class ExportTimestampParityInstrumentedTest {
             val config = ExportEngine.ExportConfig(
                 resolution = "720p",
                 fps = 30,
-                aspectRatio = "16:9",
+                aspectRatio = "1:1",
                 trimEndMs = durationMs
             )
             engine.startExport(Uri.fromFile(source!!).toString(), config, selectedName)
@@ -1397,7 +1402,7 @@ class ExportTimestampParityInstrumentedTest {
             val projectConfig = ExportEngine.ExportConfig(
                 resolution = "720p",
                 fps = 30,
-                aspectRatio = "16:9"
+                aspectRatio = "1:1"
             )
             engine.startProjectExport(
                 clips = listOf(clip),

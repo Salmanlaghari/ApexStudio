@@ -43,7 +43,7 @@ class MaskPanelTest {
         assertTrue(rect.left < ellipse.left && ellipse.left < circle.left)
         compose.onNodeWithText("PRESETS").assertExists()
         compose.onNodeWithText("SHAPE").assertExists()
-        compose.onNodeWithText("Blur Faces unavailable", substring = true).assertExists()
+        compose.onNodeWithText("Blur Faces unavailable", substring = true).assertDoesNotExist()
         compose.onNodeWithContentDescription("Mask shape Blur Faces").assertDoesNotExist()
         val presetTop = compose.onNodeWithText("PRESETS").fetchSemanticsNode().boundsInRoot.top
         val shapeTop = compose.onNodeWithText("SHAPE").fetchSemanticsNode().boundsInRoot.top

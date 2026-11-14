@@ -198,6 +198,27 @@ class FxFilterPanelTest {
     }
 
     @Test
+    fun `unsupported fx pack does not appear as a coming-soon editor action`() {
+        compose.setContent {
+            Box(Modifier.width(375.dp).height(240.dp)) {
+                FxPanel(
+                    activeFxId = null,
+                    intensity = 1f,
+                    onFxSelected = {},
+                    onIntensityChange = {},
+                    effectsPackState = PackManager.PackState.ComingSoon,
+                    onClose = {}
+                )
+            }
+        }
+
+        compose.onNodeWithTag("fx-category-list")
+            .performScrollToNode(hasTestTag("fx-category-downloaded"))
+        compose.onNodeWithTag("fx-category-downloaded").performClick()
+        compose.onAllNodesWithText("Effect pack coming soon").assertCountEquals(0)
+    }
+
+    @Test
     fun `filter category and preset selection use their real callbacks`() {
         val film = FilterPreset("film", "Film Look", "Film", "luts/film.cube")
         val soft = FilterPreset("soft", "Soft Portrait", "Portrait", "luts/soft.cube")

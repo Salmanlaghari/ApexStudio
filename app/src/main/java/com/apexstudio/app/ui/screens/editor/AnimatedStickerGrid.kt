@@ -44,6 +44,11 @@ private val ORIGINAL_BUNDLED_ANIMATIONS: List<Pair<String, String>> = listOf(
     "walking_cat.json" to "Walking Cat"
 )
 
+internal fun editorStickerPackItems(packItems: List<PackManager.PackUiItem>): List<PackManager.PackUiItem> =
+    packItems.filter {
+        it.pack.category == "stickers" && it.state != PackManager.PackState.ComingSoon
+    }
+
 /** On-demand Lottie packs plus the small set of animations already bundled in the APK. */
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
@@ -58,7 +63,7 @@ fun androidx.compose.foundation.layout.ColumnScope.AnimatedStickerGrid(
     var sourceTab by remember { mutableStateOf(StickerSourceTab.ON_DEMAND) }
     var downloadedCatalog by remember { mutableStateOf(DownloadedStickerCatalog(emptyList(), emptyList())) }
 
-    val stickerPacks = remember(packItems) { packItems.filter { it.pack.category == "stickers" } }
+    val stickerPacks = remember(packItems) { editorStickerPackItems(packItems) }
     val installedPacks = remember(stickerPacks) {
         stickerPacks.filter {
             it.state == PackManager.PackState.Downloaded ||

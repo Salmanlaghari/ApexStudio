@@ -132,7 +132,7 @@ fun FxPanel(
             val canDownload = state == PackManager.PackState.NotDownloaded ||
                 state == PackManager.PackState.UpdateAvailable || state is PackManager.PackState.Failed ||
                 damagedInstalledPack
-            val status = when (state) {
+            val status: String? = when (state) {
                 PackManager.PackState.NotDownloaded -> "Download 30 effects · 5.2 KB"
                 PackManager.PackState.UpdateAvailable -> "Update FX pack · 5.2 KB"
                 is PackManager.PackState.Downloading -> {
@@ -143,29 +143,31 @@ fun FxPanel(
                     "No verified FX profiles · tap to reinstall"
                 } else "${downloadedEffects.size} verified effects ready"
                 is PackManager.PackState.Failed -> "Retry FX pack download · ${state.reason.take(90)}"
-                PackManager.PackState.ComingSoon -> "Effect pack coming soon"
+                PackManager.PackState.ComingSoon -> null
                 null -> "Checking downloadable FX…"
             }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.BgElevated)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                    .clickable(enabled = canDownload && onDownloadEffectsPack != null) {
-                        onDownloadEffectsPack?.invoke()
-                    }
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    status,
-                    color = if (canDownload) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+            if (status != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                        .clickable(enabled = canDownload && onDownloadEffectsPack != null) {
+                            onDownloadEffectsPack?.invoke()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        status,
+                        color = if (canDownload) ApexPalette.NeonCyan else ApexPalette.TextSecondary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
             }
-            Spacer(Modifier.height(8.dp))
         }
 
         // Category pills

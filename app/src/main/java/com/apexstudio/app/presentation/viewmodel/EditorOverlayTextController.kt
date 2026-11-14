@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import com.apexstudio.app.data.export.ProjectTextOverlayTimeline
+import com.apexstudio.app.data.export.ProjectStickerTimeline
 import kotlinx.coroutines.flow.update
 import com.apexstudio.app.domain.model.timeline.addAnimationKeyframeAt
 import com.apexstudio.app.domain.model.timeline.animationKeyframeTimes
@@ -501,11 +502,13 @@ fun EditorViewModel.setStickerSizeScale(stickerId: String, scale: Float, persist
  * at the playhead so dragging the playhead then the sticker moves
  * only that keyframe's offset.
  */
-fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) {
+fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) =
+    toggleStickerKeyframeAtTime(stickerId, livePlayheadMs())
+
+private fun EditorViewModel.toggleStickerKeyframeAtTime(stickerId: String, playheadMs: Long) {
     val original = _state.value.project ?: return
     val project = original.syncSharedTimeline(importLegacyAnimation = true)
     val item = project.sharedStickerItem(stickerId) ?: return
-    val playheadMs = livePlayheadMs()
     val existingTime = item.animationKeyframeTimes().firstOrNull { time ->
         val delta = time - playheadMs
         delta in -150L..150L
@@ -516,6 +519,21 @@ fun EditorViewModel.toggleStickerKeyframeAtPlayhead(stickerId: String) {
     val updatedProject = project.updateSharedStickerItem(stickerId) { updatedItem }
     _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
     persistProject()
+}
+
+/** Toggle a keyframe for a clip-owned sticker using that clip's output-local clock. */
+fun EditorViewModel.toggleClipStickerKeyframeAtPlayhead(ownerClipId: String, stickerId: String) {
+    val project = _state.value.project ?: return
+    val owner = project.clips.firstOrNull { it.id == ownerClipId && it.stickers.any { sticker -> sticker.id == stickerId } }
+        ?: return
+    val matchCount = (project.stickers + project.clips.flatMap { it.stickers }).count { it.id == stickerId }
+    if (matchCount != 1) return
+    val localTime = ProjectStickerTimeline.clipOutputTimeAtProjectTime(
+        project.clips,
+        owner.id,
+        livePlayheadMs(),
+    ) ?: return
+    toggleStickerKeyframeAtTime(stickerId, localTime)
 }
 
 /**
@@ -534,6 +552,27 @@ fun EditorViewModel.moveStickerKeyframe(stickerId: String, keyframeId: String, n
     }
     _state.update { state -> if (state.project?.id == original.id) state.copy(project = updatedProject) else state }
     persistProject()
+}
+
+/** Move a clip-attached sticker keyframe from project time to its clip-local output clock. */
+fun EditorViewModel.moveClipStickerKeyframe(
+    ownerClipId: String,
+    stickerId: String,
+    keyframeId: String,
+    projectTimeMs: Long,
+) {
+    val project = _state.value.project ?: return
+    val owner = project.clips.firstOrNull { it.id == ownerClipId && it.stickers.any { sticker -> sticker.id == stickerId } }
+        ?: return
+    val matchCount = (project.stickers + project.clips.flatMap { it.stickers }).count { it.id == stickerId }
+    if (matchCount != 1) return
+    val localTime = ProjectStickerTimeline.clipOutputTimeAtProjectTime(
+        project.clips,
+        owner.id,
+        projectTimeMs,
+        allowEndBoundary = true,
+    ) ?: return
+    moveStickerKeyframe(stickerId, keyframeId, localTime)
 }
 
 // ---- Text mask + mask keyframes (Text Reveal template) ----

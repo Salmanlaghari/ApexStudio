@@ -131,6 +131,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.selected
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.data.export.ProjectTextOverlayTimeline
+import com.apexstudio.app.data.export.ProjectStickerTimeline
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.ClipTimeMapping
 import com.apexstudio.app.domain.model.ClipTransition
@@ -227,9 +228,9 @@ internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean 
     val textRowCount = timelineLaneRowCount(timelineLaneRowIndices(textLayers.map {
         TimelineLaneSpan(it.startMs, it.endMs)
     }))
-    val stickerSpans = project?.stickers.orEmpty().map { sticker ->
-        val start = sticker.startMs.coerceAtLeast(0L)
-        TimelineLaneSpan(start, if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs)
+    val stickerSpans = ProjectStickerTimeline.segments(clips, project?.stickers.orEmpty()).map { layer ->
+        val start = layer.sticker.startMs.coerceAtLeast(0L)
+        TimelineLaneSpan(start, if (layer.sticker.endMs == Long.MAX_VALUE) start + 3000L else layer.sticker.endMs)
     }
     val stickerRowCount = timelineLaneRowCount(timelineLaneRowIndices(stickerSpans))
     val hasText = textRowCount > 0
@@ -529,12 +530,11 @@ fun VideoTimeline(
     textOverlays: List<TextOverlay> = emptyList(),
     stickers: List<StickerOverlay> = emptyList(),
     activeFxId: String? = null,
-    // Pro-timeline layers (mockup): project-level stickers (NOT the legacy
-    // per-clip list), selection ids, and the filter/FX/adjustment state that
-    // the FX lane renders as segments. Everything the user adds must appear
-    // as a visible, tappable layer.
+    // Project stickers already use project time. Clip-attached stickers are
+    // projected from their owning V1 output clock by ProjectStickerTimeline.
     selectedTextOverlayId: String? = null,
     selectedStickerId: String? = null,
+    selectedStickerOwnerClipId: String? = null,
     activeFilterId: String? = null,
     filterIntensity: Float = 1f,
     adjustments: VideoAdjustments = VideoAdjustments(),
@@ -620,6 +620,9 @@ fun VideoTimeline(
     onMoveTextMaskKeyframe: (clipId: String, overlayId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _, _ -> },
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onToggleClipStickerKeyframeAtPlayhead: ((ownerClipId: String, stickerId: String) -> Unit)? = null,
+    onMoveClipStickerKeyframe: ((ownerClipId: String, stickerId: String, keyframeId: String, projectTimeMs: Long) -> Unit)? = null,
+    onSetClipStickerRange: ((ownerClipId: String, stickerId: String, projectStartMs: Long, projectEndMs: Long) -> Unit)? = null,
     // Multi-layer video tracks (CapCut-style, up to 10). Layer 0 = main (V1),
     // layers 1..9 = overlay layers (V2..V10) composited PiP above the main.
     hiddenVideoLayers: Set<Int> = emptySet(),
@@ -657,10 +660,13 @@ fun VideoTimeline(
     val textLaneRows = remember(logicalTextLayers) {
         timelineLaneRowIndices(logicalTextLayers.map { TimelineLaneSpan(it.startMs, it.endMs) })
     }
-    val stickerLaneRows = remember(stickers) {
-        timelineLaneRowIndices(stickers.map { sticker ->
-            val start = sticker.startMs.coerceAtLeast(0L)
-            TimelineLaneSpan(start, if (sticker.endMs == Long.MAX_VALUE) start + 3000L else sticker.endMs)
+    val timelineStickerLayers = remember(clips, stickers) {
+        ProjectStickerTimeline.segments(clips, stickers)
+    }
+    val stickerLaneRows = remember(timelineStickerLayers) {
+        timelineLaneRowIndices(timelineStickerLayers.map { layer ->
+            val start = layer.sticker.startMs.coerceAtLeast(0L)
+            TimelineLaneSpan(start, if (layer.sticker.endMs == Long.MAX_VALUE) start + 3000L else layer.sticker.endMs)
         })
     }
     // 60fps playhead isolation: the raw flow drives ONLY the playhead overlay
@@ -982,7 +988,7 @@ fun VideoTimeline(
     val overlayRowsTotal = videoLayers.filter { it in 1..9 }
         .sumOf { overlayLayerHeight.value.toInt() + 10 }
     val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
-    val stickerLaneTotal = if (stickers.isNotEmpty()) stickerLaneHeight + 10 else 0
+    val stickerLaneTotal = if (timelineStickerLayers.isNotEmpty()) stickerLaneHeight + 10 else 0
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
     val a0Total = if (originalVideoAudioTracks.isNotEmpty()) a0Height.value.toInt() + 10 else 0
     val a1Total = if (musicTracks.isNotEmpty()) a1Height.value.toInt() + 10 else 0
@@ -1350,18 +1356,27 @@ fun VideoTimeline(
                             // STICKER lane — only when stickers exist. No
                             // "+ Add sticker" placeholder: stickers are
                             // added from the bottom bar.
-                            if (stickers.isNotEmpty()) {
+                            if (timelineStickerLayers.isNotEmpty()) {
                                 TimelineStickerLane(
-                                    stickers = stickers,
+                                    stickerLayers = timelineStickerLayers,
                                     rowIndices = stickerLaneRows,
                                     msToDp = msToDp,
                                     selectedStickerId = selectedStickerId,
+                                    selectedStickerOwnerClipId = selectedStickerOwnerClipId,
                                     timelineDurationMs = totalDurationMs,
                                     onSetStickerRange = onSetStickerRange,
+                                    onSetClipStickerRange = onSetClipStickerRange,
                                     onSelectSticker = onSelectSticker,
+                                    onSelectClipSticker = { ownerId, id, start, end ->
+                                        onSelectClip(ownerId)
+                                        if (playheadMs !in start until end) onScrub(start)
+                                        onSelectSticker(id)
+                                    },
                                     onSeekToKeyframe = onScrub,
                                     onMoveStickerKeyframe = onMoveStickerKeyframe,
                                     onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
+                                    onMoveClipStickerKeyframe = onMoveClipStickerKeyframe,
+                                    onToggleClipStickerKeyframeAtPlayhead = onToggleClipStickerKeyframeAtPlayhead,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(stickerLaneHeight.dp)
@@ -1479,7 +1494,7 @@ fun VideoTimeline(
                 waveformStripSpacing = waveformStripSpacing,
                 overlayLayers = videoLayers.filter { it in 1..9 },
                 hasText = textOverlays.isNotEmpty(),
-                hasStickers = stickers.isNotEmpty(),
+                hasStickers = timelineStickerLayers.isNotEmpty(),
                 hasFx = hasFx,
                 textLaneHeight = textLaneHeight,
                 stickerLaneHeight = stickerLaneHeight,
@@ -1672,6 +1687,9 @@ fun VideoTimeline(
     vScrollState: ScrollState = rememberScrollState(),
     onSetTextOverlayRange: ((clipId: String, overlayId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onToggleClipStickerKeyframeAtPlayhead: ((ownerClipId: String, stickerId: String) -> Unit)? = null,
+    onMoveClipStickerKeyframe: ((ownerClipId: String, stickerId: String, keyframeId: String, projectTimeMs: Long) -> Unit)? = null,
+    onSetClipStickerRange: ((ownerClipId: String, stickerId: String, projectStartMs: Long, projectEndMs: Long) -> Unit)? = null,
     onToggleMagneticSnapping: () -> Unit = {},
     onToggleSnapToBeat: () -> Unit = {},
     onToggleRippleEdit: () -> Unit = {},
@@ -1691,10 +1709,15 @@ fun VideoTimeline(
     }
     val audioTracks = state.project?.audioTracks ?: emptyList()
     val textOverlays = clips.flatMap { it.textOverlays }
-    // Project-level stickers: addStickerOverlay() stores them on
-    // Project.stickers (the old clips.flatMap read the legacy per-clip
-    // list, so added stickers never appeared as layers).
+    // Project-level stickers stay project-clock; the full overload also maps
+    // legacy clip-attached stickers into this lane.
     val stickers = state.project?.stickers ?: emptyList()
+    val selectedStickerOwnerClipId = when {
+        project?.stickers.orEmpty().any { it.id == selectedStickerId } -> null
+        else -> clips.firstOrNull { clip ->
+            clip.id == state.selectedClipId && clip.stickers.any { it.id == selectedStickerId }
+        }?.id
+    }
 
     VideoTimeline(
         clips = clips,
@@ -1704,6 +1727,7 @@ fun VideoTimeline(
         activeFxId = state.activeFxId,
         selectedTextOverlayId = selectedTextOverlayId,
         selectedStickerId = selectedStickerId,
+        selectedStickerOwnerClipId = selectedStickerOwnerClipId,
         activeFilterId = activeFilterId,
         filterIntensity = filterIntensity,
         adjustments = adjustments,
@@ -1762,10 +1786,13 @@ fun VideoTimeline(
         onMoveTextKeyframe = onMoveTextKeyframe,
         onToggleStickerKeyframeAtPlayhead = onToggleStickerKeyframeAtPlayhead,
         onMoveStickerKeyframe = onMoveStickerKeyframe,
+        onToggleClipStickerKeyframeAtPlayhead = onToggleClipStickerKeyframeAtPlayhead,
+        onMoveClipStickerKeyframe = onMoveClipStickerKeyframe,
         onToggleTextMaskKeyframeAtPlayhead = onToggleTextMaskKeyframeAtPlayhead,
         onMoveTextMaskKeyframe = onMoveTextMaskKeyframe,
         onSetTextOverlayRange = onSetTextOverlayRange,
         onSetStickerRange = onSetStickerRange,
+        onSetClipStickerRange = onSetClipStickerRange,
         selectedAudioTrackId = state.selectedAudioTrackId,
         onSelectAudioTrack = onSelectAudioTrack,
         onMoveAudioTrack = onMoveAudioTrack,
@@ -3344,16 +3371,21 @@ private fun TimelineVideoTrack(
  */
 @Composable
 private fun TimelineStickerLane(
-    stickers: List<StickerOverlay>,
+    stickerLayers: List<ProjectStickerTimeline.Segment>,
     rowIndices: List<Int>,
     msToDp: Float,
     timelineDurationMs: Long,
     selectedStickerId: String? = null,
+    selectedStickerOwnerClipId: String? = null,
     onSetStickerRange: ((stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
+    onSetClipStickerRange: ((ownerClipId: String, stickerId: String, projectStartMs: Long, projectEndMs: Long) -> Unit)? = null,
     onSelectSticker: (String?) -> Unit = {},
+    onSelectClipSticker: ((ownerClipId: String, stickerId: String, startMs: Long, endMs: Long) -> Unit)? = null,
     onSeekToKeyframe: (Long) -> Unit = {},
     onMoveStickerKeyframe: (stickerId: String, keyframeId: String, newTimeMs: Long) -> Unit = { _, _, _ -> },
     onToggleStickerKeyframeAtPlayhead: (stickerId: String) -> Unit = {},
+    onMoveClipStickerKeyframe: ((ownerClipId: String, stickerId: String, keyframeId: String, projectTimeMs: Long) -> Unit)? = null,
+    onToggleClipStickerKeyframeAtPlayhead: ((ownerClipId: String, stickerId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -3366,7 +3398,11 @@ private fun TimelineStickerLane(
             .background(Color(0xFF0A1B2D))
             .border(1.dp, Color(0xFF203047), RoundedCornerShape(8.dp))
     ) {
-        stickers.forEachIndexed { itemIndex, sticker ->
+        stickerLayers.forEachIndexed { itemIndex, layer ->
+            val sticker = layer.sticker
+            val ownerClipId = layer.ownerClipId
+            val itemKey = ownerClipId?.let { "$it:${sticker.id}" } ?: sticker.id
+            val testSuffix = ownerClipId?.let { "clip-$it-${sticker.id}" } ?: sticker.id
             val previewBitmap by produceState<Bitmap?>(initialValue = null, key1 = sticker.assetPath) {
                 val path = sticker.assetPath ?: return@produceState
                 value = withContext(Dispatchers.IO) { imageCache.get(path) }
@@ -3376,15 +3412,15 @@ private fun TimelineStickerLane(
             val rawEnd = if (sticker.endMs == Long.MAX_VALUE) {
                 (start + 3000L).coerceAtMost(timelineEnd)
             } else sticker.endMs.coerceIn(start + 1L, timelineEnd)
-            var previewStart by remember(sticker.id, start, rawEnd) { mutableStateOf(start) }
-            var previewEnd by remember(sticker.id, start, rawEnd) { mutableStateOf(rawEnd) }
-            var dragBaseStart by remember(sticker.id) { mutableStateOf(start) }
-            var dragBaseEnd by remember(sticker.id) { mutableStateOf(rawEnd) }
-            var dragAccumulatedPx by remember(sticker.id) { mutableFloatStateOf(0f) }
+            var previewStart by remember(itemKey, start, rawEnd) { mutableStateOf(start) }
+            var previewEnd by remember(itemKey, start, rawEnd) { mutableStateOf(rawEnd) }
+            var dragBaseStart by remember(itemKey) { mutableStateOf(start) }
+            var dragBaseEnd by remember(itemKey) { mutableStateOf(rawEnd) }
+            var dragAccumulatedPx by remember(itemKey) { mutableFloatStateOf(0f) }
             val rangeStart = previewStart.coerceIn(0L, timelineEnd - 1L)
             val rangeEnd = previewEnd.coerceIn(rangeStart + 1L, timelineEnd)
             val dur = (rangeEnd - rangeStart).coerceAtLeast(1L)
-            val isSelected = sticker.id == selectedStickerId
+            val isSelected = sticker.id == selectedStickerId && ownerClipId == selectedStickerOwnerClipId
             val assetName = sticker.assetPath?.substringAfterLast("/")?.substringBeforeLast(".")
             val label = when {
                 sticker.name.isNotBlank() -> sticker.name
@@ -3392,14 +3428,17 @@ private fun TimelineStickerLane(
                 else -> sticker.symbolOrUri.take(12)
             }
             val segWidthDp = (dur * msToDp).dp.coerceAtLeast(52.dp)
-            val hasKeyframeLane = isSelected || sticker.keyframes.keyframes.isNotEmpty()
+            val clipKeyframeEditingAvailable = ownerClipId == null ||
+                (onMoveClipStickerKeyframe != null && onToggleClipStickerKeyframeAtPlayhead != null)
+            val hasKeyframeLane = clipKeyframeEditingAvailable &&
+                (isSelected || sticker.keyframes.keyframes.isNotEmpty())
             Box(
                 modifier = Modifier
                     .offset(x = (rangeStart * msToDp).dp)
                     .offset(y = ((rowIndices.getOrElse(itemIndex) { 0 }) * 28).dp)
                     .width(segWidthDp)
                     .height(28.dp)
-                    .testTag("timeline-keyframe-layer-sticker-${sticker.id}")
+                    .testTag("timeline-keyframe-layer-sticker-$testSuffix")
             ) {
                 Box(
                     modifier = Modifier
@@ -3418,7 +3457,13 @@ private fun TimelineStickerLane(
                             color = if (isSelected) Color.White else Color(0xFF45D5C5).copy(alpha = 0.75f),
                             shape = RoundedCornerShape(7.dp)
                         )
-                        .clickable { onSelectSticker(sticker.id) }
+                        .clickable {
+                            if (ownerClipId != null && onSelectClipSticker != null) {
+                                onSelectClipSticker(ownerClipId, sticker.id, rangeStart, rangeEnd)
+                            } else {
+                                onSelectSticker(sticker.id)
+                            }
+                        }
                         .semantics {
                             contentDescription = "Sticker $label"
                             selected = isSelected
@@ -3462,20 +3507,40 @@ private fun TimelineStickerLane(
                         spanDurationMs = dur,
                         stripWidthDp = segWidthDp,
                         msToDp = msToDp,
-                        onSeekToKeyframe = onSeekToKeyframe,
-                        onMoveKeyframe = { kfId, newTimeMs ->
-                            onMoveStickerKeyframe(sticker.id, kfId, newTimeMs)
+                        onSeekToKeyframe = { timeMs ->
+                            if (ownerClipId != null && onSelectClipSticker != null) {
+                                onSelectClipSticker(ownerClipId, sticker.id, rangeStart, rangeEnd)
+                            } else {
+                                onSelectSticker(sticker.id)
+                            }
+                            onSeekToKeyframe(timeMs)
                         },
-                        onAddAtPlayhead = { onToggleStickerKeyframeAtPlayhead(sticker.id) },
+                        onMoveKeyframe = { kfId, newTimeMs ->
+                            if (ownerClipId != null) {
+                                onMoveClipStickerKeyframe?.invoke(ownerClipId, sticker.id, kfId, newTimeMs)
+                            } else {
+                                onMoveStickerKeyframe(sticker.id, kfId, newTimeMs)
+                            }
+                        },
+                        onAddAtPlayhead = {
+                            if (ownerClipId != null) {
+                                onSelectClipSticker?.invoke(ownerClipId, sticker.id, rangeStart, rangeEnd)
+                                onToggleClipStickerKeyframeAtPlayhead?.invoke(ownerClipId, sticker.id)
+                            } else {
+                                onSelectSticker(sticker.id)
+                                onToggleStickerKeyframeAtPlayhead(sticker.id)
+                            }
+                        },
                         accentColor = Color(0xFF45D5C5),
                         showLaneBackground = false,
-                        markerTagPrefix = "sticker-${sticker.id}",
+                        markerTagPrefix = "sticker-$testSuffix",
                         modifier = Modifier
                             .fillMaxSize()
-                            .testTag("timeline-keyframe-layer-sticker-markers-${sticker.id}")
+                            .testTag("timeline-keyframe-layer-sticker-markers-$testSuffix")
                     )
                 }
-                if (isSelected && onSetStickerRange != null) {
+                val canSetRange = if (ownerClipId == null) onSetStickerRange != null else onSetClipStickerRange != null
+                if (isSelected && canSetRange) {
                     @Composable
                     fun rangeHandle(isStart: Boolean) {
                         Box(
@@ -3485,7 +3550,7 @@ private fun TimelineStickerLane(
                                 .height(20.dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(Color.White)
-                                .pointerInput(sticker.id, isStart, msToDp, density.density, timelineEnd) {
+                                .pointerInput(itemKey, isStart, msToDp, density.density, timelineEnd) {
                                     detectDragGestures(
                                         onDragStart = {
                                             dragAccumulatedPx = 0f
@@ -3507,7 +3572,11 @@ private fun TimelineStickerLane(
                                             val finalEnd = previewEnd.coerceIn(finalStart + 1L, timelineEnd)
                                             dragAccumulatedPx = 0f
                                             if (finalStart != start || finalEnd != rawEnd) {
-                                                onSetStickerRange(sticker.id, finalStart, finalEnd)
+                                                if (ownerClipId != null) {
+                                                    onSetClipStickerRange?.invoke(ownerClipId, sticker.id, finalStart, finalEnd)
+                                                } else {
+                                                    onSetStickerRange?.invoke(sticker.id, finalStart, finalEnd)
+                                                }
                                             }
                                         },
                                         onDragCancel = {
@@ -3517,7 +3586,7 @@ private fun TimelineStickerLane(
                                         }
                                     )
                                 }
-                                .testTag("timeline-sticker-range-handle-${if (isStart) "start" else "end"}-${sticker.id}")
+                                .testTag("timeline-sticker-range-handle-${if (isStart) "start" else "end"}-$testSuffix")
                         )
                     }
                     rangeHandle(isStart = true)

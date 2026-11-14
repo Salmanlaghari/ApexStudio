@@ -2177,6 +2177,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onMoveStickerKeyframe = { stickerId, kfId, newTimeMs ->
             vm.moveStickerKeyframe(stickerId, kfId, newTimeMs)
         },
+        onToggleClipStickerKeyframeAtPlayhead = { ownerClipId, stickerId ->
+            vm.toggleClipStickerKeyframeAtPlayhead(ownerClipId, stickerId)
+        },
+        onMoveClipStickerKeyframe = { ownerClipId, stickerId, kfId, projectTimeMs ->
+            vm.moveClipStickerKeyframe(ownerClipId, stickerId, kfId, projectTimeMs)
+        },
         onToggleTextMaskKeyframeAtPlayhead = { clipId, overlayId ->
             vm.toggleTextMaskKeyframeAtPlayhead(clipId, overlayId)
         },
@@ -2201,6 +2207,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
             vm.updateTextOverlayProjectRange(overlayId, start, end, ownerClipId = ownerId)
         },
         onSetStickerRange = { id, start, end -> vm.setStickerPropertyRange(id, start, end) },
+        onSetClipStickerRange = { ownerClipId, id, start, end ->
+            vm.setClipStickerPropertyRange(ownerClipId, id, start, end)
+        },
         // Editing-assist modes. The logic already lived in
         // EditorAudioController but only landscape exposed one of the three;
         // the timeline overflow menu now reaches all of them.

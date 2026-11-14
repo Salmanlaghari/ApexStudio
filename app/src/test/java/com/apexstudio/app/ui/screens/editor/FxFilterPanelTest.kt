@@ -179,10 +179,10 @@ class FxFilterPanelTest {
         compose.runOnIdle { assertEquals(effect.id, selectedFx.value) }
         compose.onNodeWithText("1.2x").performScrollTo().assertIsDisplayed()
 
-        compose.onNodeWithTag("fx-category-list")
-            .performScrollToNode(hasTestTag("fx-category-animated"))
+        val categoryList = compose.onNodeWithTag("fx-category-list")
+        categoryList.performScrollTo()
+        categoryList.performScrollToNode(hasTestTag("fx-category-animated"))
         val animatedCategory = compose.onNodeWithTag("fx-category-animated")
-        animatedCategory.performScrollTo()
         animatedCategory.assertIsDisplayed()
         assertFalse(
             "Animated category should start unselected",

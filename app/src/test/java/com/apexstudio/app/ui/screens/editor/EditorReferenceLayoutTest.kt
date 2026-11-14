@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.ui.components.compactTimelineHeight
@@ -71,7 +72,11 @@ class EditorReferenceLayoutTest {
             assertEquals(1_000L, vm.state.value.project?.clips?.single()?.trimStartMs)
         }
         compose.onNodeWithTag("close_trim_panel_button").performClick()
-        compose.onNodeWithText("Effects").assertIsDisplayed().performClick()
+        assertTrue(
+            "Trim panel must close before returning to editing tools",
+            compose.onAllNodesWithTag("close_trim_panel_button").fetchSemanticsNodes().isEmpty()
+        )
+        compose.onNodeWithText("FX").performScrollTo().assertIsDisplayed().performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag("workspace-panel").assertIsDisplayed()

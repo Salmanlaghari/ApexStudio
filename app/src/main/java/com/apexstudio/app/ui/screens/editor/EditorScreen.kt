@@ -34,7 +34,6 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.CompositionPlayer
 import com.apexstudio.app.data.crashlog.CrashMarker
-import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.export.toProjectExportAdjustments
 import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.media.MediaUriResolver
@@ -503,6 +502,7 @@ private fun EditorScreenContent(
     // background/V1 preview player (which has its own dedicated PiP player).
     val mainPreviewClip = projectTransitionPlan.entryAt(state.playerPositionMs)?.clip
         ?: timelinePreviewClip(state.project?.clips.orEmpty(), state.playerPositionMs)
+    val aiTargetVideo = resolveAiTargetClip(currentSelectedClip, state.selectedClipId, mainPreviewClip)
 
     // Overlay media-kind probe — SINGLE source of truth for every
     // consumer (the player binding below, photoClip + PiP canvas in
@@ -1506,6 +1506,7 @@ private fun EditorScreenContent(
                     if (entryWorkspace != "edit" && entryWorkspace != "ai") closeEntryWorkspace()
                 },
                 onAi = {
+                    aiTargetVideo?.let { vm.selectClip(it.id) }
                     showAiPanel = true
                     activateLocalEditorPanel(EditorPanelKey.AI_TOOLS)
                 },
@@ -1602,8 +1603,25 @@ private fun EditorScreenContent(
         }
     }
 
-    val aiReportTarget = remember(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId) {
-        resolveAiContentReportTarget(projectId, state.project, state.selectedClipId, state.selectedTextOverlayId)
+    val prepareAiVideoTarget: () -> Boolean = {
+        val targetId = aiTargetVideo?.id
+        val current = vm.state.value
+        val currentProject = current.project
+        val currentClip = currentProject?.clips?.firstOrNull { it.id == targetId }
+        val validClip = currentClip?.takeIf {
+            isCurrentProjectAiVideoTarget(projectId, currentProject?.id, it)
+        }
+        if (validClip != null) {
+            vm.selectClip(validClip.id)
+            true
+        } else {
+            android.widget.Toast.makeText(context,
+                "Select a main-track video in this project first.", android.widget.Toast.LENGTH_SHORT).show()
+            false
+        }
+    }
+    val aiReportTarget = remember(projectId, state.project, aiTargetVideo?.id, state.selectedTextOverlayId) {
+        resolveAiVideoReportTarget(projectId, state.project, aiTargetVideo, state.selectedTextOverlayId)
     }
     if (showLocalChallenge && activeEditorPanel == EditorPanelKey.LOCAL_CHALLENGE) {
         LocalChallengeOverlay(vm, onClose = { showLocalChallenge = false })
@@ -1611,31 +1629,47 @@ private fun EditorScreenContent(
     if (activeEditorPanel == EditorPanelKey.QUICK_PRESETS) quickPresetSection?.let { section ->
         QuickVideoPresetsOverlay(vm, section, onClose = { quickPresetSection = null })
     }
-    if (showAiPanel && activeEditorPanel == EditorPanelKey.AI_TOOLS) AiToolsOverlay(onClose = closeAiPanel, onOpenLocalAnalysis = {
-        closeAiPanel()
-        showLocalAnalysis = true
-        activateLocalEditorPanel(EditorPanelKey.LOCAL_ANALYSIS)
-    }, onOpenVideoPresets = {
-        closeAiPanel()
-        showVideoPresets = true
-        activateLocalEditorPanel(EditorPanelKey.VIDEO_PRESETS)
-    }, onOpenVideoUpscale = {
-        closeAiPanel()
-        showVideoUpscale = true
-        activateLocalEditorPanel(EditorPanelKey.VIDEO_UPSCALE)
-    }, onOpenBackgroundReplace = {
-        closeAiPanel()
-        vm.openBackgroundPanel()
-    }, onOpenCaptions = {
-        closeAiPanel()
-        vm.openCaptionsPanel()
-    }, reportTarget = aiReportTarget, reportState = aiContentReportState,
-        onSubmitReport = { reason ->
-            val current = vm.state.value
-            vm.submitAiContentReport(resolveAiContentReportTarget(
-                projectId, current.project, current.selectedClipId, current.selectedTextOverlayId
-            ), reason)
-        }, onClearReportFeedback = vm::clearAiContentReportFeedback)
+    if (showAiPanel && activeEditorPanel == EditorPanelKey.AI_TOOLS) AiToolsOverlay(
+        onClose = closeAiPanel,
+        targetVideoName = aiTargetVideo?.name?.takeIf { it.isNotBlank() } ?: aiTargetVideo?.id,
+        onOpenLocalAnalysis = {
+            if (prepareAiVideoTarget()) {
+                closeAiPanel()
+                showLocalAnalysis = true
+                activateLocalEditorPanel(EditorPanelKey.LOCAL_ANALYSIS)
+            }
+        },
+        onOpenVideoUpscale = {
+            if (prepareAiVideoTarget()) {
+                closeAiPanel()
+                showVideoUpscale = true
+                activateLocalEditorPanel(EditorPanelKey.VIDEO_UPSCALE)
+            }
+        },
+        onOpenBackgroundReplace = {
+            if (prepareAiVideoTarget()) {
+                closeAiPanel()
+                vm.openBackgroundPanel()
+            }
+        },
+        onOpenCaptions = {
+            if (prepareAiVideoTarget()) {
+                closeAiPanel()
+                vm.openCaptionsPanel()
+            }
+        },
+        reportTarget = aiReportTarget, reportState = aiContentReportState,
+        onSubmitReport = { target, reason ->
+            val currentProject = vm.state.value.project
+            if (isAiReportTargetCurrent(projectId, currentProject, target)) {
+                vm.submitAiContentReport(target, reason)
+                true
+            } else false
+        },
+        isReportTargetCurrent = { target ->
+            isAiReportTargetCurrent(projectId, vm.state.value.project, target)
+        },
+        onClearReportFeedback = vm::clearAiContentReportFeedback)
     if (showVideoPresets && activeEditorPanel == EditorPanelKey.VIDEO_PRESETS) {
         ProjectVideoPresetsOverlay(vm, onClose = { showVideoPresets = false },
             onLearnedUpscale = { _, _ ->

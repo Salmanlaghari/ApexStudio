@@ -82,6 +82,10 @@ internal fun editorChromeVisible(isFullscreenPreview: Boolean): Boolean = !isFul
 /** The compact preview sizing control cycles between its two supported player modes. */
 internal fun toggleCoverFitMode(isCoverMode: Boolean): Boolean = !isCoverMode
 
+/** Original-video mute applies to the V1 source player; extracted A0 tracks keep their own mute state. */
+internal fun sourceVideoPreviewVolume(clipVolume: Float, originalVideoMuted: Boolean): Float =
+    if (originalVideoMuted) 0f else clipVolume.coerceIn(0f, 2f)
+
 @Composable
 fun EditorScreen(
     projectId: String,
@@ -631,10 +635,12 @@ private fun EditorScreenContent(
     }
 
     // Editing a PiP layer must not change the background video's audio gain.
-    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.volume) {
+    // The original-video mute flag affects only this V1 source player; extracted A0 tracks
+    // are rendered by AudioPlaybackManager and retain their independent track mute state.
+    LaunchedEffect(exoPlayer, mainPreviewClip?.id, mainPreviewClip?.volume, audioState.isMuted) {
         val player = exoPlayer ?: return@LaunchedEffect
         try {
-            player.volume = (mainPreviewClip?.volume ?: 1f).coerceIn(0f, 2f)
+            player.volume = sourceVideoPreviewVolume(mainPreviewClip?.volume ?: 1f, audioState.isMuted)
         } catch (e: Exception) {
             Log.e("EditorScreen", "Failed to set clip volume", e)
         }

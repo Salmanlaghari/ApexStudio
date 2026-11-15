@@ -1100,7 +1100,9 @@ data class Project(
     /** Manual LUT choice overrides the template LUT; null follows the template/default. */
     val manualLutOverride: ProjectLutSettings? = null,
     /** Optional project-wide Color Studio grade; null preserves legacy project appearance. */
-    val colorStudioGrade: ColorStudioGrade? = null
+    val colorStudioGrade: ColorStudioGrade? = null,
+    /** Whether the original video audio is muted; missing legacy JSON defaults to unmuted. */
+    val originalVideoMuted: Boolean = false
 ) {
     /** Conservative warning predicate for legacy projects affected by speed-based duration. */
     fun hasLegacyAbsolutePlacementTimingRisk(): Boolean {

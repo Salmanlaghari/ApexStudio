@@ -83,7 +83,7 @@ class WideWindowPortraitEditorLayoutTest {
 
         compose.onNodeWithContentDescription("Open video properties").assertIsDisplayed().performClick()
         compose.onNodeWithTag("video-properties-dialog").assertIsDisplayed()
-        compose.onNodeWithText("Position X").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Position X", substring = true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Close video properties").performClick()
         compose.onNodeWithTag("video-properties-dialog").assertDoesNotExist()
     }

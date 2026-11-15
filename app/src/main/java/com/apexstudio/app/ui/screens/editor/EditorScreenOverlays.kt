@@ -1585,7 +1585,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val stageSize = if (isFullscreenPreview) PreviewStageSize(maxWidth.value, maxHeight.value)
             else fittedPreviewStageSize(maxWidth.value, stageHeightLimit, previewStageAspectRatio)
                 ?: PreviewStageSize(maxWidth.value, stageHeightLimit)
-        var lastUnlockedStageSize by remember(state.project?.id) {
+        // A viewport or media-aspect change should recompute, not reuse stale geometry.
+        var lastUnlockedStageSize by remember(state.project?.id, maxWidth, previewStageAspectRatio) {
             mutableStateOf<PreviewStageSize?>(null)
         }
         val displayedStageSize = if (lockPreviewGeometry) {
@@ -1594,7 +1595,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             stageSize
         }
         SideEffect {
-            if (!lockPreviewGeometry && lastUnlockedStageSize != stageSize) {
+            if (!lockPreviewGeometry && !isFullscreenPreview && lastUnlockedStageSize != stageSize) {
                 lastUnlockedStageSize = stageSize
             }
         }

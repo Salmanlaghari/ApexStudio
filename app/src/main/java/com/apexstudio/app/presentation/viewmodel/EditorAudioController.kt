@@ -650,6 +650,14 @@ fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
 
 fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
     _audio.update { it.copy(isMuted = muted) }
+    var projectChanged = false
+    _state.update { state ->
+        val project = state.project ?: return@update state
+        if (project.originalVideoMuted == muted) return@update state
+        projectChanged = true
+        state.copy(project = project.copy(originalVideoMuted = muted))
+    }
+    if (projectChanged) persistProject()
 }
 
 

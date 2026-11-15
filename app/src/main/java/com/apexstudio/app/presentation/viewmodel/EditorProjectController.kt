@@ -213,7 +213,9 @@ internal fun EditorViewModel.loadProject() {
                 "Audio track lists diverged on load (mixer=${mixerIds.size}, project=${projectIds.size}) — syncing mixer from project"
             )
         }
-        _audio.update { it.copy(tracks = updatedP.audioTracks) }
+        _audio.update {
+            it.copy(tracks = updatedP.audioTracks, isMuted = updatedP.originalVideoMuted)
+        }
 
         // Reclaim orphaned project_media copies (Kilo): files in
         // filesDir/project_media/ not referenced by any saved

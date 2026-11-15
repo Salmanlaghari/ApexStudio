@@ -7,6 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -109,6 +112,53 @@ class ScreenshotClipToolbarTest {
         assertTrue("Primary action items do not overlap", bounds.zipWithNext().all { (left, right) ->
             left.right <= right.left
         })
+    }
+
+    @Test
+    @Config(qualifiers = "w375dp-h800dp-mdpi")
+    fun horizontalProjectVideoSelectionShowsAndRoutesKeyframeActions() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            Box(Modifier.width(375.dp)) {
+                testToolbar(calls, horizontalProjectLayout = true)
+            }
+        }
+
+        // The selected-clip row is intentionally horizontally scrollable. At
+        // 375dp the first priority actions are visible at rest, while later
+        // actions remain reachable rather than being displayed simultaneously.
+        val initiallyVisiblePriorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.take(4).map { label ->
+            composeRule.onNode(
+                hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
+            )
+                .assertIsDisplayed()
+                .fetchSemanticsNode()
+                .boundsInRoot
+        }
+        assertTrue(
+            "Horizontal selected-video actions keep the visible approved priority order",
+            initiallyVisiblePriorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
+        )
+        CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.drop(4).forEach { label ->
+            composeRule.onNode(
+                hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
+            )
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+
+        composeRule.onNode(
+            hasText("Keyframe").and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
+        )
+            .performScrollTo()
+            .performClick()
+        assertEquals("Keyframe calls the project action", 1, calls["keyframe"] ?: 0)
+        composeRule.onNode(
+            hasText("Animation").and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
+        )
+            .performScrollTo()
+            .performClick()
+        assertEquals("Animation opens the keyframe editor", 1, calls["animation"] ?: 0)
     }
 
     @Test

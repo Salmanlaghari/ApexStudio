@@ -6,10 +6,13 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.MediaCodec
 import android.media.MediaExtractor
+import android.media.Image
+import android.media.ImageReader
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
+import android.os.SystemClock
 import android.opengl.EGL14
 import android.opengl.EGLConfig
 import android.opengl.GLES20
@@ -89,6 +92,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /** Real Media3/codec regression; CI compiles this test but needs a device to execute it. */
 @RunWith(AndroidJUnit4::class)
@@ -747,17 +751,8 @@ class ExportTimestampParityInstrumentedTest {
             )
         }
 
-        fun decodeFrame(file: File, timeUs: Long): Bitmap {
-            val retriever = MediaMetadataRetriever()
-            return try {
-                retriever.setDataSource(file.absolutePath)
-                requireNotNull(retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)) {
-                    "Could not decode a sticker export frame from ${file.name}"
-                }
-            } finally {
-                retriever.release()
-            }
-        }
+        fun decodeFrames(file: File, requestedTimesUs: List<Long>): Map<Long, Bitmap> =
+            decodeVideoFramesAtExactPts(file, requestedTimesUs)
 
         fun stickerPixelBounds(frame: Bitmap): IntArray {
             val rect = StickerSpriteRenderer.dstRect(sticker, frame.width, frame.height)
@@ -935,10 +930,13 @@ class ExportTimestampParityInstrumentedTest {
         }
 
         fun verifyExportFrames(label: String, baselineFile: File, outputFile: File) {
-            val baselineEarly = decodeFrame(baselineFile, earlyTimeUs)
-            val outputEarly = decodeFrame(outputFile, earlyTimeUs)
-            val baselineLater = decodeFrame(baselineFile, laterTimeUs)
-            val outputLater = decodeFrame(outputFile, laterTimeUs)
+            val requestedTimesUs = listOf(earlyTimeUs, laterTimeUs)
+            val baselineFrames = decodeFrames(baselineFile, requestedTimesUs)
+            val outputFrames = decodeFrames(outputFile, requestedTimesUs)
+            val baselineEarly = requireNotNull(baselineFrames[earlyTimeUs])
+            val outputEarly = requireNotNull(outputFrames[earlyTimeUs])
+            val baselineLater = requireNotNull(baselineFrames[laterTimeUs])
+            val outputLater = requireNotNull(outputFrames[laterTimeUs])
             try {
                 assertEquals("720p export width", 1_280, baselineEarly.width)
                 assertEquals("720p export height", 720, baselineEarly.height)
@@ -3278,6 +3276,191 @@ class ExportTimestampParityInstrumentedTest {
                 (matchedPts.max() - matchedPts.min()) <= toleranceUs
         }
     }
+
+    /** Decode sequentially and pair only decoded samples by BufferInfo PTS. */
+    private fun decodeVideoFramesAtExactPts(
+        file: File,
+        requestedTimesUs: List<Long>,
+        toleranceUs: Long = 1_000L
+    ): Map<Long, Bitmap> {
+        val maxDecodeDurationMs = 120_000L
+        val maxNoProgressMs = 30_000L
+        require(requestedTimesUs.isNotEmpty()) { "requestedTimesUs must be non-empty" }
+        require(requestedTimesUs == requestedTimesUs.distinct().sorted()) {
+            "requestedTimesUs must be sorted and distinct: $requestedTimesUs"
+        }
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        var reader: ImageReader? = null
+        val candidates = linkedMapOf<Long, DecodedVideoFrame>()
+        var ownershipTransferred = false
+        try {
+            extractor.setDataSource(file.absolutePath)
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME).orEmpty().startsWith("video/")
+            } ?: error("${file.name} has no video track")
+            val format = extractor.getTrackFormat(trackIndex)
+            val width = format.getInteger(MediaFormat.KEY_WIDTH)
+            val height = format.getInteger(MediaFormat.KEY_HEIGHT)
+            val mime = requireNotNull(format.getString(MediaFormat.KEY_MIME))
+            extractor.selectTrack(trackIndex)
+            reader = ImageReader.newInstance(width, height, android.graphics.ImageFormat.YUV_420_888, 3)
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(format, reader.surface, null, 0)
+            codec.start()
+            val bufferInfo = MediaCodec.BufferInfo()
+            var inputEos = false
+            var outputEos = false
+            var samplesQueued = 0
+            var samplesDecoded = 0
+            var lastQueuedPtsUs: Long? = null
+            var lastDecodedPtsUs: Long? = null
+            val decodeStartedAtMs = SystemClock.elapsedRealtime()
+            var lastProgressAtMs = decodeStartedAtMs
+            while (!outputEos) {
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - decodeStartedAtMs > maxDecodeDurationMs ||
+                    nowMs - lastProgressAtMs > maxNoProgressMs
+                ) {
+                    error(
+                        "Timed out decoding ${file.name}: " +
+                            "elapsedMs=${nowMs - decodeStartedAtMs}, " +
+                            "noProgressMs=${nowMs - lastProgressAtMs}, " +
+                            "samplesQueued=$samplesQueued, samplesDecoded=$samplesDecoded, " +
+                            "candidates=${candidates.size}, inputEos=$inputEos, outputEos=$outputEos, " +
+                            "lastQueuedPtsUs=$lastQueuedPtsUs, lastDecodedPtsUs=$lastDecodedPtsUs, " +
+                            "requestedCount=${requestedTimesUs.size}"
+                    )
+                }
+                if (!inputEos) {
+                    val inputIndex = codec.dequeueInputBuffer(10_000L)
+                    if (inputIndex >= 0) {
+                        val input = requireNotNull(codec.getInputBuffer(inputIndex))
+                        input.clear()
+                        val size = extractor.readSampleData(input, 0)
+                        if (size < 0) {
+                            codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            inputEos = true
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
+                        } else {
+                            val samplePtsUs = extractor.sampleTime
+                            codec.queueInputBuffer(inputIndex, 0, size, samplePtsUs, 0)
+                            extractor.advance()
+                            samplesQueued++
+                            lastQueuedPtsUs = samplePtsUs
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
+                            // The sample just queued is not itself an EOS buffer. Leave inputEos false
+                            // so the next iteration reads past the final sample and queues EOS separately.
+                        }
+                    }
+                }
+                when (val outputIndex = codec.dequeueOutputBuffer(bufferInfo, 10_000L)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED, MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
+                    else -> if (outputIndex >= 0) {
+                        val isEos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                        if (!isEos) {
+                            val decodedPtsUs = bufferInfo.presentationTimeUs
+                            val nearestRequestedPts = requestedTimesUs
+                                .minByOrNull { abs(decodedPtsUs - it) }
+                            codec.releaseOutputBuffer(outputIndex, true)
+                            val image = awaitDecodedImage(requireNotNull(reader))
+                            try {
+                                if (nearestRequestedPts != null &&
+                                    abs(decodedPtsUs - nearestRequestedPts) <= toleranceUs
+                                ) {
+                                    val bitmap = imageToBitmap(image)
+                                    val previous = candidates[nearestRequestedPts]
+                                    if (previous == null ||
+                                        abs(decodedPtsUs - nearestRequestedPts) <
+                                        abs(previous.presentationTimeUs - nearestRequestedPts)
+                                    ) {
+                                        candidates[nearestRequestedPts] =
+                                            DecodedVideoFrame(decodedPtsUs, bitmap)
+                                        previous?.bitmap?.recycle()
+                                    } else {
+                                        bitmap.recycle()
+                                    }
+                                }
+                            } finally {
+                                image.close()
+                            }
+                            samplesDecoded++
+                            lastDecodedPtsUs = decodedPtsUs
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
+                        } else {
+                            codec.releaseOutputBuffer(outputIndex, false)
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
+                        }
+                        outputEos = isEos
+                    }
+                }
+            }
+            val selected = linkedMapOf<Long, Bitmap>()
+            val usedPts = mutableSetOf<Long>()
+            requestedTimesUs.forEach { requestedPts ->
+                val candidate = candidates.values.filter { it.presentationTimeUs !in usedPts }
+                    .minByOrNull { abs(it.presentationTimeUs - requestedPts) }
+                    ?: error("${file.name} did not decode a frame for requested PTS $requestedPts us")
+                val distance = abs(candidate.presentationTimeUs - requestedPts)
+                require(distance <= toleranceUs) {
+                    "${file.name} decoded PTS ${candidate.presentationTimeUs} us is not within ${toleranceUs} us of requested $requestedPts us"
+                }
+                usedPts += candidate.presentationTimeUs
+                selected[requestedPts] = candidate.bitmap
+            }
+            candidates.values
+                .filter { it.presentationTimeUs !in usedPts }
+                .forEach { it.bitmap.recycle() }
+            ownershipTransferred = true
+            return selected
+        } finally {
+            if (!ownershipTransferred) {
+                candidates.values.forEach { it.bitmap.recycle() }
+            }
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            runCatching { reader?.close() }
+            extractor.release()
+        }
+    }
+
+    private fun awaitDecodedImage(reader: ImageReader): Image {
+        val deadline = SystemClock.elapsedRealtime() + 5_000L
+        while (SystemClock.elapsedRealtime() < deadline) {
+            reader.acquireNextImage()?.let { return it }
+            Thread.sleep(2L)
+        }
+        error("MediaCodec produced a surface frame without an ImageReader image")
+    }
+
+    private fun imageToBitmap(image: Image): Bitmap {
+        require(image.format == android.graphics.ImageFormat.YUV_420_888) {
+            "Unexpected decoder image format ${image.format}"
+        }
+        val width = image.width
+        val height = image.height
+        val output = IntArray(width * height)
+        val planes = image.planes
+        val yPlane = planes[0]
+        val uPlane = planes[1]
+        val vPlane = planes[2]
+        fun sample(buffer: ByteBuffer, rowStride: Int, pixelStride: Int, x: Int, y: Int): Int {
+            val position = (y * rowStride + x * pixelStride).coerceIn(0, buffer.limit() - 1)
+            return buffer.get(position).toInt() and 0xff
+        }
+        for (y in 0 until height) for (x in 0 until width) {
+            val yy = sample(yPlane.buffer, yPlane.rowStride, yPlane.pixelStride, x, y)
+            val uu = sample(uPlane.buffer, uPlane.rowStride, uPlane.pixelStride, x / 2, y / 2)
+            val vv = sample(vPlane.buffer, vPlane.rowStride, vPlane.pixelStride, x / 2, y / 2)
+            val r = (yy + 1.402f * (vv - 128)).roundToInt().coerceIn(0, 255)
+            val g = (yy - 0.344136f * (uu - 128) - 0.714136f * (vv - 128)).roundToInt().coerceIn(0, 255)
+            val b = (yy + 1.772f * (uu - 128)).roundToInt().coerceIn(0, 255)
+            output[y * width + x] = Color.rgb(r, g, b)
+        }
+        return Bitmap.createBitmap(output, width, height, Bitmap.Config.ARGB_8888)
+    }
+
+    private data class DecodedVideoFrame(val presentationTimeUs: Long, val bitmap: Bitmap)
 
     private fun readVideoTrack(file: File): VideoTrack {
         val extractor = MediaExtractor()

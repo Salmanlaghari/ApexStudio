@@ -538,16 +538,31 @@ class ExportEngine(private val context: Context) {
                             speedPoints = itemConfig.speedPoints,
                             speedEffectApplied = speedPair != null
                         )
-                        if (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
-                            hasProjectVideoSource = true
-                            val sourceCadence = if (shouldInspectSourceCadenceForCfrNormalization(
-                                    sourceFormat.reportedFps, config.fps, speedPair != null
-                                )) {
-                                sourceCadenceFor(clip.uri, clip.id, sourceFormat.reportedFps)
-                            } else null
-                            val verifiedCfr = isVerifiedFasterCfrSource(
+                        val sourceCadence = if (
+                            clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
+                            shouldInspectSourceCadenceForCfrNormalization(
+                                sourceFormat.reportedFps, config.fps, speedPair != null
+                            )
+                        ) {
+                            sourceCadenceFor(clip.uri, clip.id, sourceFormat.reportedFps)
+                        } else null
+                        val verifiedCfr = clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
+                            isVerifiedFasterCfrSource(
                                 sourceFormat.reportedFps, sourceCadence, config.fps, speedPair != null
                             )
+                        val shouldDropSourceFrames = if (
+                            clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+                        ) {
+                            shouldDropSourceFramesWithCadenceProof(
+                                cadenceAdjustment,
+                                sourceFormat.reportedFps,
+                                sourceCadence,
+                                config.fps,
+                                speedEffectApplied = speedPair != null
+                            )
+                        } else cadenceAdjustment.dropSourceFrames
+                        if (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
+                            hasProjectVideoSource = true
                             if (!verifiedCfr) allProjectVideoSourcesVerifiedCfr = false
                         }
                         val keyframeClock = keyframeClockFor(itemConfig)
@@ -729,7 +744,7 @@ class ExportEngine(private val context: Context) {
                                     androidx.media3.effect.BitmapOverlay.createStaticBitmapOverlay(drawingBitmap)
                                 )))
                             }
-                            if (cadenceAdjustment.dropSourceFrames) {
+                            if (shouldDropSourceFrames) {
                                 add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(
                                     effectiveExportFrameRate(config.fps).toFloat()
                                 ))
@@ -1195,8 +1210,9 @@ class ExportEngine(private val context: Context) {
                 // Crop before speed changes, on the clipped source clock. This avoids numerical
                 // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
                 val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
-                val sourceCadenceAudit = if (config.pipOverlays.isEmpty() &&
-                    shouldInspectSourceCadenceForCfrNormalization(
+                // This audit also gates FrameDropEffect; PiP may disable post-export normalization,
+                // but must not bypass source-PTS verification before discarding input samples.
+                val sourceCadenceAudit = if (shouldInspectSourceCadenceForCfrNormalization(
                         sourceAudit?.reportedFps, config.fps, speedPair != null
                     )
                 ) {
@@ -1487,9 +1503,10 @@ class ExportEngine(private val context: Context) {
                 }
                 val composedVideoEffects = composeVideoEffectLayers(
                     mainVideoEffects = videoEffects + selectedVideoOutputEffects(
-                        config,
-                        sourceAudit?.reportedFps,
-                        speedEffectApplied = speedPair != null
+                        config = config,
+                        sourceFrameRate = sourceAudit?.reportedFps,
+                        speedEffectApplied = speedPair != null,
+                        sourceCadenceAudit = sourceCadenceAudit
                     ),
                     pipOverlayEffects = pipOverlayEffects,
                     foregroundEffects = foregroundEffects,

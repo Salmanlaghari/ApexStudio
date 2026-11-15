@@ -2805,8 +2805,55 @@ class ExportTimestampParityInstrumentedTest {
             )
             // Keep the selected route's endpoint explicit instead of relying only on the final input sample PTS.
             val selectedConfig = exportConfig.copy(trimEndMs = bakedDurationMs)
+            val bakedUri = Uri.fromFile(baked).toString()
+            val bakedFormatAudit = inspectSourceVideoFormat(context, bakedUri)
+            val sourceCadenceAudit = if (shouldInspectSourceCadenceForCfrNormalization(
+                    bakedFormatAudit.reportedFps, selectedConfig.fps, speedEffectApplied = false
+                )
+            ) {
+                inspectSourceFrameCadence(context, bakedUri, bakedFormatAudit.reportedFps)
+            } else null
+            val observedBakedCadence = auditSourceFrameTimestamps(
+                bakedTrack.presentationTimesUs,
+                bakedFormatAudit.reportedFps
+            )
+            val selectedFrameDrop = shouldDropSourceFramesWithCadenceProof(
+                sourceFrameRateAdjustment(
+                    bakedFormatAudit.reportedFps,
+                    selectedConfig.fps,
+                    selectedConfig.clipSpeed,
+                    selectedConfig.speedPoints,
+                    speedEffectApplied = false
+                ),
+                bakedFormatAudit.reportedFps,
+                sourceCadenceAudit,
+                selectedConfig.fps,
+                speedEffectApplied = false
+            )
+            val normalizeKnownCfrFasterSource = isVerifiedFasterCfrSource(
+                bakedFormatAudit.reportedFps,
+                sourceCadenceAudit,
+                selectedConfig.fps,
+                speedEffectApplied = false
+            )
+            println(
+                "baked-chroma export cadence: reportedFps=${bakedFormatAudit.reportedFps}, " +
+                    "sourcePts=${bakedTrack.presentationTimesUs.take(6)}, samples=${bakedTrack.presentationTimesUs.size}, " +
+                    "cadence=${sourceCadenceAudit?.diagnosticSummary() ?: "not-inspected"}, " +
+                    "observedCadence=${observedBakedCadence.diagnosticSummary()}, " +
+                    "frameDrop=$selectedFrameDrop, normalizeKnownCfrFasterSource=$normalizeKnownCfrFasterSource, " +
+                    "repeatPreviousFrameIntervalUs=${exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}"
+            )
+            instrumentation.uiAutomation.executeShellCommand("logcat -c").close()
             selectedEngine.startExport(Uri.fromFile(baked).toString(), selectedConfig, selectedOutputName)
             val selectedResult = awaitTerminalState(selectedEngine)
+            val selectedDiagnosticsPfd = instrumentation.uiAutomation.executeShellCommand(
+                "logcat -d -v brief -s ExportEngine:I"
+            )
+            val selectedDiagnostics = android.os.ParcelFileDescriptor.AutoCloseInputStream(selectedDiagnosticsPfd)
+                .bufferedReader().use { it.readText() }
+                .lineSequence().filter { "export_diag" in it }.toList().takeLast(30).joinToString(" | ")
+            println("selected export diagnostic trace: $selectedDiagnostics")
             assertNull("Selected export of the baked chroma clip must complete: ${selectedResult.error}", selectedResult.error)
             selectedOutput = File(requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path))
             assertTrue("Selected export must contain an encoded MP4", selectedOutput!!.isFile && selectedOutput!!.length() > 0L)
@@ -2816,12 +2863,20 @@ class ExportTimestampParityInstrumentedTest {
                 selectedOutput!!.canonicalFile
             )
 
+            instrumentation.uiAutomation.executeShellCommand("logcat -c").close()
             projectEngine.startProjectExport(
                 clips = listOf(bakedClip),
                 config = exportConfig,
                 outputFileName = projectOutputName
             )
             val projectResult = awaitTerminalState(projectEngine)
+            val projectDiagnosticsPfd = instrumentation.uiAutomation.executeShellCommand(
+                "logcat -d -v brief -s ExportEngine:I"
+            )
+            val projectDiagnostics = android.os.ParcelFileDescriptor.AutoCloseInputStream(projectDiagnosticsPfd)
+                .bufferedReader().use { it.readText() }
+                .lineSequence().filter { "export_diag" in it }.toList().takeLast(30).joinToString(" | ")
+            println("project export diagnostic trace: $projectDiagnostics")
             assertNull("Whole-project export of the baked chroma clip must complete: ${projectResult.error}", projectResult.error)
             projectOutput = File(requireNotNull(Uri.parse(requireNotNull(projectResult.outputUri)).path))
             assertTrue("Whole-project export must contain an encoded MP4", projectOutput!!.isFile && projectOutput!!.length() > 0L)
@@ -2874,6 +2929,15 @@ class ExportTimestampParityInstrumentedTest {
                 val outputAnchorsUs = track.presentationTimesUs.sorted()
                 val expectedInteriorAnchorsUs = sourceAnchorsUs.dropLast(2)
                 val anchorToleranceUs = 5_000L
+                val routeDiagnostics = if (label.contains("Selected", ignoreCase = true)) {
+                    selectedDiagnostics
+                } else projectDiagnostics
+                val cadenceDiagnostics = "sourceReportedFps=${bakedFormatAudit.reportedFps}, " +
+                    "sourcePts=$sourceAnchorsUs, cadence=${sourceCadenceAudit?.diagnosticSummary() ?: "not-inspected"}, " +
+                    "observedCadence=${observedBakedCadence.diagnosticSummary()}, frameDrop=$selectedFrameDrop, " +
+                    "normalizeKnownCfrFasterSource=$normalizeKnownCfrFasterSource, " +
+                    "repeatPreviousFrameIntervalUs=${exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}, " +
+                    "exportTrace=$routeDiagnostics"
                 assertOutputTiming(
                     label = label,
                     output = track,
@@ -2891,7 +2955,8 @@ class ExportTimestampParityInstrumentedTest {
                     }
                     assertTrue(
                         "$label must retain each interior source PTS in order within ${anchorToleranceUs}us; " +
-                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}",
+                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}; " +
+                            "cadence diagnostics=[$cadenceDiagnostics]",
                         nextOutputIndex < outputAnchorsUs.size &&
                             abs(outputAnchorsUs[nextOutputIndex] - expectedUs) <= anchorToleranceUs
                     )

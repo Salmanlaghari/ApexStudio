@@ -3290,6 +3290,8 @@ class ExportTimestampParityInstrumentedTest {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         var reader: ImageReader? = null
+        val candidates = linkedMapOf<Long, DecodedVideoFrame>()
+        var ownershipTransferred = false
         try {
             extractor.setDataSource(file.absolutePath)
             val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
@@ -3304,7 +3306,6 @@ class ExportTimestampParityInstrumentedTest {
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, reader.surface, null, 0)
             codec.start()
-            val decoded = mutableListOf<DecodedVideoFrame>()
             val bufferInfo = MediaCodec.BufferInfo()
             var inputEos = false
             var outputEos = false
@@ -3320,7 +3321,8 @@ class ExportTimestampParityInstrumentedTest {
                             inputEos = true
                         } else {
                             codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0)
-                            if (!extractor.advance()) inputEos = true
+                            // The sample just queued is not itself an EOS buffer. Leave inputEos false
+                            // so the next iteration reads past the final sample and queues EOS separately.
                         }
                     }
                 }
@@ -3332,7 +3334,26 @@ class ExportTimestampParityInstrumentedTest {
                             codec.releaseOutputBuffer(outputIndex, true)
                             val image = awaitDecodedImage(requireNotNull(reader))
                             try {
-                                decoded += DecodedVideoFrame(bufferInfo.presentationTimeUs, imageToBitmap(image))
+                                val bitmap = imageToBitmap(image)
+                                val nearestRequestedPts = requestedTimesUs
+                                    .minByOrNull { abs(bufferInfo.presentationTimeUs - it) }
+                                if (nearestRequestedPts != null &&
+                                    abs(bufferInfo.presentationTimeUs - nearestRequestedPts) <= toleranceUs
+                                ) {
+                                    val previous = candidates[nearestRequestedPts]
+                                    if (previous == null ||
+                                        abs(bufferInfo.presentationTimeUs - nearestRequestedPts) <
+                                        abs(previous.presentationTimeUs - nearestRequestedPts)
+                                    ) {
+                                        candidates[nearestRequestedPts] =
+                                            DecodedVideoFrame(bufferInfo.presentationTimeUs, bitmap)
+                                        previous?.bitmap?.recycle()
+                                    } else {
+                                        bitmap.recycle()
+                                    }
+                                } else {
+                                    bitmap.recycle()
+                                }
                             } finally {
                                 image.close()
                             }
@@ -3346,7 +3367,7 @@ class ExportTimestampParityInstrumentedTest {
             val selected = linkedMapOf<Long, Bitmap>()
             val usedPts = mutableSetOf<Long>()
             requestedTimesUs.forEach { requestedPts ->
-                val candidate = decoded.filter { it.presentationTimeUs !in usedPts }
+                val candidate = candidates.values.filter { it.presentationTimeUs !in usedPts }
                     .minByOrNull { abs(it.presentationTimeUs - requestedPts) }
                     ?: error("${file.name} did not decode a frame for requested PTS $requestedPts us")
                 val distance = abs(candidate.presentationTimeUs - requestedPts)
@@ -3356,9 +3377,15 @@ class ExportTimestampParityInstrumentedTest {
                 usedPts += candidate.presentationTimeUs
                 selected[requestedPts] = candidate.bitmap
             }
-            decoded.filter { it.presentationTimeUs !in usedPts }.forEach { it.bitmap.recycle() }
+            candidates.values
+                .filter { it.presentationTimeUs !in usedPts }
+                .forEach { it.bitmap.recycle() }
+            ownershipTransferred = true
             return selected
         } finally {
+            if (!ownershipTransferred) {
+                candidates.values.forEach { it.bitmap.recycle() }
+            }
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
             runCatching { reader?.close() }

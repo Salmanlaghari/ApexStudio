@@ -200,7 +200,10 @@ android {
               testDescriptor: org.gradle.api.tasks.testing.TestDescriptor,
               outputEvent: org.gradle.api.tasks.testing.TestOutputEvent
             ) {
-              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest") {
+              if (
+                testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest" ||
+                testDescriptor.className == "com.apexstudio.app.ui.screens.editor.HorizontalEditorProjectLayoutTest"
+              ) {
                 print(outputEvent.message)
               }
             }

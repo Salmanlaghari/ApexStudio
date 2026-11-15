@@ -82,10 +82,15 @@ class HorizontalEditorProjectLayoutTest {
         }.getOrElse { "<missing:${it::class.simpleName}:${it.message}>" }
         println("$marker stage=$stage merged panel=${bounds("filter-workspace-panel", false)} preview=${bounds("editor-preview-frame", false)} root=${runCatching { compose.onRoot().fetchSemanticsNode().boundsInRoot.toString() }.getOrDefault("<missing>")}")
         println("$marker stage=$stage unmerged panel=${bounds("filter-workspace-panel", true)} preview=${bounds("editor-preview-frame", true)} root=${runCatching { compose.onRoot(useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.toString() }.getOrDefault("<missing>")}")
-        runCatching { compose.onRoot().printToLog("$marker merged stage=$stage") }
-            .onFailure { println("$marker stage=$stage merged_dump_exception=${it::class.qualifiedName}:${it.message}") }
-        runCatching { compose.onRoot(useUnmergedTree = true).printToLog("$marker unmerged stage=$stage") }
-            .onFailure { println("$marker stage=$stage unmerged_dump_exception=${it::class.qualifiedName}:${it.message}") }
+        fun dump(node: androidx.compose.ui.semantics.SemanticsNode, depth: Int) {
+            println("$marker depth=$depth bounds=${node.boundsInRoot} config=${node.config}")
+            node.children.forEach { dump(it, depth + 1) }
+        }
+        listOf(false, true).forEach { unmerged ->
+            println("$marker stage=$stage tree_unmerged=$unmerged")
+            runCatching { dump(compose.onRoot(useUnmergedTree = unmerged).fetchSemanticsNode(), 0) }
+                .onFailure { println("$marker stage=$stage dump_exception=${it::class.qualifiedName}:${it.message}") }
+        }
     }
 
     private fun waitForFilterWorkspaceDismissed() {

@@ -393,7 +393,7 @@ fun BackgroundReplacePanel(
             TextButton(
                 onClick = {
                     if (BuildConfig.DEBUG) {
-                        Log.d("BackgroundReplacePanel", "chroma link onClick entered; forwarding callback")
+                        println("BRP_DIAG chroma link onClick entered; forwarding callback")
                     }
                     onOpenChromaKey()
                 },

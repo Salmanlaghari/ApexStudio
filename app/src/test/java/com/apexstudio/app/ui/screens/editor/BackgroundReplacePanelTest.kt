@@ -6,12 +6,12 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
+import androidx.compose.ui.semantics.SemanticsActions
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.BackgroundPhase
 import com.apexstudio.app.presentation.viewmodel.BackgroundUiState
@@ -73,7 +73,9 @@ class BackgroundReplacePanelTest {
 
         // Assert the actual accessibility semantics action exposed by TextButton.
         openedChromaKey.set(false)
-        chromaKeyLink.performClick()
+        chromaKeyLink.performSemanticsAction(SemanticsActions.OnClick) { action ->
+            assertTrue("Chroma link exposes a successful accessibility action", action())
+        }
         compose.runOnIdle {
             assertTrue(
                 "Chroma-key link invokes its callback through OnClick semantics",

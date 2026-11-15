@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -125,19 +126,32 @@ class ScreenshotClipToolbarTest {
         // 375dp the first priority actions are visible at rest, while later
         // actions remain reachable rather than being displayed simultaneously.
         val initiallyVisiblePriorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.take(4).map { label ->
-            composeRule.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            composeRule.onNodeWithTag("mobile-editor-clip-options")
+                .onDescendant(hasText(label))
+                .assertIsDisplayed()
+                .fetchSemanticsNode()
+                .boundsInRoot
         }
         assertTrue(
             "Horizontal selected-video actions keep the visible approved priority order",
             initiallyVisiblePriorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
         )
         CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.drop(4).forEach { label ->
-            composeRule.onNodeWithText(label).performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("mobile-editor-clip-options")
+                .onDescendant(hasText(label))
+                .performScrollTo()
+                .assertIsDisplayed()
         }
 
-        composeRule.onNodeWithText("Keyframe").performScrollTo().performClick()
+        composeRule.onNodeWithTag("mobile-editor-clip-options")
+            .onDescendant(hasText("Keyframe"))
+            .performScrollTo()
+            .performClick()
         assertEquals("Keyframe calls the project action", 1, calls["keyframe"] ?: 0)
-        composeRule.onNodeWithText("Animation").performScrollTo().performClick()
+        composeRule.onNodeWithTag("mobile-editor-clip-options")
+            .onDescendant(hasText("Animation"))
+            .performScrollTo()
+            .performClick()
         assertEquals("Animation opens the keyframe editor", 1, calls["animation"] ?: 0)
     }
 

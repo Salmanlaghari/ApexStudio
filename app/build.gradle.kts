@@ -2,6 +2,7 @@ import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesS
 import com.apexstudio.buildlogic.StripGpuImageDecoderTransform
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition
 import org.gradle.api.attributes.Usage
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -53,7 +54,7 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
     check(segmenter.isFile && segmenter.length() == 249_537L) {
       "Background Replace requires the 249,537-byte bundled selfie_segmenter.tflite asset"
     }
-    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    val digest = MessageDigest.getInstance("SHA-256")
     segmenter.inputStream().buffered().use { input ->
       val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
       while (true) {

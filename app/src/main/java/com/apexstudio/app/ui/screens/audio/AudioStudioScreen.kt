@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.*
@@ -144,9 +145,9 @@ fun AudioStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f) { vm.setLowEQ(it.toInt().toShort()) }
-                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f) { vm.setMidEQ(it.toInt().toShort()) }
-                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f) { vm.setMidEQ(it.toInt().toShort()) }
+                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f, "audio-eq-low") { vm.setLowEQ(it.toInt().toShort()) }
+                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f, "audio-eq-mid") { vm.setMidEQ(it.toInt().toShort()) }
+                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f, "audio-eq-high") { vm.setHighEQ(it.toInt().toShort()) }
                     }
                 }
             }
@@ -514,7 +515,13 @@ private fun EqVisualizer(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun EqKnob(name: String, freq: String, value: Float, onValueChange: (Float) -> Unit) {
+private fun EqKnob(
+    name: String,
+    freq: String,
+    value: Float,
+    testTag: String,
+    onValueChange: (Float) -> Unit
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
@@ -544,6 +551,17 @@ private fun EqKnob(name: String, freq: String, value: Float, onValueChange: (Flo
         Spacer(Modifier.height(4.dp))
         Text(name, color = ApexPalette.TextPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
         Text(freq, color = ApexPalette.TextTertiary, fontSize = 8.sp)
+        Slider(
+            value = value.coerceIn(-1f, 1f),
+            onValueChange = onValueChange,
+            valueRange = -1f..1f,
+            modifier = Modifier.width(88.dp).testTag(testTag),
+            colors = SliderDefaults.colors(
+                thumbColor = ApexPalette.NeonCyan,
+                activeTrackColor = ApexPalette.NeonCyan,
+                inactiveTrackColor = ApexPalette.BgElevated
+            )
+        )
     }
 }
 

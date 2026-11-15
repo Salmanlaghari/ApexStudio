@@ -311,10 +311,6 @@ class ProjectFxPersistenceTest {
                 }
             }
 
-            editor.setLutContrast(1.45f)
-            editor.setLutSaturation(1.3f)
-            editor.setLutTemperature(6800f)
-            editor.setLutTint(22f)
             editor.toggleLutCompareMode()
             savedAt = editor.state.value.lastAutoSaveMs
             delay(2L)
@@ -322,10 +318,6 @@ class ProjectFxPersistenceTest {
             awaitSaved(editor, savedAt)
             val explicitClear = ProjectLutSettings(filterId = null, intensity = 1f)
             awaitLutState(editor, null, 1f, explicitClear)
-            assertEquals(1f, editor.state.value.lutContrast, 0.0001f)
-            assertEquals(1f, editor.state.value.lutSaturation, 0.0001f)
-            assertEquals(5000f, editor.state.value.lutTemperature, 0.0001f)
-            assertEquals(0f, editor.state.value.lutTint, 0.0001f)
             assertEquals(false, editor.state.value.lutCompareMode)
 
             savedAt = editor.state.value.lastAutoSaveMs
@@ -333,10 +325,6 @@ class ProjectFxPersistenceTest {
             editor.undo()
             awaitSaved(editor, savedAt)
             awaitLutState(editor, manualFilterId, 0.42f, ProjectLutSettings(manualFilterId, 0.42f))
-            assertEquals(1.45f, editor.state.value.lutContrast, 0.0001f)
-            assertEquals(1.3f, editor.state.value.lutSaturation, 0.0001f)
-            assertEquals(6800f, editor.state.value.lutTemperature, 0.0001f)
-            assertEquals(22f, editor.state.value.lutTint, 0.0001f)
             assertEquals(true, editor.state.value.lutCompareMode)
 
             savedAt = editor.state.value.lastAutoSaveMs
@@ -344,10 +332,6 @@ class ProjectFxPersistenceTest {
             editor.redo()
             awaitSaved(editor, savedAt)
             awaitLutState(editor, null, 1f, explicitClear)
-            assertEquals(1f, editor.state.value.lutContrast, 0.0001f)
-            assertEquals(1f, editor.state.value.lutSaturation, 0.0001f)
-            assertEquals(5000f, editor.state.value.lutTemperature, 0.0001f)
-            assertEquals(0f, editor.state.value.lutTint, 0.0001f)
             assertEquals(false, editor.state.value.lutCompareMode)
             assertEquals(explicitClear, withContext(Dispatchers.IO) { repository.findById(projectId)!!.manualLutOverride })
 

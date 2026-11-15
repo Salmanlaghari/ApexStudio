@@ -855,7 +855,7 @@ private fun EditorViewModel.undoSnapshot(): EditorUndoSnapshot? = _state.value.l
     s.project?.let {
         EditorUndoSnapshot(
             it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers,
-            s.lutContrast, s.lutSaturation, s.lutTemperature, s.lutTint, s.lutCompareMode
+            s.lutCompareMode
         )
     }
 }
@@ -896,10 +896,6 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
             activeGpuFilterConfig = restoredFilter,
             activeFilterId = restoredGlobalFilterId,
             filterIntensity = restoredGlobalFilterIntensity,
-            lutContrast = snapshot.lutContrast,
-            lutSaturation = snapshot.lutSaturation,
-            lutTemperature = snapshot.lutTemperature,
-            lutTint = snapshot.lutTint,
             lutCompareMode = snapshot.lutCompareMode,
             durationMs = duration,
             playerPositionMs = position,
@@ -1516,7 +1512,7 @@ internal fun EditorViewModel.pushUndo(state: EditorState = _state.value) {
     val project = state.project ?: return
     val current = EditorUndoSnapshot(
         project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers,
-        state.lutContrast, state.lutSaturation, state.lutTemperature, state.lutTint, state.lutCompareMode
+        state.lutCompareMode
     )
     undoStack.addLast(current)
     if (undoStack.size > 50) undoStack.removeFirst()

@@ -541,10 +541,12 @@ fun ContextualBottomToolbar(
     ).map(::routed)
     val easyClipItems = when (selectionKind) {
         ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
             CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
+            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
             CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
             CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
+            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
             CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         ).map(::routed)

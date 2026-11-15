@@ -112,6 +112,30 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
+    @Config(qualifiers = "w375dp-h800dp-mdpi")
+    fun horizontalProjectVideoSelectionShowsAndRoutesKeyframeActions() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            Box(Modifier.width(375.dp)) {
+                testToolbar(calls, horizontalProjectLayout = true)
+            }
+        }
+
+        val priorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.map { label ->
+            composeRule.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        }
+        assertTrue(
+            "Horizontal selected-video actions keep the approved priority order",
+            priorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
+        )
+
+        composeRule.onNodeWithText("Keyframe").performClick()
+        assertEquals("Keyframe calls the project action", 1, calls["keyframe"] ?: 0)
+        composeRule.onNodeWithText("Animation").performClick()
+        assertEquals("Animation opens the keyframe editor", 1, calls["animation"] ?: 0)
+    }
+
+    @Test
     fun `video-specific extras remain scrollable and More retains global tools`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls) }

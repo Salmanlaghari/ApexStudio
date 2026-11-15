@@ -1,8 +1,9 @@
 package com.apexstudio.app.ui.screens.audio
 
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,8 +36,8 @@ class AudioStudioFunctionalControlsTest {
             )
         }
 
-        compose.onNodeWithText("AI Noise Reduction").assertDoesNotExist()
-        compose.onNodeWithText("Apply Enhancement").assertDoesNotExist()
+        compose.onAllNodesWithText("AI Noise Reduction").assertCountEquals(0)
+        compose.onAllNodesWithText("Apply Enhancement").assertCountEquals(0)
         compose.onNodeWithTag("audio-open-sfx-library").performScrollTo().performClick()
 
         compose.runOnIdle { assertTrue(vm.state.value.sfxLibraryPanelOpen) }

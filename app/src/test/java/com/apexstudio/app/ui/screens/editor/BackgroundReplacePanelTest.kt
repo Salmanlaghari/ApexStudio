@@ -7,7 +7,6 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onNode
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -94,12 +93,12 @@ class BackgroundReplacePanelTest {
     }
 
     private fun logNode(label: String, node: androidx.compose.ui.test.SemanticsNodeInteraction) {
-        fun describe(useUnmergedTree: Boolean): String = try {
-            val semantics = node.fetchSemanticsNode(useUnmergedTree)
+        val description = try {
+            val semantics = node.fetchSemanticsNode()
             "boundsInRoot=${semantics.boundsInRoot} config=${semantics.config} children=${semantics.children.size}"
         } catch (error: Throwable) {
             "unavailable=${error::class.simpleName}: ${error.message}"
         }
-        println("BRP_DIAG node=$label merged={${describe(false)}} unmerged={${describe(true)}}")
+        println("BRP_DIAG node=$label {$description}")
     }
 }

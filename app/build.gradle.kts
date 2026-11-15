@@ -171,6 +171,16 @@ android {
       isIncludeAndroidResources = true
       if (System.getenv("CI") == "true") {
         all { test ->
+          test.addTestOutputListener(object : org.gradle.api.tasks.testing.TestOutputListener {
+            override fun onOutput(
+              testDescriptor: org.gradle.api.tasks.testing.TestDescriptor,
+              outputEvent: org.gradle.api.tasks.testing.TestOutputEvent
+            ) {
+              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest") {
+                print(outputEvent.message)
+              }
+            }
+          })
           test.addTestListener(object : org.gradle.api.tasks.testing.TestListener {
             override fun beforeSuite(suite: org.gradle.api.tasks.testing.TestDescriptor) = Unit
             override fun afterSuite(

@@ -125,30 +125,6 @@ fun EditorViewModel.cancelBackgroundReplace() {
     )
 }
 
-/** Compatibility action for older UI: check that background replacement is ready. */
-fun EditorViewModel.downloadBackgroundModel() {
-    val ctx = context ?: return
-    val preparingMessage = "Checking background replacement…"
-    _backgroundUi.value = _backgroundUi.value.copy(
-        phase = BackgroundPhase.PROCESSING,
-        message = preparingMessage
-    )
-    // isModelReady switches to IO internally; stay on Main for state publication.
-    viewModelScope.launch {
-        val ready = BackgroundReplaceEngine.isModelReady(ctx.applicationContext)
-        _backgroundUi.update { current ->
-            if (current.message != preparingMessage) current else if (ready) {
-                current.copy(phase = BackgroundPhase.IDLE, progress01 = 0f, message = "Ready to replace the background.")
-            } else {
-                current.copy(
-                    phase = BackgroundPhase.FAILED, progress01 = 0f,
-                    message = "Background replacement isn't available right now."
-                )
-            }
-        }
-    }
-}
-
 /**
  * Apply [settings] to [clipId]'s video. An identical re-apply reuses the
  * cache; results are rejected if the originating project or clip changes
@@ -228,16 +204,6 @@ fun EditorViewModel.applyBackgroundReplace(
                 if (!isCurrentBackgroundJob(requestJob)) return@launch
                 effective.withVerifiedWallpaper(wallpaper)
             } else effective
-            val needsSegmentationModel = resolvedEffective.chromaKeySettings?.enabled != true
-            val ready = !needsSegmentationModel || BackgroundReplaceEngine.isModelReady(ctxApp)
-            if (!isCurrentBackgroundJob(requestJob)) return@launch
-            if (!ready) {
-                publishBackgroundState(requestJob) {
-                    it.copy(phase = BackgroundPhase.FAILED,
-                        message = "Background replacement isn't available right now.")
-                }
-                return@launch
-            }
             if (resolvedEffective.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
                 resolvedEffective.imageUri.isNullOrBlank()
             ) {

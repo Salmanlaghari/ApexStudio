@@ -1230,7 +1230,7 @@ class ExportEngine(private val context: Context) {
                     "Invalid Color Studio grade; export stopped rather than dropping the project grade."
                 }
                 require(config.chromaKeySettings?.enabled != true) {
-                    "Apply chroma key and its wallpaper to the clip before exporting."
+                    "Chroma key is pending. Apply it in Chroma key + wallpapers before exporting."
                 }
 
                 val mediaItemBuilder = MediaItem.Builder().setUri(Uri.parse(inputUri))

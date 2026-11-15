@@ -26,6 +26,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -41,7 +42,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
@@ -55,10 +55,9 @@ import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
  * Background replace panel (PR-G): per-clip MediaPipe person
  * segmentation — Original / Blur / Colour / Image.
  *
- * Nothing here is a dead button: every state explains itself.
- * - Model not downloaded → download prompt (244 KB, one-time).
+ * The segmentation model is bundled with the app; no separate download is needed.
  * - Processing → progress bar + Cancel.
- * - Failed → the real error message + Apply to retry.
+ * - Failed → the processing error + Apply to retry.
  * - Applied → "Applied: …" badge + Restore original.
  *
  * Preview/export parity: Apply pre-renders ONE processed video
@@ -80,12 +79,11 @@ private val COLOR_PRESETS = listOf(
 fun BackgroundReplacePanel(
     clip: MediaClip?,
     ui: BackgroundUiState,
-    packState: PackManager.PackState?,
     onApply: (BackgroundReplaceSettings) -> Unit,
     onRestoreOriginal: () -> Unit,
     onCancel: () -> Unit,
-    onDownloadModel: () -> Unit,
     onPickImage: () -> Unit,
+    onOpenChromaKey: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -107,10 +105,7 @@ fun BackgroundReplacePanel(
     }
     val imageUri = ui.imageUri ?: applied?.imageUri
     val isProcessing = ui.phase == BackgroundPhase.PROCESSING
-    val modelDownloadedHint = packState is PackManager.PackState.Downloaded ||
-        packState is PackManager.PackState.UpdateAvailable
-    val showApply = !isProcessing &&
-        (ui.phase != BackgroundPhase.NEED_DOWNLOAD || modelDownloadedHint)
+    val showApply = !isProcessing
     val canApply = when (mode) {
         BgUiMode.ORIGINAL -> applied != null
         BgUiMode.IMAGE -> !imageUri.isNullOrBlank()
@@ -162,7 +157,7 @@ fun BackgroundReplacePanel(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        "Keep the subject and change the background",
+                        "Keep the subject; bundled model runs on-device.",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -342,60 +337,10 @@ fun BackgroundReplacePanel(
             // Status / progress
             when (ui.phase) {
                 BackgroundPhase.NEED_DOWNLOAD -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF2A1A0F))
-                            .border(1.dp, Color(0xFF5A3A1D), RoundedCornerShape(10.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column {
-                            Text(
-                                "The person-segmentation model (~244 KB, one-time download) is needed for background replace.",
-                                color = Color(0xFFFFC27D), fontSize = 11.sp
-                            )
-                            if (packState is PackManager.PackState.Downloading) {
-                                Spacer(Modifier.height(8.dp))
-                                LinearProgressIndicator(
-                                    progress = { packState.fraction.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = ApexPalette.NeonAmber
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "Downloading ${(packState.fraction * 100).toInt()}%…",
-                                    color = ApexPalette.TextSecondary, fontSize = 10.sp
-                                )
-                            }
-                            if (packState is PackManager.PackState.Failed) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    "Download failed: ${packState.reason}",
-                                    color = ApexPalette.NeonPink, fontSize = 10.sp
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Button(
-                        onClick = onDownloadModel,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = ApexPalette.NeonAmber),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            if (packState is PackManager.PackState.Downloading) "Downloading…" else "Download model (244 KB)",
-                            color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold
-                        )
-                    }
-                    if (modelDownloadedHint) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Model downloaded — tap Apply below.",
-                            color = Color(0xFF88CC88), fontSize = 11.sp
-                        )
-                    }
+                    Text(
+                        "The model is bundled with the app. Tap Apply to prepare it; no download is needed.",
+                        color = ApexPalette.TextSecondary, fontSize = 11.sp
+                    )
                 }
                 BackgroundPhase.PROCESSING -> {
                     LinearProgressIndicator(
@@ -440,6 +385,18 @@ fun BackgroundReplacePanel(
                         Text(ui.message, color = ApexPalette.TextSecondary, fontSize = 11.sp)
                     }
                 }
+            }
+
+            TextButton(
+                onClick = onOpenChromaKey,
+                enabled = !isProcessing,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Green/blue screens? Open Chroma key + wallpapers",
+                    color = ApexPalette.NeonCyan,
+                    fontSize = 11.sp
+                )
             }
 
             // Apply / Restore

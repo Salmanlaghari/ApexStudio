@@ -31,7 +31,6 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.imagesegmenter.ImageSegmenter
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -119,11 +118,6 @@ object BackgroundReplaceEngine {
         context, BundledMediaPipeModels.Model.SELFIE_SEGMENTER
     )
 
-    /** Materialize and verify the packaged model off the UI thread. */
-    suspend fun isModelReady(context: Context): Boolean = withContext(Dispatchers.IO) {
-        runCatching { modelFile(context).isFile }.getOrDefault(false)
-    }
-
     /**
      * Deterministic output file for [clipId] + [settings]: identical
      * settings reuse the same file (no re-processing), any knob
@@ -172,7 +166,9 @@ object BackgroundReplaceEngine {
             throw IllegalArgumentException("Chroma key requires an image wallpaper.")
         }
         val model = if (chromaSettings == null) modelFile(appContext) else null
-        if (model != null && !model.isFile) throw IllegalStateException("Bundled segmentation model is unavailable.")
+        if (model != null && !model.isFile) {
+            throw IllegalStateException("Bundled person-segmentation model is missing. Update or reinstall the app.")
+        }
         if (safe.mode == com.apexstudio.app.domain.model.BackgroundReplaceMode.IMAGE &&
             safe.imageUri.isNullOrBlank()
         ) {

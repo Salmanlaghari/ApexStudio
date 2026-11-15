@@ -71,7 +71,8 @@ fun ExportScreen(
         )
     ),
     embedded: Boolean = false,
-    onSettings: (() -> Unit)? = null
+    onSettings: (() -> Unit)? = null,
+    onOpenChromaKey: (() -> Unit)? = null
 ) {
     val export by vm.export.collectAsStateWithLifecycle()
     val editorState by vm.state.collectAsStateWithLifecycle()
@@ -953,6 +954,20 @@ fun ExportScreen(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    val openChromaKey = onOpenChromaKey
+                    if (export.error?.contains("chroma key", ignoreCase = true) == true && openChromaKey != null) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                vm.openChromaKeyPanel()
+                                openChromaKey()
+                            },
+                            enabled = !export.isExporting,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open Chroma key + wallpapers")
+                        }
+                    }
                 }
             }
         }

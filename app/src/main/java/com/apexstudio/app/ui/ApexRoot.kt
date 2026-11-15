@@ -117,7 +117,12 @@ fun ApexRoot() {
                             projectId = projectId ?: "p1",
                             onBack = { showExportSettings = false },
                             onExport = { showExportSettings = false },
-                            onSettings = { overlay = Overlay.Settings }
+                            onSettings = { overlay = Overlay.Settings },
+                            onOpenChromaKey = {
+                                showExportSettings = false
+                                editorEntryWorkspace = "edit"
+                                currentTab = "edit"
+                            }
                         )
                         "lenses" -> CameraKitDeliveryRoute(
                             onBack = { currentTab = "home" }

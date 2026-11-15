@@ -661,6 +661,7 @@ fun EditorViewModel.flushProject() = persistProject()
 internal fun EditorViewModel.persistProject(
     importLegacyAnimation: Boolean = false,
     refreshLegacyClipFields: Boolean = false,
+    refreshLegacyAudioFields: Boolean = false,
     refreshLegacyTextStickerFields: Boolean = false,
     refreshLegacyDrawingClipIds: Set<String> = emptySet()
 ) {
@@ -670,6 +671,7 @@ internal fun EditorViewModel.persistProject(
     val stamped = snapshot.syncSharedTimeline(
         importLegacyAnimation = importLegacyAnimation,
         refreshLegacyClipFields = refreshLegacyClipFields,
+        refreshLegacyAudioFields = refreshLegacyAudioFields,
         refreshLegacyTextStickerFields = refreshLegacyTextStickerFields,
         refreshLegacyDrawingClipIds = refreshLegacyDrawingClipIds
     ).copy(lastEditedMs = System.currentTimeMillis())

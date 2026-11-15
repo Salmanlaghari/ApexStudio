@@ -75,7 +75,9 @@ class HorizontalEditorProjectLayoutTest {
 
     private fun waitForFilterWorkspaceDismissed() {
         compose.waitUntil(timeoutMillis = 5_000L) {
-            compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes().isEmpty()
+            runCatching {
+                compose.onNodeWithTag("filter-workspace-panel").assertIsNotDisplayed()
+            }.isSuccess
         }
     }
 

@@ -70,6 +70,14 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithTag("timeline-selection-accent-main", useUnmergedTree = true).assertExists()
     }
 
+    @Test
+    fun fixedCenterPlayheadUsesOneBoundedScrollTargetForAllTimelineLanes() {
+        assertEquals(600, centeredTimelineScrollTarget(playheadPx = 800, viewportWidthPx = 400, maxScrollPx = 2_000))
+        assertEquals(0, centeredTimelineScrollTarget(playheadPx = 120, viewportWidthPx = 400, maxScrollPx = 2_000))
+        assertEquals(2_000, centeredTimelineScrollTarget(playheadPx = 2_900, viewportWidthPx = 400, maxScrollPx = 2_000))
+        assertEquals(0, centeredTimelineScrollTarget(playheadPx = 800, viewportWidthPx = 0, maxScrollPx = 2_000))
+    }
+
     private fun clip(
         id: String,
         type: ClipType = ClipType.VIDEO,

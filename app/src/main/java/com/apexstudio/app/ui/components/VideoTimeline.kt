@@ -204,6 +204,16 @@ internal fun sourceTrimDeltaToMs(deltaPx: Float, msToDp: Float, density: Float):
     } else 0L
 }
 
+/** Scroll target for the fixed-center playhead, bounded to the scrollable content. */
+internal fun centeredTimelineScrollTarget(
+    playheadPx: Int,
+    viewportWidthPx: Int,
+    maxScrollPx: Int,
+): Int {
+    if (viewportWidthPx <= 0) return 0
+    return (playheadPx - viewportWidthPx / 2).coerceIn(0, maxScrollPx.coerceAtLeast(0))
+}
+
 /** V1 retains the historical, visually dominant filmstrip height. */
 @Suppress("UNUSED_PARAMETER")
 internal fun mainVideoLaneHeight(
@@ -771,7 +781,9 @@ fun VideoTimeline(
             val playheadPx = with(density) {
                 (posMs.coerceIn(0L, safeDurationMs) * msToDp).dp.toPx()
             }.roundToInt()
-            scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
+            scrollState.scrollTo(
+                centeredTimelineScrollTarget(playheadPx, viewportWidth, scrollState.maxValue)
+            )
         }
     }
     // Snapshot-driven centre: no-flow fallback while playing (centre on
@@ -787,10 +799,14 @@ fun VideoTimeline(
             playheadPx > scrollState.value + viewportWidth
         if (isPlaying) {
             if (playerPositionFlow == null) {
-                scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
+                scrollState.scrollTo(
+                    centeredTimelineScrollTarget(playheadPx, viewportWidth, scrollState.maxValue)
+                )
             }
         } else if (offScreen) {
-            scrollState.scrollTo((playheadPx - viewportWidth / 2).coerceAtLeast(0))
+            scrollState.scrollTo(
+                centeredTimelineScrollTarget(playheadPx, viewportWidth, scrollState.maxValue)
+            )
         }
     }
 
@@ -806,7 +822,11 @@ fun VideoTimeline(
             val playheadPx = with(density) { playheadX.dp.toPx() }.roundToInt()
             val viewportWidth = scrollState.viewportSize
             if (playheadPx > scrollState.value + viewportWidth || playheadPx < scrollState.value) {
-                val targetScroll = (playheadPx - viewportWidth / 2).coerceAtLeast(0)
+                val targetScroll = centeredTimelineScrollTarget(
+                    playheadPx,
+                    viewportWidth,
+                    scrollState.maxValue,
+                )
                 scrollState.scrollTo(targetScroll)
             }
         }

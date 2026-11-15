@@ -553,7 +553,7 @@ class ExportEngine(private val context: Context) {
                         val shouldDropSourceFrames = if (
                             clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO
                         ) {
-                            shouldDropProjectSourceFrames(
+                            shouldDropSourceFramesWithCadenceProof(
                                 cadenceAdjustment,
                                 sourceFormat.reportedFps,
                                 sourceCadence,
@@ -1210,8 +1210,9 @@ class ExportEngine(private val context: Context) {
                 // Crop before speed changes, on the clipped source clock. This avoids numerical
                 // inverse-curve drift and never applies a clip's speed a second time to crop lookup.
                 val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
-                val sourceCadenceAudit = if (config.pipOverlays.isEmpty() &&
-                    shouldInspectSourceCadenceForCfrNormalization(
+                // This audit also gates FrameDropEffect; PiP may disable post-export normalization,
+                // but must not bypass source-PTS verification before discarding input samples.
+                val sourceCadenceAudit = if (shouldInspectSourceCadenceForCfrNormalization(
                         sourceAudit?.reportedFps, config.fps, speedPair != null
                     )
                 ) {
@@ -1502,9 +1503,10 @@ class ExportEngine(private val context: Context) {
                 }
                 val composedVideoEffects = composeVideoEffectLayers(
                     mainVideoEffects = videoEffects + selectedVideoOutputEffects(
-                        config,
-                        sourceAudit?.reportedFps,
-                        speedEffectApplied = speedPair != null
+                        config = config,
+                        sourceFrameRate = sourceAudit?.reportedFps,
+                        speedEffectApplied = speedPair != null,
+                        sourceCadenceAudit = sourceCadenceAudit
                     ),
                     pipOverlayEffects = pipOverlayEffects,
                     foregroundEffects = foregroundEffects,

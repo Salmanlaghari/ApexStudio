@@ -130,10 +130,11 @@ internal fun isVerifiedFasterCfrSource(
 }
 
 /**
- * Project export must not drop samples solely because metadata reports an integer-multiple CFR
- * source; use its full PTS audit when available. Preserve speed-effect and ordinary rate-cap behavior.
+ * Selected and project exports must not drop samples solely because metadata reports an
+ * integer-multiple CFR source; use its full PTS audit when available. Preserve speed-effect and
+ * ordinary rate-cap behavior.
  */
-internal fun shouldDropProjectSourceFrames(
+internal fun shouldDropSourceFramesWithCadenceProof(
     adjustment: SourceFrameRateAdjustment,
     sourceFrameRate: Float?,
     sourceCadence: SourceFrameCadenceAudit?,
@@ -155,7 +156,8 @@ internal fun shouldDropProjectSourceFrames(
 internal fun selectedVideoOutputEffects(
     config: ExportEngine.ExportConfig,
     sourceFrameRate: Float? = null,
-    speedEffectApplied: Boolean = true
+    speedEffectApplied: Boolean = true,
+    sourceCadenceAudit: SourceFrameCadenceAudit? = null
 ): List<Effect> {
     val (width, height) = AspectCropTransformation.targetSizeFor(config.resolution, config.aspectRatio)
     val cadence = sourceFrameRateAdjustment(
@@ -169,7 +171,10 @@ internal fun selectedVideoOutputEffects(
         add(if (config.preserveInputAspectRatio || config.faceCropConfig != null)
             PreservingOutputSizeTransformation(maxOf(width, height))
         else ProjectOutputSizeTransformation(width, height, config.videoFitMode))
-        if (cadence.dropSourceFrames) {
+        if (shouldDropSourceFramesWithCadenceProof(
+                cadence, sourceFrameRate, sourceCadenceAudit, config.fps, speedEffectApplied
+            )
+        ) {
             add(FrameDropEffect.createDefaultFrameDropEffect(effectiveExportFrameRate(config.fps).toFloat()))
         }
     }

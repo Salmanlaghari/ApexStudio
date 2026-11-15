@@ -103,7 +103,7 @@ class ExportOutputPolicyTest {
     }
 
     @Test
-    fun projectFrameDropRequiresSourceCadenceProofWhenTheRateScanIsApplicable() {
+    fun exportFrameDropRequiresSourceCadenceProofWhenTheRateScanIsApplicable() {
         val constant60 = auditSourceFrameTimestamps((0 until 60).map { it * 16_667L }, 60f)
         val variable60 = auditSourceFrameTimestamps(
             listOf(0L, 16_667L, 33_334L, 83_334L, 100_001L, 116_668L), 60f
@@ -111,14 +111,36 @@ class ExportOutputPolicyTest {
         val reported60ButActual30 = auditSourceFrameTimestamps((0 until 30).map { it * 33_333L }, 60f)
         val fasterMetadata = sourceFrameRateAdjustment(60f, 30, speedEffectApplied = false)
 
-        assertTrue(shouldDropProjectSourceFrames(fasterMetadata, 60f, constant60, 30, speedEffectApplied = false))
-        assertFalse(shouldDropProjectSourceFrames(fasterMetadata, 60f, variable60, 30, speedEffectApplied = false))
-        assertFalse(shouldDropProjectSourceFrames(fasterMetadata, 60f, reported60ButActual30, 30, speedEffectApplied = false))
+        assertTrue(shouldDropSourceFramesWithCadenceProof(fasterMetadata, 60f, constant60, 30, speedEffectApplied = false))
+        assertFalse(shouldDropSourceFramesWithCadenceProof(fasterMetadata, 60f, variable60, 30, speedEffectApplied = false))
+        assertFalse(shouldDropSourceFramesWithCadenceProof(fasterMetadata, 60f, reported60ButActual30, 30, speedEffectApplied = false))
 
         val ordinary30To24 = sourceFrameRateAdjustment(30f, 24, speedEffectApplied = false)
-        assertTrue(shouldDropProjectSourceFrames(ordinary30To24, 30f, null, 24, speedEffectApplied = false))
+        assertTrue(shouldDropSourceFramesWithCadenceProof(ordinary30To24, 30f, null, 24, speedEffectApplied = false))
         val accelerated = sourceFrameRateAdjustment(30f, 30, constantSpeed = 2f, speedEffectApplied = true)
-        assertTrue(shouldDropProjectSourceFrames(accelerated, 30f, null, 30, speedEffectApplied = true))
+        assertTrue(shouldDropSourceFramesWithCadenceProof(accelerated, 30f, null, 30, speedEffectApplied = true))
+
+        val selectedCfr = selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 30),
+            sourceFrameRate = 60f,
+            speedEffectApplied = false,
+            sourceCadenceAudit = constant60
+        )
+        val selectedMisreported = selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 30),
+            sourceFrameRate = 60f,
+            speedEffectApplied = false,
+            sourceCadenceAudit = reported60ButActual30
+        )
+        val selectedVfr = selectedVideoOutputEffects(
+            ExportEngine.ExportConfig(resolution = "720p", fps = 30),
+            sourceFrameRate = 60f,
+            speedEffectApplied = false,
+            sourceCadenceAudit = variable60
+        )
+        assertTrue(selectedCfr.any { it is FrameDropEffect })
+        assertFalse(selectedMisreported.any { it is FrameDropEffect })
+        assertFalse(selectedVfr.any { it is FrameDropEffect })
     }
 
     @Test fun `8K request uses exact landscape and portrait UHD output dimensions`() {

@@ -131,7 +131,7 @@ class TextPanelModerationTest {
                 onDelete = {}, onClose = {}, onApplyPreset = { applied = it })
         }
 
-        compose.onNodeWithTag("text-content-field").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("text-content-field").assertIsDisplayed()
         compose.onNodeWithTag("text-style-tab-hint").assertIsDisplayed()
         compose.onAllNodesWithTag("text-starter-gallery").assertCountEquals(0)
         compose.onAllNodesWithTag("text-card-swipe-hint").assertCountEquals(0)

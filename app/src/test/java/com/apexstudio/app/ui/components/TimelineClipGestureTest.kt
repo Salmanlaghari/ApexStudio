@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -262,8 +263,11 @@ class TimelineClipGestureTest {
                 durationMs = projectDurationMs,
             )
         }
+        var trimCallbackCount = 0
         val timelineClips = mutableStateOf(listOf(overlay))
-        val timelineScrollState = ScrollState(if (head) 0 else 1_000)
+        // The overlay starts at 6s (324dp at 1x); position the selected edge
+        // within the narrow test viewport before injecting the gesture.
+        val timelineScrollState = ScrollState(if (head) 500 else 1_450)
         composeRule.setContent {
             val configuration = LocalViewConfiguration.current
             CompositionLocalProvider(
@@ -278,6 +282,7 @@ class TimelineClipGestureTest {
                     totalDurationMs = projectDurationMs,
                     scrollState = timelineScrollState,
                     onTrimClip = { clipId, start, end ->
+                        trimCallbackCount++
                         vm.trimClip(clipId, start, end)
                         timelineClips.value = vm.state.value.project?.clips.orEmpty()
                     },
@@ -290,16 +295,20 @@ class TimelineClipGestureTest {
             "timeline-overlay-trim-${if (head) "start" else "end"}-${overlay.id}",
             useUnmergedTree = true,
         )
+        grip.assertIsDisplayed()
         val before = vm.state.value.project!!.clips.single()
         grip.performTouchInput {
-            down(center)
-            moveBy(Offset(dragDeltaPx, 0f)) // 500 output ms at 2x density.
-            up()
+            swipe(
+                start = center,
+                end = center + Offset(dragDeltaPx, 0f),
+                durationMillis = 300,
+            ) // 500 output ms at 2x density.
         }
         composeRule.waitForIdle()
 
         val after = vm.state.value.project!!.clips.single()
         composeRule.runOnIdle {
+            assertEquals("trim grip should commit exactly one edit", 1, trimCallbackCount)
             val expectedDurationChange =
                 if ((head && dragDeltaPx > 0f) || (!head && dragDeltaPx < 0f)) -500.0 else 500.0
             assertEquals(

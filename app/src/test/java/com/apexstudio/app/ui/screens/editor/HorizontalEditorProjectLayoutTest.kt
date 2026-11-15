@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.selectClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule

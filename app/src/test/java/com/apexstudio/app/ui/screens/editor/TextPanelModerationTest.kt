@@ -3,7 +3,6 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -132,7 +131,7 @@ class TextPanelModerationTest {
                 onDelete = {}, onClose = {}, onApplyPreset = { applied = it })
         }
 
-        compose.onNodeWithTag("text-content-field").assertExists()
+        compose.onAllNodesWithTag("text-content-field").assertCountEquals(1)
         compose.onNodeWithTag("text-style-tab-hint").assertIsDisplayed()
         compose.onAllNodesWithTag("text-starter-gallery").assertCountEquals(0)
         compose.onAllNodesWithTag("text-card-swipe-hint").assertCountEquals(0)

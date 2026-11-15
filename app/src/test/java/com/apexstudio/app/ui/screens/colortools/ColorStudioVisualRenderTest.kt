@@ -40,9 +40,9 @@ class ColorStudioVisualRenderTest {
         vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
         compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
 
-        compose.onNodeWithText("Source-frame preview only.", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Apply saves the grade to all current and future main-track videos", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Finish editing, then export the project once.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Paused source-frame preview.", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Apply & preview saves the grade and returns to Edit for live video preview", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Export when finished.", substring = true).assertIsDisplayed()
     }
 
     @Test fun compactPhoneStripExposesBrightnessSdrToneMapAndSharpnessControls() {
@@ -66,7 +66,7 @@ class ColorStudioVisualRenderTest {
         var backCount = 0
         compose.setContent { ColorStudioScreen("fixture", { backCount++ }, {}, vm = vm, embedded = true) }
 
-        compose.onNodeWithText("Apply").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Apply & preview").assertIsDisplayed().performClick()
         compose.onNodeWithText("Export Color result").assertDoesNotExist()
         compose.onNodeWithText("Export timeline").assertDoesNotExist()
         compose.onNodeWithText("Export video").assertDoesNotExist()

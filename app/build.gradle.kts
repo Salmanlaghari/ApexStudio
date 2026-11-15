@@ -379,9 +379,9 @@ dependencies {
 
   // PR-G: MediaPipe Tasks Vision for per-clip background replace
   // (person segmentation) — https://github.com/google-ai-edge/mediapipe
-  // (Apache-2.0). Official Maven artifact (Google Maven). Only the
-  // Tasks library is bundled; the segmentation model (~244 KB)
-  // downloads on first use via PackManager, NOT in the APK.
+  // (Apache-2.0). Official Maven artifact (Google Maven). The
+  // checksum-pinned segmentation model is bundled from src/main/assets
+  // and staged into production APK/AAB assets by stageRuntimeAssets above.
   implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
   implementation(libs.kotlinx.coroutines.android)

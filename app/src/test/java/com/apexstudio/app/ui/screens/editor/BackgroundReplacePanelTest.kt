@@ -6,8 +6,9 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.BackgroundPhase
 import com.apexstudio.app.presentation.viewmodel.BackgroundUiState
@@ -54,8 +55,9 @@ class BackgroundReplacePanelTest {
         compose.onNodeWithText("Apply background").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers").assertIsDisplayed()
         compose.onNodeWithTag("background-chroma-key-link")
+            .performScrollTo()
             .assertIsDisplayed()
-            .performClick()
+            .performTouchInput { click() }
 
         compose.runOnIdle { assertTrue("Chroma-key link invokes its callback", openedChromaKey.get()) }
     }

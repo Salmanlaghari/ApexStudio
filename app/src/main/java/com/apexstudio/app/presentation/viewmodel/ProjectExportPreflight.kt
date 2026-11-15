@@ -25,9 +25,6 @@ internal fun projectVisualScopeUnsupportedReason(state: EditorState): String? {
     if (!state.cropRect.isFullFrame() || !gpuFilterSupported) {
         return "Whole-project export does not yet render GPU filters or crop. Use selected-clip export to keep those edits."
     }
-    if (project.stickers.isNotEmpty()) {
-        return "Whole-project export does not yet render project stickers. Use selected-clip export to keep those edits."
-    }
     if (project.clips.any {
             it.type == ClipType.OVERLAY && it.trackIndex !in state.hiddenVideoLayers
         }) {

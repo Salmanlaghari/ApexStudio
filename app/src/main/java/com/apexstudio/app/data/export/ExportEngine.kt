@@ -764,11 +764,28 @@ class ExportEngine(private val context: Context) {
                             .setEffects(Effects(audioProcessors, videoEffects))
                             .build()
                     }
-                    val directSingleItem = items.singleOrNull()?.takeIf { plan.transitions.isEmpty() }
+                    val projectStickerEffects = if (config.stickers.isEmpty()) {
+                        emptyList()
+                    } else {
+                        projectStickerExportEffects(
+                            context,
+                            config.stickers,
+                            outputWidth.toFloat() / outputHeight
+                        )
+                    }
+                    val directSingleItem = items.singleOrNull()?.takeIf {
+                        plan.transitions.isEmpty() && projectStickerEffects.isEmpty()
+                    }
                     val composition = if (directSingleItem != null) {
                         null
                     } else if (plan.transitions.isEmpty()) {
-                        Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items)).build()
+                        Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items))
+                            .apply {
+                                if (projectStickerEffects.isNotEmpty()) {
+                                    setEffects(Effects(emptyList(), projectStickerEffects))
+                                }
+                            }
+                            .build()
                     } else {
                         val videoSequences = plan.entries.mapIndexed { index, entry ->
                             val startMs = entry.timelineStartMs.coerceAtLeast(0L)
@@ -836,7 +853,8 @@ class ExportEngine(private val context: Context) {
                             )
                             .setEffects(Effects(
                                 emptyList(),
-                                listOf(com.apexstudio.app.data.gl.PackedTransitionGlEffect(plan))
+                                listOf(com.apexstudio.app.data.gl.PackedTransitionGlEffect(plan)) +
+                                    projectStickerEffects
                             ))
                             .build()
                     }

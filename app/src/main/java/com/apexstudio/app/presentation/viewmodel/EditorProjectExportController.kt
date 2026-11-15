@@ -45,6 +45,7 @@ internal fun buildProjectExportConfig(
     signature = state.project?.signature,
     clipTransitions = state.project?.transitions.orEmpty(),
     videoDrawings = state.project?.videoDrawings.orEmpty(),
+    stickers = state.project?.stickers.orEmpty(),
     colorStudioGrade = state.project?.colorStudioGrade,
     sharedVideoClips = if (includeSharedVideoClips) {
         state.project?.let { project ->

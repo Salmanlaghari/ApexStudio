@@ -1018,20 +1018,25 @@ class ExportTimestampParityInstrumentedTest {
                 uri = Uri.fromFile(source).toString(),
                 durationMs = sourceDurationMs,
                 trimEndMs = 1_800L,
-                stickers = listOf(sticker)
+                stickers = emptyList()
             )
             val projectConfig = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9")
             suspend fun exportProjectPass(
                 clips: List<MediaClip>,
                 outputFileName: String,
-                label: String
+                label: String,
+                projectStickers: List<StickerOverlay> = emptyList()
             ): File {
                 // Each pass gets its own engine because terminal state is published before run cleanup finishes.
                 val passEngine = ExportEngine(context)
                 val destination = File(outputDir, outputFileName)
                 var complete = false
                 try {
-                    passEngine.startProjectExport(clips, projectConfig, outputFileName)
+                    passEngine.startProjectExport(
+                        clips,
+                        projectConfig.copy(stickers = projectStickers),
+                        outputFileName
+                    )
                     val terminal = withTimeout(180_000L) {
                         passEngine.exportState.first { state ->
                             !state.isExporting && (state.outputUri != null || state.error != null)
@@ -1057,14 +1062,15 @@ class ExportTimestampParityInstrumentedTest {
             projectOutput = exportProjectPass(
                 listOf(projectClip),
                 projectName,
-                "Whole-project export with downloaded sticker"
+                "Whole-project export with downloaded project sticker",
+                projectStickers = listOf(sticker)
             )
 
             val tracksByLabel = linkedMapOf(
                 "baseline" to readVideoTrack(requireNotNull(baselineOutput)),
                 "selected" to readVideoTrack(requireNotNull(selectedOutput)),
                 "project-baseline" to readVideoTrack(requireNotNull(projectBaselineOutput)),
-                "project-selected" to readVideoTrack(requireNotNull(projectOutput))
+                "project-global" to readVideoTrack(requireNotNull(projectOutput))
             )
             tracksByLabel.forEach { (label, track) ->
                 println(

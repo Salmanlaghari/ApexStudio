@@ -515,7 +515,12 @@ fun ContextualBottomToolbar(
     })
     val showClipBar = hasSelection && !isPlaying && !referenceToolMode
     val clipPageItems = clipItems.map(::routed)
-    val toolsItems = (if (referenceToolMode) referenceItems else mainItems).map(::routed)
+    // A selected video already has a contextual Filters action; avoid showing
+    // the same callback again in the persistent dock while that row is visible.
+    val globalItems = if (showClipBar && selectionKind == ToolbarSelectionKind.VIDEO) {
+        mainItems.filterNot { it.label == "Filters" }
+    } else mainItems
+    val toolsItems = (if (referenceToolMode) referenceItems else globalItems).map(::routed)
     val moreItems = secondaryItems.map(::routed)
     val horizontalEditItems = listOf(
         CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),

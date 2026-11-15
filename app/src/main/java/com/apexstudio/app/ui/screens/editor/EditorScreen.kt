@@ -1378,7 +1378,17 @@ private fun EditorScreenContent(
     }
 
     val openEffectsWorkspace: (Boolean) -> Unit = { openTimeActions ->
-        val clip = selectedWorkspaceVideo(savedState.project, savedState.selectedClipId)
+        val liveState = vm.state.value
+        val project = liveState.project ?: savedState.project
+        val clip = selectedWorkspaceVideo(project, liveState.selectedClipId ?: savedState.selectedClipId)
+            ?: project?.clips?.firstOrNull {
+                it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+                    it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs
+            }
+        workspaceDiagnostic(
+            "open_effects project=$projectId selected=${liveState.selectedClipId} resolved=${clip?.id} " +
+                "filters=$workspaceIsFilters actions=$openTimeActions"
+        )
         if (clip != null) {
             vm.setPlaying(false)
             vm.selectClip(clip.id)
@@ -1600,7 +1610,11 @@ private fun EditorScreenContent(
                     showVideoPresets = true
                     activateLocalEditorPanel(EditorPanelKey.VIDEO_PRESETS)
                 },
-                onQuickFilters = { workspaceIsFilters = true; openEffectsWorkspace(false) },
+                onQuickFilters = {
+                    workspaceIsFilters = true
+                    workspaceDiagnostic("filters_action project=$projectId selected=${vm.state.value.selectedClipId}")
+                    openEffectsWorkspace(false)
+                },
                 onChallenge = {
                     showLocalChallenge = true
                     activateLocalEditorPanel(EditorPanelKey.LOCAL_CHALLENGE)

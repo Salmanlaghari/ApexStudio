@@ -65,11 +65,10 @@ class ScreenshotClipToolbarTest {
             "Screenshot-priority tools must render left-to-right in the approved order: $renderedLeftEdges",
             renderedLeftEdges.zipWithNext().all { (left, right) -> left < right }
         )
-        // The fifth tool can start outside a narrow viewport, as in the
-        // reference. Bring it into view before comparing clipped bounds.
-        composeRule.onNodeWithText("Keyframe").performScrollTo()
+        // Animation remains reachable after the primary clip actions.
+        composeRule.onNodeWithText("Animation").performScrollTo()
         assertTrue(composeRule.onNodeWithText("Volume").fetchSemanticsNode().boundsInRoot.left <
-            composeRule.onNodeWithText("Keyframe").fetchSemanticsNode().boundsInRoot.left)
+            composeRule.onNodeWithText("Animation").fetchSemanticsNode().boundsInRoot.left)
         // Historical layout keeps all eight global tools visible below the
         // selected-item row, without Clip/Tools pager tabs.
         listOf("Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More")
@@ -82,8 +81,7 @@ class ScreenshotClipToolbarTest {
             "Split" to "split",
             "Trim" to "trim",
             "Speed" to "speed",
-            "Volume" to "volume",
-            "Keyframe" to "keyframe"
+            "Volume" to "volume"
         ).forEach { (label, action) ->
             composeRule.onNodeWithText(label).performScrollTo().performClick()
             assertEquals("$label callback", 1, calls[action] ?: 0)
@@ -91,17 +89,17 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
-    fun selectedPhotoExposesKeyframeActionAndInvokesItsCallback() {
+    fun selectedPhotoDoesNotDuplicateThePlaybackKeyframeControlInItsClipRow() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls, selectionKind = ToolbarSelectionKind.PHOTO) }
 
-        composeRule.onNodeWithText("Keyframe").assertIsDisplayed().performClick()
-        assertEquals("Photo keyframe action must keep its callback", 1, calls["keyframe"] ?: 0)
+        composeRule.onNodeWithText("Crop").assertIsDisplayed()
+        composeRule.onNodeWithText("Keyframe").assertDoesNotExist()
     }
 
     @Test
     @Config(qualifiers = "w375dp-h800dp-mdpi")
-    fun allSixScreenshotVideoActionsFitAtStandardPhoneWidth() {
+    fun allFiveSelectedVideoActionsFitAtStandardPhoneWidth() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { Box(Modifier.width(375.dp)) { testToolbar(calls) } }
 
@@ -116,7 +114,7 @@ class ScreenshotClipToolbarTest {
 
     @Test
     @Config(qualifiers = "w375dp-h800dp-mdpi")
-    fun horizontalProjectVideoSelectionShowsAndRoutesKeyframeActions() {
+    fun horizontalProjectVideoSelectionKeepsAnimationWithoutDuplicateKeyframeAction() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent {
             Box(Modifier.width(375.dp)) {
@@ -156,10 +154,7 @@ class ScreenshotClipToolbarTest {
 
         composeRule.onNode(
             hasText("Keyframe").and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
-        )
-            .performScrollTo()
-            .performClick()
-        assertEquals("Keyframe calls the project action", 1, calls["keyframe"] ?: 0)
+        ).assertDoesNotExist()
         composeRule.onNode(
             hasText("Animation").and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
         )
@@ -330,7 +325,6 @@ class ScreenshotClipToolbarTest {
             onTrim = { count("trim") },
             onMask = { count("mask") },
             onDuplicate = { count("duplicate") },
-            onToggleKeyframe = { count("keyframe") },
             onOverlayProps = { count("overlay-props") },
             onAudioMix = { count("audio-mix") },
             onRecord = { count("record") },

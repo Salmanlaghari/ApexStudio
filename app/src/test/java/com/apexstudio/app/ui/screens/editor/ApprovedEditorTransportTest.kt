@@ -11,6 +11,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.ClipType
+import com.apexstudio.app.domain.model.Keyframe
+import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
@@ -38,6 +40,32 @@ class ApprovedEditorTransportTest {
         assertEquals(photo, selectedKeyframeVideo(state.copy(project = state.project!!.copy(clips = listOf(photo)))))
     }
 
+    @Test fun keyframeAddRemoveStateUsesExactProjectFrameIdentity() {
+        val clip = video.copy(keyframes = KeyframeTrack(listOf(Keyframe(id = "frame-30", timeMs = 1_000L))))
+        assertTrue(hasKeyframeAtProjectFrame(clip, playheadMs = 1_000L, fps = 30))
+        // Only 40ms away, but this is already a different 30fps project frame.
+        assertFalse(hasKeyframeAtProjectFrame(clip, playheadMs = 1_040L, fps = 30))
+    }
+
+    @Test fun selectedVisibleClipKeepsKeyframeTargetWhileOnlyLiveActivePlayheadEnablesIt() {
+        val next = video.copy(id = "next", name = "Next", uri = "file:///next.mp4")
+        val state = EditorState(
+            project = Project(id = "p", name = "Project", durationMs = 10_000L, clips = listOf(video, next)),
+            selectedClipId = video.id,
+            playerPositionMs = 7_000L,
+        )
+
+        val outside = selectedVideoKeyframeTarget(state)
+        assertEquals(video, outside?.clip)
+        assertFalse(outside!!.canEdit)
+        assertNull(selectedKeyframeVideo(state))
+
+        val liveInside = selectedVideoKeyframeTarget(state, playheadMs = 1_000L)
+        assertEquals(video, liveInside?.clip)
+        assertTrue(liveInside!!.canEdit)
+        assertNull(selectedVideoKeyframeTarget(state.copy(hiddenVideoLayers = setOf(video.trackIndex))))
+    }
+
     @Test fun previewFollowsProjectClockAcrossClipBoundariesWithoutChangingSelection() {
         val second = video.copy(id = "second", trimStartMs = 1000L, trimEndMs = 5000L, speedMultiplier = 2f)
         val clips = listOf(video, second, video.copy(id = "overlay", type = ClipType.OVERLAY, trackIndex = 1))
@@ -60,7 +88,7 @@ class ApprovedEditorTransportTest {
         assertEquals(7500L, editorClipBoundary(clips, 7500L, 10000L, true))
     }
 
-    @Test fun approvedTransportAndAboveTimelineKeyframeUseRealCallbacksAt320dp() {
+    @Test fun approvedTransportAndInlineKeyframeUseRealCallbacksAt320dp() {
         val calls = mutableListOf<String>()
         compose.setContent {
             Column(Modifier.width(320.dp)) {
@@ -69,17 +97,16 @@ class ApprovedEditorTransportTest {
                     onPrevious = { calls += "previous" }, onNext = { calls += "next" },
                     onTogglePlay = { calls += "play" }, onUndo = { calls += "undo" },
                     onRedo = { calls += "redo" }, onFullscreenToggle = { calls += "fullscreen" },
-                    showInlineKeyframe = false)
-                SelectedVideoKeyframeControl(false, { calls += "keyframe" }, { calls += "animation" })
+                    onToggleKeyframe = { calls += "keyframe" }, showInlineKeyframe = true)
             }
         }
         compose.onNodeWithText("00:12 / 00:45").assertIsDisplayed()
         listOf("Previous clip boundary", "Play playback", "Next clip boundary", "Undo", "Redo", "Toggle fullscreen",
-            "Add keyframe", "Edit video keyframe animation").forEach {
+            "Add keyframe").forEach {
             compose.onNodeWithContentDescription(it).assertIsDisplayed().performClick()
         }
         compose.runOnIdle {
-            assertEquals(listOf("previous", "play", "next", "undo", "redo", "fullscreen", "keyframe", "animation"), calls)
+            assertEquals(listOf("previous", "play", "next", "undo", "redo", "fullscreen", "keyframe"), calls)
         }
     }
 

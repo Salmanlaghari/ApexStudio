@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.state.EditorState
+import com.apexstudio.app.presentation.viewmodel.TimelineFrameMath
 
 /** Selection is an editing target, never the clock/source of timeline playback. */
 internal fun timelinePreviewClip(clips: List<MediaClip>, projectTimeMs: Long): MediaClip? {
@@ -16,15 +17,42 @@ internal fun timelinePreviewClip(clips: List<MediaClip>, projectTimeMs: Long): M
     return main.lastOrNull()
 }
 
+/** A visible selected clip may show its keyframe affordance before the playhead reaches it. */
+internal data class SelectedVideoKeyframeTarget(
+    val clip: MediaClip,
+    val canEdit: Boolean,
+)
+
 /** A text/sticker/audio selection must not edit the video/photo clip left selected underneath it. */
-internal fun selectedKeyframeVideo(state: EditorState): MediaClip? {
+internal fun selectedVisibleVideoClip(state: EditorState): MediaClip? {
     if (state.selectedTextOverlayId != null || state.selectedStickerId != null || state.selectedAudioTrackId != null) return null
-    val clips = state.project?.clips.orEmpty()
-    val selected = clips.firstOrNull {
+    return state.project?.clips.orEmpty().firstOrNull {
         it.id == state.selectedClipId &&
             (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE || it.type == ClipType.OVERLAY)
-    } ?: return null
-    if (selected.trackIndex in state.hiddenVideoLayers) return null
+    }?.takeIf { it.trackIndex !in state.hiddenVideoLayers }
+}
+
+/** Keep the selected action visible, but permit mutations only while the clip is active. */
+internal fun selectedVideoKeyframeTarget(
+    state: EditorState,
+    playheadMs: Long = state.playerPositionMs,
+): SelectedVideoKeyframeTarget? {
+    val clip = selectedVisibleVideoClip(state) ?: return null
+    val canEdit = selectedKeyframeVideo(state.copy(playerPositionMs = playheadMs))?.id == clip.id
+    return SelectedVideoKeyframeTarget(clip, canEdit)
+}
+
+/** Display Add/Remove using the same project-frame identity as the real toggle mutation. */
+internal fun hasKeyframeAtProjectFrame(clip: MediaClip, playheadMs: Long, fps: Int): Boolean {
+    val safeFps = fps.takeIf { it > 0 } ?: 60
+    val frame = TimelineFrameMath.frameIndex(playheadMs, safeFps)
+    return clip.keyframes.keyframes.any { TimelineFrameMath.frameIndex(it.timeMs, safeFps) == frame }
+}
+
+/** Resolve only the visible selected clip that is active at the project playhead. */
+internal fun selectedKeyframeVideo(state: EditorState): MediaClip? {
+    val clips = state.project?.clips.orEmpty()
+    val selected = selectedVisibleVideoClip(state) ?: return null
     return selected.takeIf {
         when {
             it.type == ClipType.OVERLAY -> it.isOverlayActiveAt(state.playerPositionMs)

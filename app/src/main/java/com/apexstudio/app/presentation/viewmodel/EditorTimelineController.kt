@@ -622,7 +622,7 @@ fun EditorViewModel.toggleKeyframeAtPlayhead() {
 /** Project-frame identity for APIs used by the frame-precise inspector. */
 private fun EditorViewModel.projectFrameIndex(timeMs: Long): Long {
     val fps = _state.value.project?.fps?.takeIf { it > 0 } ?: 60
-    return kotlin.math.round(timeMs.toDouble() * fps / 1_000.0).toLong()
+    return TimelineFrameMath.frameIndex(timeMs, fps)
 }
 
 private fun EditorViewModel.projectFrameTimeMs(frameIndex: Long): Long {

@@ -64,9 +64,9 @@ internal val CONTEXTUAL_PRIMARY_TOOL_ORDER = listOf(
     "Media", "Audio", "Text", "Overlay", "Stickers", "FX", "Filters", "More"
 )
 
-/** Screenshot-priority actions shown first in the selected-video scroll row. */
+/** Selected-video clip-row priorities; the keyframe toggle stays in the playback row. */
 internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
-    "Split", "Trim", "Speed", "Volume", "Keyframe", "Animation"
+    "Split", "Trim", "Speed", "Volume", "Animation"
 )
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
@@ -198,10 +198,6 @@ fun ContextualBottomToolbar(
     onTrim: () -> Unit,
     onMask: () -> Unit,
     onDuplicate: () -> Unit,
-    // Keyframe: toggles a keyframe at the playhead. Distinct from
-    // onAnimation (opens the keyframe/animation panel) — the old bar had
-    // both Keyframe and Animation opening the same panel.
-    onToggleKeyframe: () -> Unit,
     // Overlay properties: opens the overlay (PiP) properties panel
     // (opacity / blend / mask / border / shadow / flip / volume /
     // track / keyframes). Only shown when the selected clip is an
@@ -395,9 +391,8 @@ fun ContextualBottomToolbar(
                 "Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan,
                 onClick = if (isOverlaySelected) onOverlayProps else onVolume
             ))
-            // Keyframe toggles a keyframe at the playhead (distinct action);
-            // Animation opens the keyframe/animation panel.
-            add(CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe))
+            // Animation opens the real keyframe/animation panel. The add/remove
+            // toggle is in the fixed playback row, so it is not duplicated here.
             add(CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation))
             // Phase 2: Filters on video clips too — filters were unreachable
             // when a video clip was selected (main use case).
@@ -472,7 +467,6 @@ fun ContextualBottomToolbar(
         // Photo clip selected → real photo-editing tools (PR F).
         ToolbarSelectionKind.PHOTO -> listOf(
             CtxToolItem("Crop", Icons.Default.Crop, ApexPalette.NeonCyan, onPhotoCrop),
-            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
             CtxToolItem("Split", Icons.Default.ContentCut, ApexPalette.NeonCyan, onSplit),
             CtxToolItem("Trim", Icons.Default.Edit, ApexPalette.NeonCyan, onTrim),
             CtxToolItem("Duplicate", Icons.Default.ContentCopy, ApexPalette.NeonCyan, onDuplicate),
@@ -530,7 +524,6 @@ fun ContextualBottomToolbar(
             tint = ApexPalette.NeonCyan, onClick = if (isOverlaySelected) onOverlayProps else onSpeed),
         CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan,
             onClick = if (isOverlaySelected) onOverlayProps else onVolume),
-        CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
         CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
     ).map(::routed)
 
@@ -548,7 +541,6 @@ fun ContextualBottomToolbar(
         ToolbarSelectionKind.VIDEO -> listOf(
             CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
             CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
-            CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
             CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
             CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
@@ -1082,7 +1074,6 @@ fun EditorBottomToolbarSection(
     horizontalProjectLayout: Boolean = false,
     onAi: () -> Unit = {},
     onDraw: () -> Unit = {},
-    onToggleKeyframe: () -> Unit = { vm.toggleKeyframeAtPlayhead() },
     onDeviceAudio: () -> Unit = {
         vm.setPendingAddAsOverlay(false)
         vm.setPendingAddAsAudio(true)
@@ -1371,7 +1362,6 @@ fun EditorBottomToolbarSection(
         },
         onMask = { vm.openMaskPanelTopLevel() },
         onDuplicate = { state.selectedClipId?.let { vm.duplicateClip(it) } },
-        onToggleKeyframe = onToggleKeyframe,
         onAudioMix = { vm.openAudioMixer() },
         onRecord = { vm.openVoiceRecorder() },
         onRoyaltyMusic = { vm.openRoyaltyMusicDialog() },

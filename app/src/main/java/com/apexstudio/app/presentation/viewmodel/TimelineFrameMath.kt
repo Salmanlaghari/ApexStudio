@@ -6,6 +6,12 @@ package com.apexstudio.app.presentation.viewmodel
  * 30, and 60fps grids do not accumulate millisecond drift.
  */
 internal object TimelineFrameMath {
+    /** Zero-based project-frame identity for an arbitrary timeline timestamp. */
+    fun frameIndex(timeMs: Long, fps: Int): Long {
+        require(fps > 0) { "fps must be positive" }
+        return kotlin.math.round(timeMs.toDouble() * fps / 1_000.0).toLong()
+    }
+
     /** Timestamp in milliseconds for a zero-based frame index. */
     fun frameTimeMs(frameIndex: Long, fps: Int): Long {
         require(fps > 0) { "fps must be positive" }

@@ -284,16 +284,29 @@ private fun TimelineResizeHandle(onReset: () -> Unit) {
 /** Direct controls edit the selected video's real keyframe track, never a display-only draft. */
 @Composable
 internal fun LandscapeVideoInspector(state: EditorState, vm: EditorViewModel) {
-    val clip = selectedKeyframeVideo(state)
-    if (clip == null) {
+    val livePlayheadMs = vm.livePlayheadMs()
+    val keyframeTarget = selectedVideoKeyframeTarget(state, livePlayheadMs)
+    if (keyframeTarget == null) {
         Text("Select a video layer for transform keyframes. Text, audio and sticker tools stay in the dock.",
             color = EditorPalette.TextSecondary, fontSize = 12.sp)
         return
     }
+    val clip = keyframeTarget.clip
     Text(clip.name, color = EditorPalette.TextPrimary, fontSize = 12.sp, maxLines = 1)
-    val transform = clip.keyframes.interpolateAt(state.playerPositionMs)
-    TextButton(onClick = { vm.toggleFrameKeyframeAtPlayheadFor(clip.id) }) {
-        Text("Add / remove keyframe", fontSize = 12.sp)
+    val transform = clip.keyframes.interpolateAt(livePlayheadMs)
+    val hasKeyframeAtPlayhead = hasKeyframeAtProjectFrame(clip, livePlayheadMs, state.project?.fps ?: 60)
+    TextButton(
+        enabled = keyframeTarget.canEdit,
+        onClick = { if (keyframeTarget.canEdit) vm.toggleFrameKeyframeAtPlayheadFor(clip.id) },
+    ) {
+        Text(
+            when {
+                !keyframeTarget.canEdit -> "Move playhead inside clip to keyframe"
+                hasKeyframeAtPlayhead -> "Remove keyframe"
+                else -> "Add keyframe"
+            },
+            fontSize = 12.sp,
+        )
     }
     if (clip.keyframes.isEmpty()) {
         Text("Add a keyframe to enable animated properties.", color = EditorPalette.TextSecondary, fontSize = 11.sp)

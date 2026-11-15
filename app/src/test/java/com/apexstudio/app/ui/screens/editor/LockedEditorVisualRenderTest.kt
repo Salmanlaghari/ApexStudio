@@ -78,13 +78,15 @@ class LockedEditorVisualRenderTest {
         val timeline = requireNotNull(geometry.timeline) { "Timeline did not receive layout" }
         assertTrue("Timeline should retain a compact, usable viewport", timeline.height in 100f..200f)
         assertTrue("The source-ratio preview receives more portrait workspace", preview.height > timeline.height)
-        assertTrue("Timeline should sit below the keyframe controls: timeline=$timeline keyframe=${geometry.keyframe}", timeline.top + 1f >= requireNotNull(geometry.keyframe).bottom)
+        assertTrue("Timeline should follow the fixed playback/keyframe row: timeline=$timeline row=${geometry.keyframeRow}",
+            timeline.top + 1f >= requireNotNull(geometry.keyframeRow).bottom)
 
         val dock = requireNotNull(geometry.primaryDock) { "Primary toolbar dock did not receive layout" }
         assertTrue("Primary tool dock should be a horizontal navigation strip", dock.width > dock.height * 3f)
-        val keyframe = requireNotNull(geometry.keyframe)
+        val keyframeRow = requireNotNull(geometry.keyframeRow)
         val screenCenterX = requireNotNull(geometry.root).width / 2f
-        assertTrue("Keyframe controls should be centered above the timeline", kotlin.math.abs(keyframe.centerX - screenCenterX) < screenCenterX * 0.06f)
+        assertTrue("Playback/keyframe controls should remain centered above the timeline",
+            kotlin.math.abs(keyframeRow.centerX - screenCenterX) < screenCenterX * 0.06f)
         assertTrue("Roborazzi should have written the host render", output.isFile && output.length() > 0L)
     }
 }
@@ -92,7 +94,7 @@ class LockedEditorVisualRenderTest {
 private class VisualGeometry {
     var root: RectPx? = null
     var preview: RectPx? = null
-    var keyframe: RectPx? = null
+    var keyframeRow: RectPx? = null
     var timeline: RectPx? = null
     var primaryDock: RectPx? = null
 }
@@ -185,26 +187,18 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
             VideoPreviewArea(modifier = Modifier.fillMaxSize())
         }
 
-        PlaybackControlBar(
-            currentTimeMs = 7_000L,
-            durationMs = 24_000L,
-            canUndo = true,
-            canRedo = true,
-            showInlineKeyframe = false,
-            onTogglePlay = {},
-            onUndo = {},
-            onRedo = {}
-        )
-
-        Box(
-            Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
-        ) {
-            SelectedVideoKeyframeControl(
+        Box(Modifier.fillMaxWidth().onGloballyPositioned { geometry.keyframeRow = it.toRectPx() }) {
+            PlaybackControlBar(
+                currentTimeMs = 7_000L,
+                durationMs = 24_000L,
+                canUndo = true,
+                canRedo = true,
                 hasKeyframeAtPlayhead = true,
+                showInlineKeyframe = true,
                 onToggleKeyframe = {},
-                onOpenAnimation = {},
-                modifier = Modifier.onGloballyPositioned { geometry.keyframe = it.toRectPx() }
+                onTogglePlay = {},
+                onUndo = {},
+                onRedo = {}
             )
         }
 
@@ -245,7 +239,7 @@ private fun LockedEditorVisualFixture(geometry: VisualGeometry) {
                 onPhotoCrop = {}, onPhotoAdjust = {}, onPhotoFilters = {}, onPhotoRotate = {},
                 onMusic = {}, onAutoClip = {}, onHistory = {}, onEditPack = {}, onScopes = {},
                 onBgRemover = {}, onCollapse = {}, onSplit = {}, onTrim = {}, onMask = {},
-                onDuplicate = {}, onToggleKeyframe = {}, onOverlayProps = {}, onAudioMix = {},
+                onDuplicate = {}, onOverlayProps = {}, onAudioMix = {},
                 onRecord = {}, onRoyaltyMusic = {}, onEditText = {}, onToggleTextKeyframe = {},
                 onDeleteText = {}, onDeleteSticker = {}, onTransition = {},
                 onToggleLayerVisibility = {}, onToggleLayerLock = {}, onToggleTrackMute = {}

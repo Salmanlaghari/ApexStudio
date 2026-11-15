@@ -2045,9 +2045,12 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
     // Existing edit and playback handlers remain the source of truth.
-    val kfClip = selectedKeyframeVideo(state)
-    val hasKeyframeAtPlayhead =
-        kfClip?.keyframes?.keyframes?.any { kotlin.math.abs(it.timeMs - state.playerPositionMs) <= 150L } == true
+    val livePlayheadMs = vm.livePlayheadMs()
+    val keyframeTarget = selectedVideoKeyframeTarget(state, livePlayheadMs)
+    val kfClip = keyframeTarget?.takeIf { it.canEdit }?.clip
+    val hasKeyframeAtPlayhead = kfClip?.let {
+        hasKeyframeAtProjectFrame(it, livePlayheadMs, state.project?.fps ?: 60)
+    } == true
 
     if (!compactLandscape) {
     PlaybackControlBar(
@@ -2055,12 +2058,15 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         canUndo = state.canUndo,
         canRedo = state.canRedo,
         hasKeyframeAtPlayhead = hasKeyframeAtPlayhead,
-        canEditKeyframe = kfClip != null,
+        canEditKeyframe = keyframeTarget?.canEdit == true,
         onTogglePlay = { vm.togglePlay() },
         onUndo = { vm.undo() },
         onRedo = { vm.redo() },
         onToggleKeyframe = {
-            kfClip?.let { vm.toggleKeyframeAtPlayheadFor(it.id) }
+            val renderedTargetId = keyframeTarget?.clip?.id
+            val liveTarget = selectedVideoKeyframeTarget(vm.state.value, vm.livePlayheadMs())
+            liveTarget?.takeIf { it.canEdit && it.clip.id == renderedTargetId }
+                ?.let { vm.toggleFrameKeyframeAtPlayheadFor(it.clip.id) }
         },
         onFullscreenToggle = { vm.toggleFullscreenPreview() },
         currentTimeMs = state.playerPositionMs,
@@ -2072,13 +2078,14 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         onNext = {
             seekPlayerAndState(editorClipBoundary(state.project?.clips.orEmpty(), vm.playerPositionFlow.value, state.durationMs, true))
         },
-        showInlineKeyframe = false
+        showInlineKeyframe = keyframeTarget != null,
+        keyframeUnavailableDescription = "Move the playhead inside the selected clip to add a keyframe"
     )
     }
 
-    // No persistent property strip above the timeline. Keyframe/Animation stay
-    // in the lower selected-clip tools; the timeline header has one contextual
-    // keyframe action, without duplicating the full property inspector.
+    // The keyframe toggle occupies the existing fixed-height playback row;
+    // Animation stays in selected-clip tools, without a variable-height
+    // property strip that would shift the preview or timeline.
     val compactPhoneTimeline = !compactLandscape && !horizontalProjectLayout &&
         !isTimelineFocusMode && !timelinePaneResized
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {

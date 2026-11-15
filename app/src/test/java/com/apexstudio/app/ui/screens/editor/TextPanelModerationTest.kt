@@ -154,7 +154,7 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-presets").performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithTag("text-design-motion-${preset.id}").performScrollTo().assertExists()
+        compose.onNodeWithTag("text-design-motion-${preset.id}").performScrollTo().assertIsDisplayed()
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Your title").fetchSemanticsNodes().isNotEmpty())
     }
 }

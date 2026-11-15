@@ -123,13 +123,6 @@ fun EditorViewModel.findNearestBeat(timeMs: Long, snapThresholdMs: Long = 180L):
     return nearestTimelineSnap(timeMs, snapThresholdMs, _state.value.beatMarkersMs)
 }
 
-fun EditorViewModel.toggleAiVoice() = _audio.update { it.copy(aiVoiceEnhance = !it.aiVoiceEnhance) }
-
-fun EditorViewModel.setClarity(v: Float) = _audio.update { it.copy(clarity = v) }
-
-fun EditorViewModel.setReduceNoise(v: Float) = _audio.update { it.copy(reduceNoise = v) }
-
-
 // Phase E: voice-changer + audio effects. setPitch translates
 // semitones to PlaybackParameters.pitch via 2^(semitones/12) and
 // writes it to the main ExoPlayer so the preview reflects the

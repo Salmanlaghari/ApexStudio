@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -39,6 +40,12 @@ import com.apexstudio.app.data.captions.CaptionStyles
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
+
+internal fun textOverlayOutlineStyle(strokeColorArgb: Long, frameHeightPx: Float): TextStyle =
+    TextStyle(
+        color = Color(strokeColorArgb.toInt()),
+        drawStyle = Stroke(width = (frameHeightPx * 0.008f).coerceAtLeast(2f))
+    )
 
 /**
  * Professional CapCut-style interactive, draggable, resizable, and animated text overlay.
@@ -145,20 +152,21 @@ fun AnimatedTextOverlayView(
         if (captionFrame.verticalOffsetFraction == 0f) 0f
         else (-captionFrame.verticalOffsetFraction * containerHeightPx) / sizeSp.sp.toPx().coerceAtLeast(1f)
     }
-    fun buildKaraokeText(sizeSp: Float, baselineShift: Float) = buildAnnotatedString {
+    fun buildKaraokeText(sizeSp: Float, baselineShift: Float, outlineOnly: Boolean = false) = buildAnnotatedString {
         append(displayText)
         if (karaokeRange != null && karaokeRange.endUtf16Exclusive <= displayText.length) {
+            val highlightColor = if (outlineOnly) Color.Unspecified else Color(overlay.highlightColorArgb.toInt())
             val span = when (captionStyle?.wordAnimation) {
                 CaptionWordAnimation.WORD_POP -> SpanStyle(
-                    color = Color(overlay.highlightColorArgb.toInt()),
+                    color = highlightColor,
                     fontSize = (sizeSp * captionFrame.scale).sp
                 )
                 CaptionWordAnimation.BOUNCE -> SpanStyle(
-                    color = Color(overlay.highlightColorArgb.toInt()),
+                    color = highlightColor,
                     baselineShift = BaselineShift(baselineShift)
                 )
-                CaptionWordAnimation.KARAOKE_FILL -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
-                else -> SpanStyle(color = Color(overlay.highlightColorArgb.toInt()))
+                CaptionWordAnimation.KARAOKE_FILL -> SpanStyle(color = highlightColor)
+                else -> SpanStyle(color = highlightColor)
             }
             addStyle(span, karaokeRange.startUtf16, karaokeRange.endUtf16Exclusive)
         }
@@ -203,6 +211,13 @@ fun AnimatedTextOverlayView(
     val karaokeText = remember(displayText, karaokeRange, overlay.highlightColorArgb, overlay.text,
         captionStyle?.id, captionStyle?.wordAnimation, captionFrame.scale, bounceBaselineShift, fittedFontSizeSp) {
         buildKaraokeText(fittedFontSizeSp, bounceBaselineShift)
+    }
+    val strokeKaraokeText = remember(displayText, karaokeRange, overlay.strokeColorArgb, overlay.text,
+        captionStyle?.id, captionStyle?.wordAnimation, captionFrame.scale, bounceBaselineShift, fittedFontSizeSp) {
+        buildKaraokeText(fittedFontSizeSp, bounceBaselineShift, outlineOnly = true)
+    }
+    val outlineStyle = overlay.strokeColorArgb?.let {
+        textOverlayOutlineStyle(it, containerHeightPx).copy(letterSpacing = textLetterSpacing)
     }
     val blurDp = with(density) { (anim.blurFrac * containerHeightPx).toDp() }
 
@@ -285,6 +300,19 @@ fun AnimatedTextOverlayView(
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
+            outlineStyle?.let { style ->
+                Text(
+                    text = strokeKaraokeText.ifEmpty { androidx.compose.ui.text.AnnotatedString(" ") },
+                    fontSize = fittedFontSizeSp.sp,
+                    fontWeight = textFontWeight,
+                    fontStyle = textFontStyle,
+                    fontFamily = fontFam,
+                    style = style,
+                    softWrap = false,
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip
+                )
+            }
             Text(
                 text = karaokeText.ifEmpty { androidx.compose.ui.text.AnnotatedString(" ") },
                 color = if (gradientBrush == null) textColor else Color.Unspecified,

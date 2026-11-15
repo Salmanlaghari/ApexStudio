@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -120,7 +121,7 @@ class TextPanelModerationTest {
     }
 
     @Test
-    fun editTabShowsTapToApplyStylePreviewsAndKeepsExistingText() {
+    fun editTabKeepsTextEditingSeparateFromStylesAndPresetsRemainAvailableThere() {
         val starter = com.apexstudio.app.data.text.TextPresetEngine.getPresetsForCategory("Cinematic").first()
         var applied: com.apexstudio.app.data.text.TextPreset? = null
         compose.setContent {
@@ -129,9 +130,14 @@ class TextPanelModerationTest {
                 onDelete = {}, onClose = {}, onApplyPreset = { applied = it })
         }
 
-        compose.onNodeWithTag("text-starter-gallery").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("text-card-swipe-hint").assertExists()
-        compose.onNodeWithTag("text-starter-style-${starter.id}")
+        compose.onNodeWithTag("text-content-field").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("text-style-tab-hint").assertIsDisplayed()
+        compose.onNodeWithTag("text-starter-gallery").assertDoesNotExist()
+        compose.onNodeWithTag("text-card-swipe-hint").assertDoesNotExist()
+
+        compose.onNodeWithTag("text-tab-presets")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("text-preset-${starter.id}")
             .performScrollTo().assertIsDisplayed()
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(starter.id, applied?.id) }

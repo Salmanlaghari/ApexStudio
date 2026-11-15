@@ -19,6 +19,7 @@ fun EditorViewModel.deleteSelectedClips(): Boolean {
     val targets = project.clips.filter { it.id in ids }
     if (targets.isEmpty()) return false
     pushUndo()
+    var changedAudioTracks: List<com.apexstudio.app.domain.model.AudioTrack>? = null
     _state.update { state ->
         val current = state.project ?: return@update state
         // Process V1 removals from right to left so each original V1 boundary
@@ -28,12 +29,18 @@ fun EditorViewModel.deleteSelectedClips(): Boolean {
             .fold(current.clips) { clips, clip ->
                 rippleOverlays(clips, v1StartBefore(clips, clip.id), -clip.effectiveDurationMs())
             }
+        val audioTracks = targets.filter { isMainTrack(it) }
+            .sortedByDescending { v1StartBefore(current.clips, it.id) }
+            .fold(current.audioTracks) { tracks, clip ->
+                rippleAudioTracks(tracks, v1StartBefore(current.clips, clip.id), -clip.effectiveDurationMs())
+            }
+        if (audioTracks != current.audioTracks) changedAudioTracks = audioTracks
         val updated = rippled.filterNot { it.id in ids }
         val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
             .normalizeTransitions(updated, current.transitions)
-        val duration = computeTimelineDurationMs(updated, current.audioTracks, transitions)
+        val duration = computeTimelineDurationMs(updated, audioTracks, transitions)
         state.copy(
-            project = current.copy(clips = updated, transitions = transitions, durationMs = duration),
+            project = current.copy(clips = updated, audioTracks = audioTracks, transitions = transitions, durationMs = duration),
             durationMs = duration,
             selectedClipIds = emptySet(),
             multiSelectMode = false,
@@ -46,7 +53,12 @@ fun EditorViewModel.deleteSelectedClips(): Boolean {
             else state.overlayTransform
         )
     }
-    persistProject(refreshLegacyClipFields = true, refreshLegacyTextStickerFields = true)
+    changedAudioTracks?.let { tracks -> _audio.update { it.copy(tracks = tracks) } }
+    persistProject(
+        refreshLegacyClipFields = true,
+        refreshLegacyAudioFields = changedAudioTracks != null,
+        refreshLegacyTextStickerFields = true
+    )
     return true
 }
 
@@ -58,16 +70,21 @@ fun EditorViewModel.duplicateSelectedClips(): Boolean {
     val targets = project.clips.filter { it.id in ids }
     if (targets.isEmpty()) return false
     pushUndo()
+    var changedAudioTracks: List<com.apexstudio.app.domain.model.AudioTrack>? = null
     _state.update { state ->
         val current = state.project ?: return@update state
         val mainTargets = targets.filter(::isMainTrack)
         val appendAnchor = current.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }
         val extraMainDuration = mainTargets.sumOf { it.effectiveDurationMs() }
-        // V1 copies are appended exactly like duplicateClip(). Ripple overlays
-        // once at the current V1 end, rather than once at each source start.
+        // V1 copies are appended exactly like duplicateClip(). Ripple visual
+        // layers and audio once at the current V1 end, not per source start.
         val rippled = if (extraMainDuration > 0L) {
             rippleOverlays(current.clips, appendAnchor, extraMainDuration)
         } else current.clips
+        val audioTracks = if (extraMainDuration > 0L) {
+            rippleAudioTracks(current.audioTracks, appendAnchor, extraMainDuration)
+        } else current.audioTracks
+        if (audioTracks != current.audioTracks) changedAudioTracks = audioTracks
         val selectedIds = targets.map { it.id }.toSet()
         val copiedGroupIds = targets.filter { it.groupId != null }
             .groupBy { it.groupId!! }
@@ -91,18 +108,20 @@ fun EditorViewModel.duplicateSelectedClips(): Boolean {
             )
         }
         val updated = rippled + copies
-        val duration = computeTimelineDurationMs(updated, current.audioTracks, current.transitions)
+        val duration = computeTimelineDurationMs(updated, audioTracks, current.transitions)
         state.copy(
-            project = current.copy(clips = updated, durationMs = duration),
+            project = current.copy(clips = updated, audioTracks = audioTracks, durationMs = duration),
             durationMs = duration,
             selectedClipIds = copies.map { it.id }.toSet(),
             multiSelectMode = true,
             selectedClipId = copies.lastOrNull()?.id
         )
     }
+    changedAudioTracks?.let { tracks -> _audio.update { it.copy(tracks = tracks) } }
     persistProject(
         importLegacyAnimation = true,
         refreshLegacyClipFields = true,
+        refreshLegacyAudioFields = changedAudioTracks != null,
         refreshLegacyTextStickerFields = true
     )
     return true

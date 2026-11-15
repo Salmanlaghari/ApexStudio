@@ -949,9 +949,9 @@ fun EditorViewModel.redo() = viewModelScope.launch {
  * CapCut magnet / ripple rule for the main track.
  *
  * Any edit that CHANGES V1's length (trim, duplicate — and delete below)
- * must carry every overlay layer that starts at or after the edit
- * boundary along by the same delta, otherwise the layers drift away from
- * the picture they were placed against (the layer-sync complaint).
+ * must carry every overlay layer and independent audio track that starts at
+ * or after the edit boundary by the same delta, otherwise layers drift away
+ * from the picture and sound they were placed against.
  * Anchor is the timeline boundary where the change begins; anything
  * starting earlier is untouched. Track 0 itself never moves here — its
  * own layout is derived cumulatively.
@@ -985,6 +985,27 @@ internal fun rippleOverlays(
     }
 }
 
+/** Shift independent audio placements with the same boundary rule as visual overlays. */
+internal fun rippleAudioTracks(
+    tracks: List<AudioTrack>,
+    anchorMs: Long,
+    deltaMs: Long
+): List<AudioTrack> {
+    if (deltaMs == 0L) return tracks
+    return tracks.map { track ->
+        if (track.startTimeMs < anchorMs) track
+        else track.copy(startTimeMs = shiftProjectTime(track.startTimeMs, deltaMs))
+    }
+}
+
+private fun shiftProjectTime(startMs: Long, deltaMs: Long): Long {
+    val start = startMs.coerceAtLeast(0L)
+    if (deltaMs == Long.MIN_VALUE) return 0L
+    if (deltaMs < 0L && start < -deltaMs) return 0L
+    if (deltaMs > 0L && start > Long.MAX_VALUE - deltaMs) return Long.MAX_VALUE
+    return (start + deltaMs).coerceAtLeast(0L)
+}
+
 fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     val source = _state.value.project?.clips?.firstOrNull { it.id == clipId } ?: return
     if (source.durationMs <= 0L) return
@@ -1004,12 +1025,14 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     // backward during playback.
     val liveBefore = livePlayheadMs()
     var newDurationMs: Long? = null
+    var changedAudioTracks: List<AudioTrack>? = null
     _state.update { s ->
         val proj = s.project ?: return@update s
         // Ripple: a main-track trim changes V1's length, so overlays
         // at/after the edit boundary travel with it (CapCut magnet).
         val trimTarget = proj.clips.firstOrNull { it.id == clipId }
         var rippled = proj.clips
+        var audioTracks = proj.audioTracks
         if (trimTarget != null && isMainTrack(trimTarget)) {
             val safeStart = startMs.coerceIn(0L, (trimTarget.durationMs - 1L).coerceAtLeast(0L))
             // Guard the clamp: minOf keeps coerceIn's min <= max when
@@ -1022,6 +1045,8 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
             val newDur = trimTarget.copy(trimStartMs = safeStart, trimEndMs = safeEnd).effectiveDurationMs()
             val anchor = v1StartBefore(proj.clips, clipId) + minOf(oldDur, newDur)
             rippled = rippleOverlays(proj.clips, anchor, newDur - oldDur)
+            audioTracks = rippleAudioTracks(proj.audioTracks, anchor, newDur - oldDur)
+            if (audioTracks != proj.audioTracks) changedAudioTracks = audioTracks
         }
         val updatedClips = rippled.map { c ->
             if (c.id == clipId) {
@@ -1045,11 +1070,11 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 )
             } else c
         }
-        val newDuration = computeTimelineDurationMs(updatedClips, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
+        val newDuration = computeTimelineDurationMs(updatedClips, audioTracks, proj.transitions)
         newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
         s.copy(
-            project = proj.copy(clips = updatedClips, durationMs = newDuration),
+            project = proj.copy(clips = updatedClips, audioTracks = audioTracks, durationMs = newDuration),
             durationMs = newDuration,
             playerPositionMs = newPlayhead,
             currentTimeMs = newPlayhead,
@@ -1061,7 +1086,8 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
     // (when the trim shrank the timeline below the current position);
     // otherwise a no-op, never a backward snap.
     newDurationMs?.let { d -> _playerPosition.update { it.coerceIn(0L, d) } }
-    persistProject(refreshLegacyClipFields = true)
+    changedAudioTracks?.let { tracks -> _audio.update { it.copy(tracks = tracks) } }
+    persistProject(refreshLegacyClipFields = true, refreshLegacyAudioFields = changedAudioTracks != null)
 }
 
 
@@ -1297,6 +1323,7 @@ fun EditorViewModel.splitClip(clipId: String, atMs: Long) {
 
 fun EditorViewModel.duplicateClip(clipId: String) {
     pushUndo()
+    var changedAudioTracks: List<AudioTrack>? = null
     _state.update { s ->
         val p = s.project ?: return@update s
         val target = p.clips.firstOrNull { it.id == clipId } ?: return@update s
@@ -1312,16 +1339,19 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             } else target.timelineOffsetMs
         )
         // Ripple: duplicating a main-track clip lengthens V1 after the
-        // original's end, so overlays downstream shift right by that
+        // original's end, so downstream overlays and audio shift right by that
         // length — layers stay glued to their scene (CapCut magnet).
-        val rippled = if (isMainTrack(target)) {
-            val extra = target.effectiveDurationMs()
-            rippleOverlays(p.clips, p.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }, extra)
+        val appendAnchor = p.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }
+        val extra = if (isMainTrack(target)) target.effectiveDurationMs() else 0L
+        val rippled = if (extra > 0L) {
+            rippleOverlays(p.clips, appendAnchor, extra)
         } else p.clips
+        val audioTracks = if (extra > 0L) rippleAudioTracks(p.audioTracks, appendAnchor, extra) else p.audioTracks
+        if (audioTracks != p.audioTracks) changedAudioTracks = audioTracks
         val updated = rippled + newClip
-        val newDur = computeTimelineDurationMs(updated, s.project?.audioTracks ?: emptyList(), s.project?.transitions ?: emptyList())
+        val newDur = computeTimelineDurationMs(updated, audioTracks, p.transitions)
         s.copy(
-            project = p.copy(clips = updated, durationMs = newDur),
+            project = p.copy(clips = updated, audioTracks = audioTracks, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newClip.id,
             selectedOverlayClipId = if (isOverlay) newClip.id else s.selectedOverlayClipId,
@@ -1329,9 +1359,11 @@ fun EditorViewModel.duplicateClip(clipId: String) {
             canRedo = redoStack.isNotEmpty()
         )
     }
+    changedAudioTracks?.let { tracks -> _audio.update { it.copy(tracks = tracks) } }
     persistProject(
         importLegacyAnimation = true,
         refreshLegacyClipFields = true,
+        refreshLegacyAudioFields = changedAudioTracks != null,
         refreshLegacyTextStickerFields = true
     )
 }
@@ -1339,21 +1371,27 @@ fun EditorViewModel.duplicateClip(clipId: String) {
 
 fun EditorViewModel.deleteClip(clipId: String) {
     pushUndo()
+    var changedAudioTracks: List<AudioTrack>? = null
     _state.update { s ->
         val p = s.project ?: return@update s
         // Ripple: deleting a main-track clip pulls everything after its
-        // start (other V1 clips by cumulative layout, overlays here) left.
+        // start (other V1 clips by cumulative layout, plus overlays/audio) left.
         val gone = p.clips.firstOrNull { it.id == clipId }
-        val rippled = if (gone != null && isMainTrack(gone)) {
-            rippleOverlays(p.clips, v1StartBefore(p.clips, clipId), -gone.effectiveDurationMs())
+        val mainTrackDeletion = gone?.takeIf(::isMainTrack)
+        val anchor = mainTrackDeletion?.let { v1StartBefore(p.clips, it.id) } ?: 0L
+        val delta = mainTrackDeletion?.let { -it.effectiveDurationMs() } ?: 0L
+        val rippled = if (mainTrackDeletion != null) {
+            rippleOverlays(p.clips, anchor, delta)
         } else p.clips
+        val audioTracks = if (mainTrackDeletion != null) rippleAudioTracks(p.audioTracks, anchor, delta) else p.audioTracks
+        if (audioTracks != p.audioTracks) changedAudioTracks = audioTracks
         val updated = rippled.filterNot { it.id == clipId }
         val newSelected = if (s.selectedClipId == clipId) updated.firstOrNull()?.id else s.selectedClipId
         val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
             .normalizeTransitions(updated, p.transitions)
-        val newDur = computeTimelineDurationMs(updated, p.audioTracks, transitions)
+        val newDur = computeTimelineDurationMs(updated, audioTracks, transitions)
         s.copy(
-            project = p.copy(clips = updated, transitions = transitions, durationMs = newDur),
+            project = p.copy(clips = updated, audioTracks = audioTracks, transitions = transitions, durationMs = newDur),
             durationMs = newDur,
             selectedClipId = newSelected,
             // Phase D: deleting the active overlay clip clears the
@@ -1366,7 +1404,12 @@ fun EditorViewModel.deleteClip(clipId: String) {
             selectedOverlayClipId = if (s.selectedOverlayClipId == clipId) null else s.selectedOverlayClipId
         )
     }
-    persistProject(refreshLegacyClipFields = true, refreshLegacyTextStickerFields = true)
+    changedAudioTracks?.let { tracks -> _audio.update { it.copy(tracks = tracks) } }
+    persistProject(
+        refreshLegacyClipFields = true,
+        refreshLegacyAudioFields = changedAudioTracks != null,
+        refreshLegacyTextStickerFields = true
+    )
 }
 
 

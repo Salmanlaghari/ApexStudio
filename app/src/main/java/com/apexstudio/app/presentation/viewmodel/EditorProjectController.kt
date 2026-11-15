@@ -338,6 +338,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val asOverlay = s.pendingAddAsOverlay
         val asAudio = s.pendingAddAsAudio
         val targetLayer = s.pendingAddToLayer?.coerceIn(1, MAX_VIDEO_LAYERS - 1)
+        val routedToOverlay = asOverlay || targetLayer != null
         if (asAudio && !replace) {
             mediaList.forEach { meta ->
                 val uri = if (context != null) {
@@ -423,11 +424,28 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 newClips += withImportedMainVideoFitDefault(created)
             }
         }
-        val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
+        val clipsBeforeImport = s.project?.clips.orEmpty()
+        val contextForSampleCheck = context
+        // Empty editor projects may be seeded with a generated sample clip for preview.
+        // Treat that exact synthetic clip as empty when the user imports their first
+        // main-track media; overlay imports still keep it as the composition base.
+        val onlyGeneratedSampleClip = if (
+            !replace &&
+            !routedToOverlay &&
+            contextForSampleCheck != null &&
+            clipsBeforeImport.size == 1
+        ) {
+            val candidate = clipsBeforeImport.single()
+            candidate.type == ClipType.VIDEO &&
+                candidate.trackIndex == 0 &&
+                candidate.name == "Sample_V1.mp4" &&
+                candidate.uri == com.apexstudio.app.data.media.SampleVideoGenerator
+                    .getOrCreateSampleVideo(contextForSampleCheck)
+        } else false
+        val existingClips = if (replace || onlyGeneratedSampleClip) emptyList() else clipsBeforeImport
 
         val updatedClips = existingClips + newClips
-        val routedToOverlay = asOverlay || targetLayer != null
-        val hasExistingMainVideo = !replace && s.project?.clips.orEmpty().any {
+        val hasExistingMainVideo = existingClips.any {
             it.type == ClipType.VIDEO && it.trackIndex == 0
         }
         val importedMainAspect = if (!routedToOverlay && (replace || !hasExistingMainVideo)) {

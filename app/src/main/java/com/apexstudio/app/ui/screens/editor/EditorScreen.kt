@@ -1539,6 +1539,7 @@ private fun EditorScreenContent(
             mediaImportProgress = mediaImportProgress,
             onCancelMediaImport = mediaPicker::cancelImport,
             fitAvailableHeight = !horizontalProjectLayout,
+            lockPreviewGeometry = workspaceTarget != null && !state.isFullscreenPreview,
             drawingEnabled = isDrawingMode,
             drawingTool = drawingTool,
             drawingColorArgb = drawingColorArgb,

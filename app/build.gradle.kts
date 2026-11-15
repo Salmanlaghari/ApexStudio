@@ -37,6 +37,8 @@ fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\""
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
 val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
+val stagedSegmenterAsset = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
+val expectedSegmenterSha256 = "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b"
 val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
   from(layout.projectDirectory.dir("src/main/assets"))
   if (!includeBundledAiModels.get()) {
@@ -50,12 +52,11 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
   }
   into(stagedAssets)
   doLast {
-    val segmenter = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
-    check(segmenter.isFile && segmenter.length() == 249_537L) {
+    check(stagedSegmenterAsset.isFile && stagedSegmenterAsset.length() == 249_537L) {
       "Background Replace requires the 249,537-byte bundled selfie_segmenter.tflite asset"
     }
     val digest = MessageDigest.getInstance("SHA-256")
-    segmenter.inputStream().buffered().use { input ->
+    stagedSegmenterAsset.inputStream().buffered().use { input ->
       val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
       while (true) {
         val count = input.read(buffer)
@@ -66,7 +67,7 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
     val sha256 = digest.digest().joinToString("") {
       (it.toInt() and 0xff).toString(16).padStart(2, '0')
     }
-    check(sha256 == "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b") {
+    check(sha256 == expectedSegmenterSha256) {
       "Bundled selfie_segmenter.tflite checksum mismatch: $sha256"
     }
   }

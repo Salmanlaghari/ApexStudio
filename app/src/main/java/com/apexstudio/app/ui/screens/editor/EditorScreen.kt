@@ -33,6 +33,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.transformer.CompositionPlayer
+import com.apexstudio.app.BuildConfig
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.aireport.resolveAiContentReportTarget
 import com.apexstudio.app.data.color.isProjectColorGradeTarget
@@ -117,6 +118,9 @@ private fun EditorScreenContent(
     entryWorkspace: String,
     onCloseWorkspace: () -> Unit
 ) {
+    fun workspaceDiagnostic(message: String) {
+        if (BuildConfig.DEBUG) Log.i("PR300_WORKSPACE_DIAG", message)
+    }
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()
     var workspaceIsFilters by remember(projectId) { mutableStateOf(false) }
@@ -132,11 +136,16 @@ private fun EditorScreenContent(
     val colorSaveableState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val workspacePreviewActive by rememberUpdatedState(workspaceTarget != null)
     val dismissWorkspace: () -> Unit = {
+        workspaceDiagnostic(
+            "dismiss_entry project=$projectId target=${workspaceTarget?.id} " +
+                "preview=${workspacePreview?.id} filters=$workspaceIsFilters"
+        )
         vm.setPlaying(false)
         workspaceTarget = null
         workspacePreview = null
         workspaceIsFilters = false
         workspaceOpenTimeActions = false
+        workspaceDiagnostic("dismiss_requested project=$projectId")
     }
     BackHandler(enabled = workspaceTarget != null, onBack = dismissWorkspace)
     LaunchedEffect(entryWorkspace) {
@@ -1381,14 +1390,25 @@ private fun EditorScreenContent(
         }
     }
     LaunchedEffect(projectId, savedState.project?.clips, entryWorkspace, horizontalProjectLayout) {
-        if (initialReferenceWorkspaceOpened || entryWorkspace != "edit") return@LaunchedEffect
+        workspaceDiagnostic(
+            "opening_effect project=$projectId entry=$entryWorkspace horizontal=$horizontalProjectLayout " +
+                "initialOpened=$initialReferenceWorkspaceOpened target=${workspaceTarget?.id}"
+        )
+        if (initialReferenceWorkspaceOpened || entryWorkspace != "edit") {
+            workspaceDiagnostic("opening_effect_skip project=$projectId reason=guard")
+            return@LaunchedEffect
+        }
         if (horizontalProjectLayout) {
             // Landscape projects open directly into the dedicated editing shell;
             // the legacy reference filter workspace would hide its two tool rows.
             initialReferenceWorkspaceOpened = true
+            workspaceDiagnostic("opening_effect_skip project=$projectId reason=horizontal")
             return@LaunchedEffect
         }
-        val project = savedState.project ?: return@LaunchedEffect
+        val project = savedState.project ?: run {
+            workspaceDiagnostic("opening_effect_skip project=$projectId reason=no_project")
+            return@LaunchedEffect
+        }
         val clip = selectedWorkspaceVideo(project, savedState.selectedClipId)
             ?: project.clips.firstOrNull {
                 it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
@@ -1401,6 +1421,9 @@ private fun EditorScreenContent(
             workspaceIsFilters = true
             workspaceOpenTimeActions = false
             initialReferenceWorkspaceOpened = true
+            workspaceDiagnostic("opening_effect_open project=$projectId clip=${clip.id}")
+        } else {
+            workspaceDiagnostic("opening_effect_skip project=$projectId reason=no_clip")
         }
     }
 
@@ -1687,7 +1710,13 @@ private fun EditorScreenContent(
                 originalClip = captured,
                 vm = vm,
                 isPlaying = savedState.isPlaying,
-                onPreviewClip = { workspacePreview = it },
+                onPreviewClip = {
+                    workspaceDiagnostic(
+                        "preview_callback project=$projectId clip=${it.id} effects=${it.workspaceEffects.size} " +
+                            "target=${workspaceTarget?.id}"
+                    )
+                    workspacePreview = it
+                },
                 onSeekSource = { sourceMs ->
                     val clip = workspacePreview ?: captured
                     exoPlayer?.seekTo(sourceMs)

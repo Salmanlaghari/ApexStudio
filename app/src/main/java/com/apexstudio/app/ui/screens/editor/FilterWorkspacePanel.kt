@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.util.Log
+import com.apexstudio.app.BuildConfig
 import com.apexstudio.app.data.effect.WorkspaceFilterThumbnailGenerator
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.WorkspaceEffect
@@ -50,6 +52,12 @@ import com.apexstudio.app.presentation.viewmodel.setPlayerError
 import com.apexstudio.app.ui.theme.EditorPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private const val FILTER_WORKSPACE_DIAG_TAG = "PR300_WORKSPACE_DIAG"
+
+private fun filterWorkspaceDiagnostic(message: String) {
+    if (BuildConfig.DEBUG) Log.i(FILTER_WORKSPACE_DIAG_TAG, message)
+}
 
 /** A compact, local-only color-look workspace. Drafts are preview-only until the single Apply boundary. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,6 +129,10 @@ internal fun FilterWorkspacePanel(
         selectedWorkspaceVideo(state.project, state.selectedClipId) != null
 
     LaunchedEffect(effects, enabled) {
+        filterWorkspaceDiagnostic(
+            "preview_effect project=$projectId clip=${originalClip.id} enabled=$enabled " +
+                "effects=${effects.size}"
+        )
         onPreviewClip(if (enabled) originalClip.copy(workspaceEffects = effects) else originalClip)
     }
 
@@ -189,7 +201,12 @@ internal fun FilterWorkspacePanel(
                 .padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Row(Modifier.fillMaxWidth().height(34.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Filters", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { onPreviewClip(originalClip); onDismiss() },
+                    IconButton(onClick = {
+                        filterWorkspaceDiagnostic("close_entry compact=true clip=${originalClip.id}")
+                        onPreviewClip(originalClip)
+                        filterWorkspaceDiagnostic("close_before_dismiss compact=true clip=${originalClip.id}")
+                        onDismiss()
+                    },
                         modifier = Modifier.testTag("filter-close")) {
                         Icon(Icons.Default.Close, contentDescription = "Close filters", tint = foreground)
                     }
@@ -385,7 +402,11 @@ internal fun FilterWorkspacePanel(
                         color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 Row(Modifier.fillMaxWidth().height(42.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { onPreviewClip(originalClip); onDismiss() },
+                    TextButton(onClick = {
+                        filterWorkspaceDiagnostic("cancel_entry compact=true clip=${originalClip.id}")
+                        onPreviewClip(originalClip)
+                        onDismiss()
+                    },
                         modifier = Modifier.testTag("filter-cancel")) { Text("Cancel", color = foreground) }
                     Button(onClick = {
                         if (mayApply && dirty && vm.applyWorkspaceEffects(projectId, originalClip, effects)) onDismiss()
@@ -412,7 +433,12 @@ internal fun FilterWorkspacePanel(
             Row(Modifier.fillMaxWidth().height(if (compactPhone) 34.dp else 38.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Filters", fontSize = if (compactPhone) 14.sp else 16.sp, modifier = Modifier.weight(1f))
                 IconButton(
-                    onClick = { onPreviewClip(originalClip); onDismiss() },
+                    onClick = {
+                        filterWorkspaceDiagnostic("close_entry compact=false clip=${originalClip.id}")
+                        onPreviewClip(originalClip)
+                        filterWorkspaceDiagnostic("close_before_dismiss compact=false clip=${originalClip.id}")
+                        onDismiss()
+                    },
                     modifier = Modifier.testTag("filter-close")
                 ) { Icon(Icons.Default.Close, contentDescription = "Close filters", tint = foreground) }
             }

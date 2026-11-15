@@ -202,7 +202,8 @@ android {
             ) {
               if (
                 testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest" ||
-                testDescriptor.className == "com.apexstudio.app.ui.screens.editor.HorizontalEditorProjectLayoutTest"
+                testDescriptor.className == "com.apexstudio.app.ui.screens.editor.HorizontalEditorProjectLayoutTest" ||
+                outputEvent.message.contains("PR300_WORKSPACE_DIAG")
               ) {
                 print(outputEvent.message)
               }

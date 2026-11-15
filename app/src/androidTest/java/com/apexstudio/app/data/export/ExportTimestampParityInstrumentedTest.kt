@@ -2929,6 +2929,15 @@ class ExportTimestampParityInstrumentedTest {
                 val outputAnchorsUs = track.presentationTimesUs.sorted()
                 val expectedInteriorAnchorsUs = sourceAnchorsUs.dropLast(2)
                 val anchorToleranceUs = 5_000L
+                val routeDiagnostics = if (label.contains("Selected", ignoreCase = true)) {
+                    selectedDiagnostics
+                } else projectDiagnostics
+                val cadenceDiagnostics = "sourceReportedFps=${bakedFormatAudit.reportedFps}, " +
+                    "sourcePts=$sourceAnchorsUs, cadence=${sourceCadenceAudit?.diagnosticSummary() ?: "not-inspected"}, " +
+                    "observedCadence=${observedBakedCadence.diagnosticSummary()}, frameDrop=$selectedFrameDrop, " +
+                    "normalizeKnownCfrFasterSource=$normalizeKnownCfrFasterSource, " +
+                    "repeatPreviousFrameIntervalUs=${exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}, " +
+                    "exportTrace=$routeDiagnostics"
                 assertOutputTiming(
                     label = label,
                     output = track,
@@ -2946,7 +2955,8 @@ class ExportTimestampParityInstrumentedTest {
                     }
                     assertTrue(
                         "$label must retain each interior source PTS in order within ${anchorToleranceUs}us; " +
-                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}",
+                            "missing/shifted anchor=${expectedUs}us, output PTS=${track.presentationTimesUs}; " +
+                            "cadence diagnostics=[$cadenceDiagnostics]",
                         nextOutputIndex < outputAnchorsUs.size &&
                             abs(outputAnchorsUs[nextOutputIndex] - expectedUs) <= anchorToleranceUs
                     )

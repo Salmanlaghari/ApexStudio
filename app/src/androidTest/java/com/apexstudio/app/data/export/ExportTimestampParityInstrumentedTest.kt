@@ -3283,6 +3283,8 @@ class ExportTimestampParityInstrumentedTest {
         requestedTimesUs: List<Long>,
         toleranceUs: Long = 1_000L
     ): Map<Long, Bitmap> {
+        val maxDecodeDurationMs = 120_000L
+        val maxNoProgressMs = 30_000L
         require(requestedTimesUs.isNotEmpty()) { "requestedTimesUs must be non-empty" }
         require(requestedTimesUs == requestedTimesUs.distinct().sorted()) {
             "requestedTimesUs must be sorted and distinct: $requestedTimesUs"
@@ -3309,7 +3311,27 @@ class ExportTimestampParityInstrumentedTest {
             val bufferInfo = MediaCodec.BufferInfo()
             var inputEos = false
             var outputEos = false
+            var samplesQueued = 0
+            var samplesDecoded = 0
+            var lastQueuedPtsUs: Long? = null
+            var lastDecodedPtsUs: Long? = null
+            val decodeStartedAtMs = SystemClock.elapsedRealtime()
+            var lastProgressAtMs = decodeStartedAtMs
             while (!outputEos) {
+                val nowMs = SystemClock.elapsedRealtime()
+                if (nowMs - decodeStartedAtMs > maxDecodeDurationMs ||
+                    nowMs - lastProgressAtMs > maxNoProgressMs
+                ) {
+                    error(
+                        "Timed out decoding ${file.name}: " +
+                            "elapsedMs=${nowMs - decodeStartedAtMs}, " +
+                            "noProgressMs=${nowMs - lastProgressAtMs}, " +
+                            "samplesQueued=$samplesQueued, samplesDecoded=$samplesDecoded, " +
+                            "candidates=${candidates.size}, inputEos=$inputEos, outputEos=$outputEos, " +
+                            "lastQueuedPtsUs=$lastQueuedPtsUs, lastDecodedPtsUs=$lastDecodedPtsUs, " +
+                            "requestedCount=${requestedTimesUs.size}"
+                    )
+                }
                 if (!inputEos) {
                     val inputIndex = codec.dequeueInputBuffer(10_000L)
                     if (inputIndex >= 0) {
@@ -3319,8 +3341,14 @@ class ExportTimestampParityInstrumentedTest {
                         if (size < 0) {
                             codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputEos = true
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
                         } else {
-                            codec.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, 0)
+                            val samplePtsUs = extractor.sampleTime
+                            codec.queueInputBuffer(inputIndex, 0, size, samplePtsUs, 0)
+                            extractor.advance()
+                            samplesQueued++
+                            lastQueuedPtsUs = samplePtsUs
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
                             // The sample just queued is not itself an EOS buffer. Leave inputEos false
                             // so the next iteration reads past the final sample and queues EOS separately.
                         }
@@ -3331,34 +3359,37 @@ class ExportTimestampParityInstrumentedTest {
                     else -> if (outputIndex >= 0) {
                         val isEos = bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                         if (!isEos) {
+                            val decodedPtsUs = bufferInfo.presentationTimeUs
+                            val nearestRequestedPts = requestedTimesUs
+                                .minByOrNull { abs(decodedPtsUs - it) }
                             codec.releaseOutputBuffer(outputIndex, true)
                             val image = awaitDecodedImage(requireNotNull(reader))
                             try {
-                                val bitmap = imageToBitmap(image)
-                                val nearestRequestedPts = requestedTimesUs
-                                    .minByOrNull { abs(bufferInfo.presentationTimeUs - it) }
                                 if (nearestRequestedPts != null &&
-                                    abs(bufferInfo.presentationTimeUs - nearestRequestedPts) <= toleranceUs
+                                    abs(decodedPtsUs - nearestRequestedPts) <= toleranceUs
                                 ) {
+                                    val bitmap = imageToBitmap(image)
                                     val previous = candidates[nearestRequestedPts]
                                     if (previous == null ||
-                                        abs(bufferInfo.presentationTimeUs - nearestRequestedPts) <
+                                        abs(decodedPtsUs - nearestRequestedPts) <
                                         abs(previous.presentationTimeUs - nearestRequestedPts)
                                     ) {
                                         candidates[nearestRequestedPts] =
-                                            DecodedVideoFrame(bufferInfo.presentationTimeUs, bitmap)
+                                            DecodedVideoFrame(decodedPtsUs, bitmap)
                                         previous?.bitmap?.recycle()
                                     } else {
                                         bitmap.recycle()
                                     }
-                                } else {
-                                    bitmap.recycle()
                                 }
                             } finally {
                                 image.close()
                             }
+                            samplesDecoded++
+                            lastDecodedPtsUs = decodedPtsUs
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
                         } else {
                             codec.releaseOutputBuffer(outputIndex, false)
+                            lastProgressAtMs = SystemClock.elapsedRealtime()
                         }
                         outputEos = isEos
                     }

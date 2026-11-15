@@ -119,7 +119,7 @@ private fun EditorScreenContent(
     onCloseWorkspace: () -> Unit
 ) {
     fun workspaceDiagnostic(message: String) {
-        if (BuildConfig.DEBUG) Log.i("PR300_WORKSPACE_DIAG", message)
+        if (BuildConfig.DEBUG) println("PR300_WORKSPACE_DIAG $message")
     }
     var showLocalChallenge by remember(projectId) { mutableStateOf(false) }
     val savedState by vm.state.collectAsStateWithLifecycle()

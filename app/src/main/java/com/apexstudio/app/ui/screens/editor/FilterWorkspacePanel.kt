@@ -56,7 +56,7 @@ import kotlinx.coroutines.withContext
 private const val FILTER_WORKSPACE_DIAG_TAG = "PR300_WORKSPACE_DIAG"
 
 private fun filterWorkspaceDiagnostic(message: String) {
-    if (BuildConfig.DEBUG) Log.i(FILTER_WORKSPACE_DIAG_TAG, message)
+    if (BuildConfig.DEBUG) println("$FILTER_WORKSPACE_DIAG_TAG $message")
 }
 
 /** A compact, local-only color-look workspace. Drafts are preview-only until the single Apply boundary. */

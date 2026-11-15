@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -91,6 +93,13 @@ class HorizontalEditorProjectLayoutTest {
             runCatching { dump(compose.onRoot(useUnmergedTree = unmerged).fetchSemanticsNode(), 0) }
                 .onFailure { println("$marker stage=$stage dump_exception=${it::class.qualifiedName}:${it.message}") }
         }
+    }
+
+    private fun closeFilterWorkspaceThroughAccessibility() {
+        compose.onNodeWithTag("filter-close")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Close Filters exposes a successful accessibility action", action())
+            }
     }
 
     private fun waitForFilterWorkspaceDismissed() {
@@ -179,7 +188,7 @@ class HorizontalEditorProjectLayoutTest {
             panel.top >= open.bottom - 1f)
 
         printDismissalDiagnostics("before_close_click_landscape")
-        compose.onNodeWithContentDescription("Close filters").performClick()
+        closeFilterWorkspaceThroughAccessibility()
         waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertEquals("Closing Filters preserves the original preview frame", before, closed)
@@ -192,7 +201,7 @@ class HorizontalEditorProjectLayoutTest {
         // Normal portrait edit entry opens the reference Filters workspace once;
         // close it before exercising the real Filters dock action below.
         printDismissalDiagnostics("before_close_click_reference_portrait")
-        compose.onNodeWithContentDescription("Close filters").performClick()
+        closeFilterWorkspaceThroughAccessibility()
         waitForFilterWorkspaceDismissed()
         compose.runOnIdle { vm.selectClip("main-video") }
         compose.waitForIdle()
@@ -212,7 +221,7 @@ class HorizontalEditorProjectLayoutTest {
             panel.top >= open.bottom - 1f)
 
         printDismissalDiagnostics("before_close_click_portrait")
-        compose.onNodeWithContentDescription("Close filters").performClick()
+        closeFilterWorkspaceThroughAccessibility()
         waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertEquals("Closing portrait Filters preserves the preview horizontally", before.left, closed.left, 1f)

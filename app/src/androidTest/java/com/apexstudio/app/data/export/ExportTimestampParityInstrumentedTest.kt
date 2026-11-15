@@ -3365,9 +3365,21 @@ class ExportTimestampParityInstrumentedTest {
                             codec.releaseOutputBuffer(outputIndex, true)
                             val image = awaitDecodedImage(requireNotNull(reader))
                             try {
+                                val imageTimestampNs = image.timestamp
+                                val expectedTimestampNs = decodedPtsUs * 1_000L
+                                val imageTimestampDeltaNs = abs(imageTimestampNs - expectedTimestampNs)
+                                require(imageTimestampDeltaNs <= toleranceUs * 1_000L) {
+                                    "${file.name} ImageReader timestamp ${imageTimestampNs}ns must match " +
+                                        "BufferInfo PTS ${decodedPtsUs}us within ${toleranceUs}us; " +
+                                        "requested=${requestedTimesUs.joinToString()}"
+                                }
                                 if (nearestRequestedPts != null &&
                                     abs(decodedPtsUs - nearestRequestedPts) <= toleranceUs
                                 ) {
+                                    println(
+                                        "exact-pts-image file=${file.name} bufferPtsUs=$decodedPtsUs " +
+                                            "imageTimestampNs=$imageTimestampNs deltaNs=$imageTimestampDeltaNs"
+                                    )
                                     val bitmap = imageToBitmap(image)
                                     val previous = candidates[nearestRequestedPts]
                                     if (previous == null ||

@@ -278,6 +278,7 @@ fun TextPanel(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(scrollState)
+                .testTag("text-panel-content-scroll")
         ) {
 
         if (activeTab != TextPanelTab.CAPTIONS) Text(

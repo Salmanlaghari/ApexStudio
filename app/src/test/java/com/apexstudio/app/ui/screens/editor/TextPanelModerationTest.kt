@@ -12,6 +12,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.semantics.SemanticsActions
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.CaptionUiState
@@ -172,15 +174,21 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-edit").assertIsDisplayed()
-        compose.onNodeWithText("Text & Font").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("text-panel-content-scroll")
+            .performScrollToNode(hasText("Text & Font"))
+        compose.onNodeWithText("Text & Font").assertIsDisplayed()
         compose.onNodeWithTag("text-tab-styles")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithText("Style & Color").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("text-panel-content-scroll")
+            .performScrollToNode(hasText("Style & Color"))
+        compose.onNodeWithText("Style & Color").assertIsDisplayed()
         compose.onAllNodesWithTag("text-content-field").assertCountEquals(0)
 
         compose.onNodeWithTag("text-tab-animation")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithText("Preview & Intro").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("text-panel-content-scroll")
+            .performScrollToNode(hasText("Preview & Intro"))
+        compose.onNodeWithText("Preview & Intro").assertIsDisplayed()
         compose.onNodeWithText("Mask").performScrollTo().assertIsDisplayed()
     }
 

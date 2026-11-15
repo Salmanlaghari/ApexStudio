@@ -37,9 +37,10 @@ fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\""
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
 val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
-val stagedSegmenterAsset = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
-val expectedSegmenterSha256 = "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b"
 val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  // Keep only plain task-local values in the action, not build-script providers.
+  val stagedSegmenterAsset = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
+  val expectedSegmenterSha256 = "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b"
   from(layout.projectDirectory.dir("src/main/assets"))
   if (!includeBundledAiModels.get()) {
     exclude(

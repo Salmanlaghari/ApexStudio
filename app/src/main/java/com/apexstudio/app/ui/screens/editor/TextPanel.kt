@@ -177,7 +177,8 @@ fun TextPanel(
     timelineDurationMs: Long = 0L,
     playheadMs: Long = 0L,
     clipEnds: List<Pair<String, Long>> = emptyList(),
-    onRangeChange: ((Long, Long) -> Unit)? = null
+    onRangeChange: ((Long, Long) -> Unit)? = null,
+    enableAnimationPreview: Boolean = true
 ) {
     val selected = overlays.firstOrNull { it.id == selectedId }
     var activeTab by remember(initialTab) { mutableStateOf(initialTab) }
@@ -1116,7 +1117,8 @@ fun TextPanel(
                 ) {
                     item {
                         TextFeatureCard("Preview & Intro") {
-                    // --- Live intro → hold → outro demo, driven by the
+                        if (enableAnimationPreview) {
+                        // --- Live intro → hold → outro demo, driven by the
                     // same TextAnimEngine that powers the preview layer
                     // and the export bake. ---
                     val demoDensity = LocalDensity.current
@@ -1214,8 +1216,16 @@ fun TextPanel(
                                 )
                             }
                             Spacer(Modifier.weight(1f))
+                            }
                         }
-                    }
+                        } else {
+                            Text(
+                                "Live preview paused",
+                                color = ApexThemeTokens.current.textSecondary,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        }
 
                     // Intro duration slider
                     Row(

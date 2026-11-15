@@ -166,7 +166,8 @@ class TextPanelModerationTest {
             TextPanel(
                 overlays = listOf(overlay), selectedId = overlay.id,
                 onAdd = {}, onSelect = {}, onTextChange = {}, onColorChange = {},
-                onBgChange = {}, onSizeChange = {}, onDelete = {}, onClose = {}
+                onBgChange = {}, onSizeChange = {}, onDelete = {}, onClose = {},
+                enableAnimationPreview = false
             )
         }
 

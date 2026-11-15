@@ -3,9 +3,11 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -120,7 +122,7 @@ class TextPanelModerationTest {
     }
 
     @Test
-    fun editTabShowsTapToApplyStylePreviewsAndKeepsExistingText() {
+    fun editTabKeepsTextEditingSeparateFromStylesAndPresetsRemainAvailableThere() {
         val starter = com.apexstudio.app.data.text.TextPresetEngine.getPresetsForCategory("Cinematic").first()
         var applied: com.apexstudio.app.data.text.TextPreset? = null
         compose.setContent {
@@ -129,10 +131,15 @@ class TextPanelModerationTest {
                 onDelete = {}, onClose = {}, onApplyPreset = { applied = it })
         }
 
-        compose.onNodeWithTag("text-starter-gallery").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("text-card-swipe-hint").assertExists()
-        compose.onNodeWithTag("text-starter-style-${starter.id}")
-            .performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("text-content-field").assertCountEquals(1)
+        compose.onAllNodesWithTag("text-style-tab-hint").assertCountEquals(1)
+        compose.onAllNodesWithTag("text-starter-gallery").assertCountEquals(0)
+        compose.onAllNodesWithTag("text-card-swipe-hint").assertCountEquals(0)
+
+        compose.onNodeWithTag("text-tab-presets")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onAllNodesWithTag("text-preset-${starter.id}").assertCountEquals(1)
+        compose.onNodeWithTag("text-preset-${starter.id}")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.runOnIdle { assertEquals(starter.id, applied?.id) }
     }
@@ -147,7 +154,7 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-presets").performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithTag("text-design-motion-${preset.id}").performScrollTo().assertExists()
+        compose.onAllNodesWithTag("text-design-motion-${preset.id}").assertCountEquals(1)
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Your title").fetchSemanticsNodes().isNotEmpty())
     }
 }

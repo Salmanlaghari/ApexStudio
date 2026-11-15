@@ -96,9 +96,6 @@ object ColorTimelineComparisonRenderer {
         require(isSupportedComparisonTimeline(timelineDurationMs, config.fps)) {
             "Timeline comparison is limited to 30 minutes / 108,000 encoded frames to bound export time and exact-frame metadata."
         }
-        require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            "Exact same-frame comparison requires Android 9 (API 28) or later."
-        }
         val (outputWidth, outputHeight) = AspectCropTransformation.targetSizeFor(config.resolution, config.aspectRatio)
         require(isSupportedComparisonOutput(outputWidth, outputHeight)) {
             "Timeline comparison is limited to 1080p output (at most 1920×1080 pixels). Lower the export resolution first."
@@ -161,12 +158,9 @@ object ColorTimelineComparisonRenderer {
         }
     }
 
-    /** Decode the same encoded output frame index from both files; requires API 28 exact-index decoding. */
+    /** Use exact frame indices on API 28+ and the verified matching PTS on older supported Android versions. */
     suspend fun decodeFrames(result: Comparison, timeMs: Long): FramePair =
         withContext(Dispatchers.IO) {
-            require(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                "Exact same-frame comparison requires Android 9 (API 28) or later."
-            }
             require(result.before.isFile && result.after.isFile &&
                 result.before.length() == result.beforeFileLength && result.after.length() == result.afterFileLength &&
                 result.before.lastModified() == result.beforeLastModified && result.after.lastModified() == result.afterLastModified) {
@@ -178,11 +172,12 @@ object ColorTimelineComparisonRenderer {
             }
             val requestedTimeUs = if (timeMs <= 0L) 0L else if (timeMs > Long.MAX_VALUE / 1_000L) Long.MAX_VALUE else timeMs * 1_000L
             val frameIndex = nearestPresentationFrameIndex(presentationTimesUs, requestedTimeUs)
+            val frameTimeUs = presentationTimesUs[frameIndex.toInt()]
             currentCoroutineContext().ensureActive()
-            val before = decodeExactFrame(result.before, frameIndex)
+            val before = decodeExactFrame(result.before, frameIndex, frameTimeUs)
             try {
                 currentCoroutineContext().ensureActive()
-                val after = decodeExactFrame(result.after, frameIndex)
+                val after = decodeExactFrame(result.after, frameIndex, frameTimeUs)
                 try {
                     val (w, h) = boundedDimensions(before.width, before.height, MAX_PREVIEW_DIMENSION)
                     val (aw, ah) = boundedDimensions(after.width, after.height, MAX_PREVIEW_DIMENSION)
@@ -193,7 +188,7 @@ object ColorTimelineComparisonRenderer {
                         scaledAfter = scaleAndRecycle(after, aw, ah)
                         currentCoroutineContext().ensureActive()
                         FramePair(scaledBefore, scaledAfter, frameIndex,
-                            presentationTimesUs[frameIndex.toInt()] / 1_000L)
+                            frameTimeUs / 1_000L)
                     } catch (failure: Throwable) {
                         if (!scaledBefore.isRecycled) scaledBefore.recycle()
                         scaledAfter?.let { if (!it.isRecycled) it.recycle() }
@@ -353,11 +348,15 @@ object ColorTimelineComparisonRenderer {
         }
     }
 
-    private fun decodeExactFrame(file: File, frameIndex: Long): Bitmap {
+    private fun decodeExactFrame(file: File, frameIndex: Long, frameTimeUs: Long): Bitmap {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(file.absolutePath)
-            val bitmap = retriever.getFrameAtIndex(frameIndex.toInt())
+            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                retriever.getFrameAtIndex(frameIndex.toInt())
+            } else {
+                retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+            }
                 ?: error("Could not decode encoded comparison frame $frameIndex.")
             return bitmap
         } finally {

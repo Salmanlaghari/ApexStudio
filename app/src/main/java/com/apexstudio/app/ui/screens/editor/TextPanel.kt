@@ -421,7 +421,7 @@ fun TextPanel(
                 if (activeTab == TextPanelTab.PRESETS) {
                     "Tap a preview to add a styled “Your title” layer, then edit the words and place it on the video."
                 } else {
-                    "Choose Add text above. Then type your title, tap a style sample, and drag the text on the video to move it."
+                    "Choose Add text above, then type your title and drag it on the video. Use Styles to apply a text look."
                 },
                 color = ApexThemeTokens.current.textSecondary, fontSize = 11.sp, lineHeight = 15.sp,
                 modifier = Modifier.padding(vertical = 8.dp))
@@ -459,12 +459,16 @@ fun TextPanel(
             return@Column
         }
 
-        Text("2 · Edit and style your text", color = ApexThemeTokens.current.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(
+            if (activeTab == TextPanelTab.PRESETS) "2 · Choose a text style" else "2 · Edit your text",
+            color = ApexThemeTokens.current.primary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+        )
         if (activeTab == TextPanelTab.EDIT) {
-            TextPresetSampleGallery(onApplyPreset = onApplyPreset)
-            Text("Swipe the cards below for Font, Style, Layout and Text Layer controls.",
+            Text("Browse and apply text looks in the Styles tab.",
                 color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp,
-                modifier = Modifier.padding(top = 4.dp).testTag("text-card-swipe-hint"))
+                modifier = Modifier.padding(top = 4.dp).testTag("text-style-tab-hint"))
         }
 
         // Mask row: shape/feather/invert for the selected text, edited
@@ -1405,25 +1409,6 @@ fun TextPanel(
                     onCloseFillerReview = onCloseFillerReview
                 )
             }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TextPresetSampleGallery(onApplyPreset: (TextPreset) -> Unit) {
-    val starterCategories = listOf("Cinematic", "Social / Vlog", "Cyberpunk", "Broadcast")
-    val presets = remember {
-        starterCategories.mapNotNull { category -> TextPresetEngine.getPresetsForCategory(category).firstOrNull() }
-    }
-    Column(Modifier.fillMaxWidth().testTag("text-starter-gallery")) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Try a style sample", color = ApexThemeTokens.current.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-            Text("Tap to apply", color = ApexThemeTokens.current.textTertiary, fontSize = 9.sp)
-        }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-            items(presets, key = { it.id }) { preset ->
-                TextPresetSampleCard(preset, false, "text-starter-style-${preset.id}") { onApplyPreset(preset) }
             }
         }
     }

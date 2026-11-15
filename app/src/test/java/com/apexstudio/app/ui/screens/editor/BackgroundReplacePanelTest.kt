@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -16,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w375dp-h830dp")
@@ -30,7 +32,7 @@ class BackgroundReplacePanelTest {
             durationMs = 5_000L,
             trimEndMs = 5_000L
         )
-        var openedChromaKey = false
+        val openedChromaKey = AtomicBoolean(false)
 
         compose.setContent {
             BackgroundReplacePanel(
@@ -40,7 +42,7 @@ class BackgroundReplacePanelTest {
                 onRestoreOriginal = {},
                 onCancel = {},
                 onPickImage = {},
-                onOpenChromaKey = { openedChromaKey = true },
+                onOpenChromaKey = { openedChromaKey.set(true) },
                 onClose = {}
             )
         }
@@ -50,10 +52,12 @@ class BackgroundReplacePanelTest {
         ).performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("Download model (244 KB)").assertCountEquals(0)
         compose.onNodeWithText("Apply background").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers")
+        compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers").assertIsDisplayed()
+        compose.onNodeWithTag("background-chroma-key-link")
             .performScrollTo()
+            .assertIsDisplayed()
             .performClick()
 
-        compose.runOnIdle { assertTrue(openedChromaKey) }
+        compose.runOnIdle { assertTrue("Chroma-key link invokes its callback", openedChromaKey.get()) }
     }
 }

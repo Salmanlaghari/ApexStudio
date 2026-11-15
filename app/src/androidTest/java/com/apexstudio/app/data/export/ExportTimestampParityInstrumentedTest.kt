@@ -2852,7 +2852,7 @@ class ExportTimestampParityInstrumentedTest {
             )
             val selectedDiagnostics = android.os.ParcelFileDescriptor.AutoCloseInputStream(selectedDiagnosticsPfd)
                 .bufferedReader().use { it.readText() }
-                .lineSequence().filter { "export_diag" in it }.takeLast(30).joinToString(" | ")
+                .lineSequence().filter { "export_diag" in it }.toList().takeLast(30).joinToString(" | ")
             println("selected export diagnostic trace: $selectedDiagnostics")
             assertNull("Selected export of the baked chroma clip must complete: ${selectedResult.error}", selectedResult.error)
             selectedOutput = File(requireNotNull(Uri.parse(requireNotNull(selectedResult.outputUri)).path))
@@ -2875,7 +2875,7 @@ class ExportTimestampParityInstrumentedTest {
             )
             val projectDiagnostics = android.os.ParcelFileDescriptor.AutoCloseInputStream(projectDiagnosticsPfd)
                 .bufferedReader().use { it.readText() }
-                .lineSequence().filter { "export_diag" in it }.takeLast(30).joinToString(" | ")
+                .lineSequence().filter { "export_diag" in it }.toList().takeLast(30).joinToString(" | ")
             println("project export diagnostic trace: $projectDiagnostics")
             assertNull("Whole-project export of the baked chroma clip must complete: ${projectResult.error}", projectResult.error)
             projectOutput = File(requireNotNull(Uri.parse(requireNotNull(projectResult.outputUri)).path))

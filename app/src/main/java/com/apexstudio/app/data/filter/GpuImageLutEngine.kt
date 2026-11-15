@@ -56,15 +56,41 @@ class GpuImageLutEngine(private val context: Context) {
             return cached
         }
 
-        val rawCube = if (preset.asset.startsWith("custom/")) {
-            loadCustomLut(preset.asset)
-        } else {
-            lutEngine.loadLut(preset)
-        } ?: return null
+        val rawCube = lutEngine.loadLut(preset) ?: return null
 
         val stripBitmap = convertCubeToStripBitmap(rawCube) ?: return null
         stripBitmapCache[preset.id] = stripBitmap
         return stripBitmap
+    }
+
+    /** Rebuilds imported LUT choices from validated app-private .cube files after editor reopen. */
+    fun loadCustomPresets(): List<FilterPreset> {
+        val customDir = File(context.filesDir, "custom_luts")
+        return customDir.listFiles().orEmpty()
+            .asSequence()
+            .filter { it.isFile && it.name.startsWith("lut_") && it.extension.equals("cube", ignoreCase = true) }
+            .mapNotNull { file ->
+                val preset = FilterPreset(
+                    id = "custom_${file.nameWithoutExtension}",
+                    name = customDisplayName(file.nameWithoutExtension),
+                    category = "Custom",
+                    asset = "custom/${file.name}"
+                )
+                preset.takeIf { lutEngine.loadLut(it) != null }
+            }
+            .sortedBy { it.id }
+            .toList()
+    }
+
+    private fun customDisplayName(fileName: String): String {
+        val suffix = fileName.removePrefix("lut_")
+        val label = suffix.substringAfter('_', suffix)
+        return label.replace('_', ' ')
+            .trim()
+            .split(Regex("\\s+"))
+            .filter(String::isNotBlank)
+            .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+            .ifBlank { "Custom LUT" }
     }
 
     /**
@@ -256,7 +282,7 @@ class GpuImageLutEngine(private val context: Context) {
             )
 
             // Validate that it parses properly
-            val parsed = loadCustomLut(preset.asset)
+            val parsed = lutEngine.loadLut(preset)
             if (parsed != null) {
                 preset
             } else {
@@ -265,21 +291,6 @@ class GpuImageLutEngine(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to import custom .cube LUT", e)
-            null
-        }
-    }
-
-    private fun loadCustomLut(assetPath: String): FloatArray? {
-        val fileName = assetPath.removePrefix("custom/")
-        val file = File(File(context.filesDir, "custom_luts"), fileName)
-        if (!file.exists()) return null
-
-        return try {
-            file.bufferedReader().use { reader ->
-                CubeLutParser.parse(reader)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse custom LUT file: $file", e)
             null
         }
     }

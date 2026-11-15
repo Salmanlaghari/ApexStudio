@@ -168,21 +168,36 @@ fun EditorViewModel.startExport(
         _export.update { it.copy(error = "Export engine is not ready.", outputUri = null) }
         return
     }
-    _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.PREPARING, error = null, outputUri = null) }
 
     val selectedGpuFilterConfig = selected?.gpuFilterConfig
         ?: com.apexstudio.app.data.filter.GpuFilterConfig()
     val usesViralHdrPipeline = selectedGpuFilterConfig.activeProfileId ==
         com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
-    var filterPreset: com.apexstudio.app.data.filter.FilterPreset? = null
+    val filterPreset: com.apexstudio.app.data.filter.FilterPreset?
     if (!usesViralHdrPipeline && s.activeFilterId != null && context != null) {
         try {
-            filterPreset = com.apexstudio.app.data.filter.LutFilterEngine(context!!).manifest.filters
-                .firstOrNull { it.id == s.activeFilterId }
+            val lutEngine = com.apexstudio.app.data.filter.LutFilterEngine(context)
+            filterPreset = resolveProjectExportFilterPreset(s, lutEngine.manifest.filters)
+                ?.takeIf(lutEngine::isCustomLutAvailable)
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Failed to load filter manifest for export", e)
+            filterPreset = null
         }
+    } else {
+        filterPreset = null
     }
+    if (s.activeFilterId != null && !usesViralHdrPipeline && filterPreset == null) {
+        _export.update {
+            it.copy(
+                isExporting = false,
+                error = "The selected global LUT is unavailable for export. Re-import the custom LUT or choose another filter.",
+                outputUri = null,
+                warning = null
+            )
+        }
+        return
+    }
+    _export.update { it.copy(isExporting = true, progress = 0f, stage = ExportProgressStage.PREPARING, error = null, outputUri = null) }
     val fxPreset = com.apexstudio.app.data.fx.FxPreset.byId(s.activeFxId)
     val downloadedFxEffectId = s.activeFxId?.takeIf {
         com.apexstudio.app.data.fx.FxPreset.byId(it) == null

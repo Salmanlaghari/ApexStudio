@@ -191,6 +191,27 @@ class EditorProjectExportControllerTest {
         assertNull(wholeProjectExportUnsupportedReason(edited, AudioStudioState(), settings, lut))
     }
 
+    @Test fun `imported custom LUT resolves from project state into whole-project export`() {
+        val custom = FilterPreset(
+            "custom_lut_12345_editorial", "Editorial", "Custom", "custom/lut_12345_editorial.cube"
+        )
+        val edited = state.copy(
+            project = state.project!!.copy(
+                manualLutOverride = ProjectLutSettings(custom.id, 0.65f)
+            ),
+            activeFilterId = custom.id,
+            filterIntensity = 0.65f,
+            customImportedLuts = listOf(custom)
+        )
+
+        val resolved = resolveProjectExportFilterPreset(edited, emptyList())
+        assertEquals(custom, resolved)
+        val config = buildProjectExportConfig(edited, AudioStudioState(), settings, resolved)
+        assertEquals(custom, config.filterPreset)
+        assertEquals(0.65f, config.filterIntensity, 0f)
+        assertNull(wholeProjectExportUnsupportedReason(edited, AudioStudioState(), settings, resolved))
+    }
+
     @Test fun `unsupported edits block project mode rather than dropping from output`() {
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFilterId = "cinema"), AudioStudioState(), settings))
         assertNotNull(wholeProjectExportUnsupportedReason(state.copy(activeFxId = "not-a-real-fx"), AudioStudioState(), settings))

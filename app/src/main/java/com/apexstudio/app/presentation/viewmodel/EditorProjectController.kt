@@ -289,6 +289,14 @@ internal fun EditorViewModel.loadLuts() {
     _luts.value = repo.loadLutPresets()
     _transitions.value = repo.loadTransitionPresets()
     _fx.value = repo.loadFxPresets()
+    context?.let { ctx ->
+        viewModelScope.launch(Dispatchers.IO) {
+            val imported = com.apexstudio.app.data.filter.GpuImageLutEngine(ctx).loadCustomPresets()
+            _state.update { state ->
+                state.copy(customImportedLuts = (imported + state.customImportedLuts).distinctBy { it.id })
+            }
+        }
+    }
 }
 
 

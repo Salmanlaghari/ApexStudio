@@ -28,9 +28,10 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
   .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-// Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
-// ESPCN model and the 3.8 MB checksum-pinned face landmarker stay bundled for offline
-// still-photo enhancement/cropping; no model download is required at runtime. Use
+// Large model weights are omitted from APK/AAB assets by default. Keep the 249.5 KB
+// checksum-pinned person-segmentation model bundled: Background Replace uses it on
+// Apply and has no in-panel download path. The 240 KB ESPCN model and 3.8 MB face
+// landmarker also stay bundled for offline still-photo enhancement/cropping; use
 // -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
@@ -41,13 +42,33 @@ val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
     exclude(
       "models/mediapipe/mediapipe-hand-landmarker.task",
       "models/mediapipe/mediapipe-pose-landmarker.task",
-      "models/mediapipe/selfie_segmenter.tflite",
       "models/whisper/*.onnx", "models/whisper/*.txt",
       "models/alignment/*.onnx",
       "models/background_removal/*.onnx"
     )
   }
   into(stagedAssets)
+  doLast {
+    val segmenter = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
+    check(segmenter.isFile && segmenter.length() == 249_537L) {
+      "Background Replace requires the 249,537-byte bundled selfie_segmenter.tflite asset"
+    }
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    segmenter.inputStream().buffered().use { input ->
+      val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+      while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        digest.update(buffer, 0, count)
+      }
+    }
+    val sha256 = digest.digest().joinToString("") {
+      (it.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+    check(sha256 == "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b") {
+      "Bundled selfie_segmenter.tflite checksum mismatch: $sha256"
+    }
+  }
 }
 val stagedDebugAssets = layout.buildDirectory.dir("generated/debugRuntimeAssets")
 val stageDebugRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {

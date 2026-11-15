@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
+import com.apexstudio.app.BuildConfig
 import com.apexstudio.app.domain.model.BackgroundReplaceMode
 import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ClipType
@@ -389,7 +391,12 @@ fun BackgroundReplacePanel(
             }
 
             TextButton(
-                onClick = onOpenChromaKey,
+                onClick = {
+                    if (BuildConfig.DEBUG) {
+                        Log.d("BackgroundReplacePanel", "chroma link onClick entered; forwarding callback")
+                    }
+                    onOpenChromaKey()
+                },
                 enabled = !isProcessing,
                 modifier = Modifier
                     .fillMaxWidth()

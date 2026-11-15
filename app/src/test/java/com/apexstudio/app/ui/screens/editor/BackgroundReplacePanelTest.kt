@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -52,8 +53,9 @@ class BackgroundReplacePanelTest {
         compose.onAllNodesWithText("Download model (244 KB)").assertCountEquals(0)
         compose.onNodeWithText("Apply background").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers").assertIsDisplayed()
-        compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers")
+        compose.onNodeWithTag("background-chroma-key-link")
             .performScrollTo()
+            .assertIsDisplayed()
             .performClick()
 
         compose.runOnIdle { assertTrue("Chroma-key link invokes its callback", openedChromaKey.get()) }

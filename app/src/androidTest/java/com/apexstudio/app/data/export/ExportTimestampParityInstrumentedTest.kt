@@ -2813,12 +2813,21 @@ class ExportTimestampParityInstrumentedTest {
             val selectedConfig = exportConfig.copy(trimEndMs = bakedDurationMs)
             val bakedUri = Uri.fromFile(baked).toString()
             val bakedFormatAudit = inspectSourceVideoFormat(context, bakedUri)
-            val sourceCadenceAudit = if (shouldInspectSourceCadenceForCfrNormalization(
+            val sourceCadenceAudit = if (
+                shouldInspectSourceCadenceForCfrNormalization(
+                    bakedFormatAudit.reportedFps, selectedConfig.fps, speedEffectApplied = false
+                ) || shouldInspectSourceCadenceForRepeatInterval(
                     bakedFormatAudit.reportedFps, selectedConfig.fps, speedEffectApplied = false
                 )
             ) {
                 inspectSourceFrameCadence(context, bakedUri, bakedFormatAudit.reportedFps)
             } else null
+            val selectedVerifiedRepeatIntervalUs = verifiedCfrSourceRepeatIntervalUs(
+                bakedFormatAudit.reportedFps,
+                sourceCadenceAudit,
+                selectedConfig.fps,
+                speedEffectApplied = false
+            )
             val observedBakedCadence = auditSourceFrameTimestamps(
                 bakedTrack.presentationTimesUs,
                 bakedFormatAudit.reportedFps
@@ -2848,7 +2857,7 @@ class ExportTimestampParityInstrumentedTest {
                     "cadence=${sourceCadenceAudit?.diagnosticSummary() ?: "not-inspected"}, " +
                     "observedCadence=${observedBakedCadence.diagnosticSummary()}, " +
                     "frameDrop=$selectedFrameDrop, normalizeKnownCfrFasterSource=$normalizeKnownCfrFasterSource, " +
-                    "repeatPreviousFrameIntervalUs=${exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}"
+                    "repeatPreviousFrameIntervalUs=${selectedVerifiedRepeatIntervalUs ?: exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}"
             )
             instrumentation.uiAutomation.executeShellCommand("logcat -c").close()
             selectedEngine.startExport(Uri.fromFile(baked).toString(), selectedConfig, selectedOutputName)
@@ -2942,7 +2951,7 @@ class ExportTimestampParityInstrumentedTest {
                     "sourcePts=$sourceAnchorsUs, cadence=${sourceCadenceAudit?.diagnosticSummary() ?: "not-inspected"}, " +
                     "observedCadence=${observedBakedCadence.diagnosticSummary()}, frameDrop=$selectedFrameDrop, " +
                     "normalizeKnownCfrFasterSource=$normalizeKnownCfrFasterSource, " +
-                    "repeatPreviousFrameIntervalUs=${exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}, " +
+                    "repeatPreviousFrameIntervalUs=${selectedVerifiedRepeatIntervalUs ?: exportRepeatPreviousFrameIntervalUs(selectedConfig.fps)}, " +
                     "exportTrace=$routeDiagnostics"
                 assertOutputTiming(
                     label = label,
@@ -3131,7 +3140,11 @@ class ExportTimestampParityInstrumentedTest {
         val timestamps = output.presentationTimesUs
         assertFalse("$label must contain video samples", timestamps.isEmpty())
         assertFalse("$label must not contain negative PTS", timestamps.any { it < 0L })
-        assertEquals("$label must not contain duplicate presentation timestamps", timestamps.size, timestamps.distinct().size)
+        assertEquals(
+            "$label must not contain duplicate presentation timestamps; PTS=${timestamps.joinToString()}",
+            timestamps.size,
+            timestamps.distinct().size
+        )
         val movieDurationUs = output.movieDurationUs
         assertTrue(
             "$label must report a positive movie duration; video track=${output.videoTrackDurationUs}us; " +

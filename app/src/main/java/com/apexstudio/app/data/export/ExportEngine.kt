@@ -513,6 +513,8 @@ class ExportEngine(private val context: Context) {
                         }
                     var hasProjectVideoSource = false
                     var allProjectVideoSourcesVerifiedCfr = true
+                    var allProjectVideoSourcesMatchRequestedCfr = true
+                    var projectCfrSourceRepeatIntervalUs: Long? = null
                     val items = plan.entries.map { entry ->
                         val clip = entry.clip
                         val itemConfig = config.copy(
@@ -540,11 +542,20 @@ class ExportEngine(private val context: Context) {
                         )
                         val sourceCadence = if (
                             clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
-                            shouldInspectSourceCadenceForCfrNormalization(
+                            (shouldInspectSourceCadenceForCfrNormalization(
                                 sourceFormat.reportedFps, config.fps, speedPair != null
-                            )
+                            ) || shouldInspectSourceCadenceForRepeatInterval(
+                                sourceFormat.reportedFps, config.fps, speedPair != null
+                            ))
                         ) {
                             sourceCadenceFor(clip.uri, clip.id, sourceFormat.reportedFps)
+                        } else null
+                        val sourceRepeatIntervalUs = if (
+                            clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO
+                        ) {
+                            verifiedCfrSourceRepeatIntervalUs(
+                                sourceFormat.reportedFps, sourceCadence, config.fps, speedPair != null
+                            )
                         } else null
                         val verifiedCfr = clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
                             isVerifiedFasterCfrSource(
@@ -564,6 +575,13 @@ class ExportEngine(private val context: Context) {
                         if (clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO) {
                             hasProjectVideoSource = true
                             if (!verifiedCfr) allProjectVideoSourcesVerifiedCfr = false
+                            if (sourceRepeatIntervalUs == null) {
+                                allProjectVideoSourcesMatchRequestedCfr = false
+                            } else if (projectCfrSourceRepeatIntervalUs == null) {
+                                projectCfrSourceRepeatIntervalUs = sourceRepeatIntervalUs
+                            } else if (projectCfrSourceRepeatIntervalUs != sourceRepeatIntervalUs) {
+                                allProjectVideoSourcesMatchRequestedCfr = false
+                            }
                         }
                         val keyframeClock = keyframeClockFor(itemConfig)
                         val sharedAnimation = itemConfig.sharedVideoClip
@@ -858,6 +876,14 @@ class ExportEngine(private val context: Context) {
                             ))
                             .build()
                     }
+                    val verifiedProjectCfrSourceRepeatIntervalUs = projectCfrSourceRepeatIntervalUs.takeIf {
+                        hasProjectVideoSource && allProjectVideoSourcesMatchRequestedCfr
+                    }
+                    diagnostics.stage(
+                        "project_encoder_repeat_interval",
+                        "verifiedCfrSourceIntervalUs=${verifiedProjectCfrSourceRepeatIntervalUs ?: "not_applied"} " +
+                            "effectiveIntervalUs=${verifiedProjectCfrSourceRepeatIntervalUs ?: exportRepeatPreviousFrameIntervalUs(config.fps)}"
+                    )
                     diagnostics.stage("project_preparation_completed", "durationMs=${plan.durationMs}")
                     publishProjectStage(run, ExportProgressStage.VIDEO_RENDER, diagnostics)
                     val renderResult = renderProjectComposition(
@@ -866,7 +892,8 @@ class ExportEngine(private val context: Context) {
                         config = config,
                         outputFile = partial,
                         run = run,
-                        diagnostics = diagnostics
+                        diagnostics = diagnostics,
+                        verifiedCfrSourceRepeatIntervalUs = verifiedProjectCfrSourceRepeatIntervalUs
                     )
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
@@ -1038,7 +1065,8 @@ class ExportEngine(private val context: Context) {
     config: ExportConfig,
     outputFile: File,
     run: ProjectExportRun,
-    diagnostics: ExportDiagnosticTrace
+    diagnostics: ExportDiagnosticTrace,
+    verifiedCfrSourceRepeatIntervalUs: Long? = null
 ): ExportResult = withContext(Dispatchers.Main.immediate) {
         require((composition == null) != (directSingleItem == null)) {
             "Project render must receive exactly one Media3 input"
@@ -1058,7 +1086,7 @@ class ExportEngine(private val context: Context) {
             }
             if (!continuation.isActive || !isCurrentProjectRun(run)) return@suspendCancellableCoroutine
             try {
-                val encoderSettings = exportVideoEncoderSettings(config)
+                val encoderSettings = exportVideoEncoderSettings(config, verifiedCfrSourceRepeatIntervalUs)
                 val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
                     .setRequestedVideoEncoderSettings(encoderSettings)
                     .setEnableFallback(false) // Never silently change the owner's requested output settings.
@@ -1230,7 +1258,10 @@ class ExportEngine(private val context: Context) {
                 val speedPair = buildSpeedProvider(config)?.let { Effects.createExperimentalSpeedChangingEffect(it) }
                 // This audit also gates FrameDropEffect; PiP may disable post-export normalization,
                 // but must not bypass source-PTS verification before discarding input samples.
-                val sourceCadenceAudit = if (shouldInspectSourceCadenceForCfrNormalization(
+                val sourceCadenceAudit = if (
+                    shouldInspectSourceCadenceForCfrNormalization(
+                        sourceAudit?.reportedFps, config.fps, speedPair != null
+                    ) || shouldInspectSourceCadenceForRepeatInterval(
                         sourceAudit?.reportedFps, config.fps, speedPair != null
                     )
                 ) {
@@ -1251,6 +1282,14 @@ class ExportEngine(private val context: Context) {
                         null
                     }
                 } else null
+                val videoVerifiedRepeatIntervalUs = verifiedCfrSourceRepeatIntervalUs(
+                    sourceAudit?.reportedFps, sourceCadenceAudit, config.fps, speedPair != null
+                )
+                diagnostics.stage(
+                    "video_encoder_repeat_interval",
+                    "verifiedCfrSourceIntervalUs=${videoVerifiedRepeatIntervalUs ?: "not_applied"} " +
+                        "effectiveIntervalUs=${videoVerifiedRepeatIntervalUs ?: exportRepeatPreviousFrameIntervalUs(config.fps)}"
+                )
                 val normalizeKnownCfrFasterSource = config.pipOverlays.isEmpty() &&
                     isVerifiedFasterCfrSource(
                         sourceAudit?.reportedFps, sourceCadenceAudit, config.fps, speedPair != null
@@ -1549,7 +1588,8 @@ class ExportEngine(private val context: Context) {
                             config, outputFile, run, config.musicMixTracks,
                             overlayAudioSources = config.overlayAudioSources,
                             diagnostics = diagnostics,
-                            normalizeKnownCfrFasterSource = normalizeKnownCfrFasterSource
+                            normalizeKnownCfrFasterSource = normalizeKnownCfrFasterSource,
+                            verifiedCfrSourceRepeatIntervalUs = videoVerifiedRepeatIntervalUs
                         )
                     },
                     start = { it.start(editedMediaItem, outputFile.absolutePath) },
@@ -2194,11 +2234,12 @@ class ExportEngine(private val context: Context) {
         musicMixTracks: List<com.apexstudio.app.domain.model.AudioTrack> = emptyList(),
         overlayAudioSources: List<AudioExportSource> = emptyList(),
         diagnostics: ExportDiagnosticTrace? = null,
-        normalizeKnownCfrFasterSource: Boolean = false
+        normalizeKnownCfrFasterSource: Boolean = false,
+        verifiedCfrSourceRepeatIntervalUs: Long? = null
     ): Transformer {
         // Let Media3 negotiate the normal profile/level for standard exports.
         // 8K passes the exact hardware encoder verified by Export8kCapability.
-        val encoderSettings = exportVideoEncoderSettings(config)
+        val encoderSettings = exportVideoEncoderSettings(config, verifiedCfrSourceRepeatIntervalUs)
 
         val encoderFactoryBuilder = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(encoderSettings)

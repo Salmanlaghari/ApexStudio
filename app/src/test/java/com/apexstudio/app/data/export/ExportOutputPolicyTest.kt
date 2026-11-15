@@ -103,6 +103,37 @@ class ExportOutputPolicyTest {
     }
 
     @Test
+    fun sameRateRepeatIntervalRequiresFullCfrProofAndMatchingMetadata() {
+        val constant30 = auditSourceFrameTimestamps((0 until 30).map { it * 1_000_000L / 30 }, 30f)
+        val variable30 = auditSourceFrameTimestamps(
+            listOf(0L, 33_333L, 66_666L, 150_000L, 183_333L, 216_666L),
+            30f
+        )
+        val misreported30 = auditSourceFrameTimestamps(
+            (0 until 30).map { it * 40_000L },
+            reportedFps = 30f
+        )
+        val config = ExportEngine.ExportConfig(resolution = "720p", fps = 30)
+
+        assertTrue(shouldInspectSourceCadenceForRepeatInterval(30f, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForRepeatInterval(null, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForRepeatInterval(60f, 30, speedEffectApplied = false))
+        assertFalse(shouldInspectSourceCadenceForRepeatInterval(30f, 30, speedEffectApplied = true))
+        assertEquals(33_333L, constant30.minIntervalUs)
+        assertEquals(33_334L, constant30.maxIntervalUs)
+        assertEquals(34_334L, verifiedCfrSourceRepeatIntervalUs(30f, constant30, 30, speedEffectApplied = false))
+        assertNull(verifiedCfrSourceRepeatIntervalUs(30f, variable30, 30, speedEffectApplied = false))
+        assertNull(verifiedCfrSourceRepeatIntervalUs(30f, misreported30, 30, speedEffectApplied = false))
+        assertNull(verifiedCfrSourceRepeatIntervalUs(null, constant30, 30, speedEffectApplied = false))
+        assertNull(verifiedCfrSourceRepeatIntervalUs(30f, constant30, 30, speedEffectApplied = true))
+        assertEquals(
+            EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US,
+            exportVideoEncoderSettings(config).repeatPreviousFrameIntervalUs
+        )
+        assertEquals(34_334L, exportVideoEncoderSettings(config, 34_334L).repeatPreviousFrameIntervalUs)
+    }
+
+    @Test
     fun exportFrameDropRequiresSourceCadenceProofWhenTheRateScanIsApplicable() {
         val constant60 = auditSourceFrameTimestamps((0 until 60).map { it * 16_667L }, 60f)
         val variable60 = auditSourceFrameTimestamps(

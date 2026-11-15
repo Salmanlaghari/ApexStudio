@@ -9,6 +9,8 @@ internal object EditorLayoutMetrics {
     val PlaybackBarHeight = 52.dp
     val TimelineActionHeight = 48.dp
     val TimelineToolbarHeight = 40.dp
+    /** 46dp reference toolbar row plus its 4dp top/bottom inset. */
+    val ReferenceToolbarHeight = 54.dp
     val PreviewCornerRadius = 14.dp
     val PlaybackCornerRadius = 12.dp
 }

@@ -1712,12 +1712,18 @@ private fun EditorScreenContent(
             }
         }
     }
-    // The workspace is a bottom overlay: opening it must not consume height from the preview/timeline column.
+    // Keep the workspace over timeline space so it does not resize the locked preview;
+    // in portrait, leave the reference toolbar reachable below the panel.
     workspaceTarget?.let { captured ->
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .padding(
+                    bottom = if (editorChromeVisible(state.isFullscreenPreview) && !horizontalProjectLayout) {
+                        EditorLayoutMetrics.ReferenceToolbarHeight
+                    } else 0.dp
+                )
         ) {
             ClipEffectWorkspaceHost(
                 filters = workspaceIsFilters,

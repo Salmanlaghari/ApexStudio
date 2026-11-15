@@ -127,7 +127,14 @@ class ScreenshotClipToolbarTest {
         // The selected-clip row is intentionally horizontally scrollable. At
         // 375dp the first priority actions are visible at rest, while later
         // actions remain reachable rather than being displayed simultaneously.
-        val initiallyVisiblePriorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.take(4).map { label ->
+        // Split/Trim already live in the primary row; avoid displaying duplicate actions.
+        val clipPriorityOrder = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.filterNot { it == "Split" || it == "Trim" }
+        listOf("Split", "Trim").forEach { label ->
+            composeRule.onNode(
+                hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-edit-tools")))
+            ).assertIsDisplayed()
+        }
+        val initiallyVisiblePriorityBounds = clipPriorityOrder.take(4).map { label ->
             composeRule.onNode(
                 hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
             )
@@ -139,7 +146,7 @@ class ScreenshotClipToolbarTest {
             "Horizontal selected-video actions keep the visible approved priority order",
             initiallyVisiblePriorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
         )
-        CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.drop(4).forEach { label ->
+        clipPriorityOrder.drop(4).forEach { label ->
             composeRule.onNode(
                 hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
             )

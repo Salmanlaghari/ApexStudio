@@ -391,12 +391,13 @@ fun BackgroundReplacePanel(
             TextButton(
                 onClick = onOpenChromaKey,
                 enabled = !isProcessing,
-                modifier = Modifier.fillMaxWidth().testTag("background-chroma-key-link")
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     "Green/blue screens? Open Chroma key + wallpapers",
                     color = ApexPalette.NeonCyan,
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    modifier = Modifier.testTag("background-chroma-key-link")
                 )
             }
 

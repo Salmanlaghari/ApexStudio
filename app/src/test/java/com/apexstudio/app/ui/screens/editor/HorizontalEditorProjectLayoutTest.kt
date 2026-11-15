@@ -157,6 +157,7 @@ class HorizontalEditorProjectLayoutTest {
         val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         compose.onAllNodesWithText("Filters").assertCountEquals(1)
         compose.onNodeWithText("Filters").performClick()
+        compose.waitForIdle()
         compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
         val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val panel = compose.onNodeWithTag("filter-workspace-panel").fetchSemanticsNode().boundsInRoot

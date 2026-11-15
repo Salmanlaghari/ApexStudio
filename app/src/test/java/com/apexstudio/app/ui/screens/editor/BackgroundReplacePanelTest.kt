@@ -8,7 +8,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
@@ -115,8 +114,16 @@ class BackgroundReplacePanelTest {
             )
         }
 
-        compose.onNodeWithText("🎨 Colour").performScrollTo().performClick()
-        compose.onNodeWithText("Apply background").performScrollTo().performClick()
+        compose.onNode(hasText("🎨 Colour") and hasClickAction())
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Colour mode chip exposes an active click action", action())
+            }
+        compose.onNode(hasText("Apply background") and hasClickAction())
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Apply button exposes an active click action", action())
+            }
         compose.runOnIdle {
             assertEquals(BackgroundReplaceMode.COLOR, applied.get()?.mode)
             assertEquals(clip.uri, applied.get()?.sourceUri)

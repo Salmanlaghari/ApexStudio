@@ -74,12 +74,37 @@ class HorizontalEditorProjectLayoutTest {
         }
     }
 
+    private fun printDismissalDiagnostics(stage: String) {
+        val marker = "PR300_FILTER_DISMISS_DIAG"
+        fun bounds(tag: String, unmerged: Boolean): String = runCatching {
+            compose.onNodeWithTag(tag, useUnmergedTree = unmerged)
+                .fetchSemanticsNode().boundsInRoot.toString()
+        }.getOrElse { "<missing:${it::class.simpleName}:${it.message}>" }
+        println("$marker stage=$stage merged panel=${bounds("filter-workspace-panel", false)} preview=${bounds("editor-preview-frame", false)} root=${runCatching { compose.onRoot().fetchSemanticsNode().boundsInRoot.toString() }.getOrDefault("<missing>")}")
+        println("$marker stage=$stage unmerged panel=${bounds("filter-workspace-panel", true)} preview=${bounds("editor-preview-frame", true)} root=${runCatching { compose.onRoot(useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.toString() }.getOrDefault("<missing>")}")
+        runCatching { compose.onRoot().printToLog("$marker merged stage=$stage") }
+            .onFailure { println("$marker stage=$stage merged_dump_exception=${it::class.qualifiedName}:${it.message}") }
+        runCatching { compose.onRoot(useUnmergedTree = true).printToLog("$marker unmerged stage=$stage") }
+            .onFailure { println("$marker stage=$stage unmerged_dump_exception=${it::class.qualifiedName}:${it.message}") }
+    }
+
     private fun waitForFilterWorkspaceDismissed() {
-        compose.waitUntil(timeoutMillis = 5_000L) {
-            val nodes = compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes()
-            nodes.isEmpty() || runCatching {
-                compose.onNodeWithTag("filter-workspace-panel").assertIsNotDisplayed()
-            }.isSuccess
+        printDismissalDiagnostics("before_wait")
+        try {
+            compose.waitUntil(timeoutMillis = 5_000L) {
+                val nodes = compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes()
+                val predicate = nodes.isEmpty() || runCatching {
+                    compose.onNodeWithTag("filter-workspace-panel").assertIsNotDisplayed()
+                }.isSuccess
+                if (!predicate) println("PR300_FILTER_DISMISS_DIAG stage=wait_poll predicate=false panel_count=${nodes.size}")
+                predicate
+            }
+            printDismissalDiagnostics("after_wait")
+        } catch (failure: Throwable) {
+            println("PR300_FILTER_DISMISS_DIAG stage=wait_timeout exception=${failure::class.qualifiedName}:${failure.message}")
+            failure.printStackTrace(System.out)
+            printDismissalDiagnostics("timeout")
+            throw failure
         }
     }
 
@@ -148,6 +173,7 @@ class HorizontalEditorProjectLayoutTest {
         assertTrue("The panel stays below and does not cover the locked preview: preview=$open panel=$panel",
             panel.top >= open.bottom - 1f)
 
+        printDismissalDiagnostics("before_close_click_landscape")
         compose.onNodeWithContentDescription("Close filters").performClick()
         waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
@@ -160,6 +186,7 @@ class HorizontalEditorProjectLayoutTest {
         show(vm)
         // Normal portrait edit entry opens the reference Filters workspace once;
         // close it before exercising the real Filters dock action below.
+        printDismissalDiagnostics("before_close_click_reference_portrait")
         compose.onNodeWithContentDescription("Close filters").performClick()
         waitForFilterWorkspaceDismissed()
         compose.runOnIdle { vm.selectClip("main-video") }
@@ -179,6 +206,7 @@ class HorizontalEditorProjectLayoutTest {
         assertTrue("The portrait panel stays below the preview: preview=$open panel=$panel",
             panel.top >= open.bottom - 1f)
 
+        printDismissalDiagnostics("before_close_click_portrait")
         compose.onNodeWithContentDescription("Close filters").performClick()
         waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot

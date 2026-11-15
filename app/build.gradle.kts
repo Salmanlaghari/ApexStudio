@@ -2,6 +2,7 @@ import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesS
 import com.apexstudio.buildlogic.StripGpuImageDecoderTransform
 import org.gradle.api.artifacts.type.ArtifactTypeDefinition
 import org.gradle.api.attributes.Usage
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -28,26 +29,49 @@ val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
   .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
 val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-// Large model weights are omitted from APK/AAB assets by default. The 240 KB licensed
-// ESPCN model and the 3.8 MB checksum-pinned face landmarker stay bundled for offline
-// still-photo enhancement/cropping; no model download is required at runtime. Use
+// Large model weights are omitted from APK/AAB assets by default. Keep the 249.5 KB
+// checksum-pinned person-segmentation model bundled: Background Replace uses it on
+// Apply and has no in-panel download path. The 240 KB ESPCN model and 3.8 MB face
+// landmarker also stay bundled for offline still-photo enhancement/cropping; use
 // -PincludeBundledAiModels=true for the other bundled-fallback regression builds.
 val includeBundledAiModels = providers.gradleProperty("includeBundledAiModels")
   .map(String::toBoolean).orElse(false)
 val stagedAssets = layout.buildDirectory.dir("generated/runtimeAssets")
 val stageRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
+  // Keep only plain task-local values in the action, not build-script providers.
+  val stagedSegmenterAsset = stagedAssets.get().file("models/mediapipe/selfie_segmenter.tflite").asFile
+  val expectedSegmenterSha256 = "191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b"
   from(layout.projectDirectory.dir("src/main/assets"))
   if (!includeBundledAiModels.get()) {
     exclude(
       "models/mediapipe/mediapipe-hand-landmarker.task",
       "models/mediapipe/mediapipe-pose-landmarker.task",
-      "models/mediapipe/selfie_segmenter.tflite",
       "models/whisper/*.onnx", "models/whisper/*.txt",
       "models/alignment/*.onnx",
       "models/background_removal/*.onnx"
     )
   }
   into(stagedAssets)
+  doLast {
+    check(stagedSegmenterAsset.isFile && stagedSegmenterAsset.length() == 249_537L) {
+      "Background Replace requires the 249,537-byte bundled selfie_segmenter.tflite asset"
+    }
+    val digest = MessageDigest.getInstance("SHA-256")
+    stagedSegmenterAsset.inputStream().buffered().use { input ->
+      val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+      while (true) {
+        val count = input.read(buffer)
+        if (count < 0) break
+        digest.update(buffer, 0, count)
+      }
+    }
+    val sha256 = digest.digest().joinToString("") {
+      (it.toInt() and 0xff).toString(16).padStart(2, '0')
+    }
+    check(sha256 == expectedSegmenterSha256) {
+      "Bundled selfie_segmenter.tflite checksum mismatch: $sha256"
+    }
+  }
 }
 val stagedDebugAssets = layout.buildDirectory.dir("generated/debugRuntimeAssets")
 val stageDebugRuntimeAssets by tasks.registering(org.gradle.api.tasks.Sync::class) {
@@ -171,6 +195,16 @@ android {
       isIncludeAndroidResources = true
       if (System.getenv("CI") == "true") {
         all { test ->
+          test.addTestOutputListener(object : org.gradle.api.tasks.testing.TestOutputListener {
+            override fun onOutput(
+              testDescriptor: org.gradle.api.tasks.testing.TestDescriptor,
+              outputEvent: org.gradle.api.tasks.testing.TestOutputEvent
+            ) {
+              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest") {
+                print(outputEvent.message)
+              }
+            }
+          })
           test.addTestListener(object : org.gradle.api.tasks.testing.TestListener {
             override fun beforeSuite(suite: org.gradle.api.tasks.testing.TestDescriptor) = Unit
             override fun afterSuite(
@@ -185,6 +219,12 @@ android {
               result: org.gradle.api.tasks.testing.TestResult
             ) {
               println("CI_TEST_FINISHED ${testDescriptor.className}.${testDescriptor.name} ${result.resultType}")
+              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest" &&
+                result.resultType != org.gradle.api.tasks.testing.TestResult.ResultType.SUCCESS
+              ) {
+                println("BRP_DIAG CI failure stack traces for ${testDescriptor.className}.${testDescriptor.name}")
+                result.exceptions.forEach { it.printStackTrace(System.out) }
+              }
             }
           })
         }
@@ -339,9 +379,9 @@ dependencies {
 
   // PR-G: MediaPipe Tasks Vision for per-clip background replace
   // (person segmentation) — https://github.com/google-ai-edge/mediapipe
-  // (Apache-2.0). Official Maven artifact (Google Maven). Only the
-  // Tasks library is bundled; the segmentation model (~244 KB)
-  // downloads on first use via PackManager, NOT in the APK.
+  // (Apache-2.0). Official Maven artifact (Google Maven). The
+  // checksum-pinned segmentation model is bundled from src/main/assets
+  // and staged into production APK/AAB assets by stageRuntimeAssets above.
   implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
   implementation(libs.kotlinx.coroutines.android)

@@ -2502,18 +2502,7 @@ fun BackgroundReplacePanelOverlay(
     onPickBackgroundImage: () -> Unit
 ) {
     if (!state.backgroundPanelOpen) return
-    val context = LocalContext.current
     val bgUi by vm.backgroundUi.collectAsState()
-    val packs by com.apexstudio.app.data.packs.download.PackManager.packsState.collectAsState()
-    val modelPackState = packs.firstOrNull {
-        it.pack.id == com.apexstudio.app.data.background.BackgroundReplaceEngine.PACK_ID
-    }?.state
-    // Refresh the pack catalog so the panel's download state is
-    // current (a stale catalog would show "Download" for an
-    // already-installed model).
-    LaunchedEffect(Unit) {
-        com.apexstudio.app.data.packs.download.PackManager.refresh(context.applicationContext)
-    }
     // Exact match only (Kilo review): falling back to the first clip
     // when nothing is selected would apply the treatment to a clip
     // the user never chose. Null → the panel says "select a clip".
@@ -2529,7 +2518,6 @@ fun BackgroundReplacePanelOverlay(
             BackgroundReplacePanel(
                 clip = selectedClip,
                 ui = bgUi,
-                packState = modelPackState,
                 onApply = { settings ->
                     val clipId = selectedClip?.id ?: return@BackgroundReplacePanel
                     vm.applyBackgroundReplace(clipId, settings)
@@ -2539,8 +2527,11 @@ fun BackgroundReplacePanelOverlay(
                     vm.restoreOriginalBackground(clipId)
                 },
                 onCancel = { vm.cancelBackgroundReplace() },
-                onDownloadModel = { vm.downloadBackgroundModel() },
                 onPickImage = onPickBackgroundImage,
+                onOpenChromaKey = {
+                    vm.closeBackgroundPanel()
+                    vm.openChromaKeyPanel()
+                },
                 onClose = { vm.closeBackgroundPanel() }
             )
         }

@@ -119,7 +119,7 @@ fun EditorViewModel.startExport(
     if (selected?.chromaKeySettings?.enabled == true) {
         _export.update {
             it.copy(
-                error = "Apply chroma key and its wallpaper to the clip before exporting.",
+                error = "Chroma key is pending. Apply it in Chroma key + wallpapers before exporting.",
                 outputUri = null,
                 warning = null
             )

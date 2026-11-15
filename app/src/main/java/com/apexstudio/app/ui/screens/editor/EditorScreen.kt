@@ -1559,7 +1559,8 @@ private fun EditorScreenContent(
         if (isExportWorkspace) {
             com.apexstudio.app.ui.screens.export.ExportScreen(
                 projectId = projectId, onBack = onCloseWorkspace, onExport = onCloseWorkspace,
-                vm = vm, embedded = true
+                vm = vm, embedded = true,
+                onOpenChromaKey = onCloseWorkspace
             )
         }
         if (editorChromeVisible(state.isFullscreenPreview)) {

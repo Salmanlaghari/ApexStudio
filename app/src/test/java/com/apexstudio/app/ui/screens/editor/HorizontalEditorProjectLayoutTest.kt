@@ -146,7 +146,11 @@ class HorizontalEditorProjectLayoutTest {
     @Test
     fun openingPortraitFiltersKeepsPreviewLocked() {
         val vm = editor(9f / 16f)
-        show(vm, entryWorkspace = "preview-lock-test")
+        show(vm)
+        // Normal portrait edit entry opens the reference Filters workspace once;
+        // close it before exercising the real Filters dock action below.
+        compose.onNodeWithContentDescription("Close filters").performClick()
+        compose.waitForIdle()
         compose.runOnIdle { vm.selectClip("main-video") }
         compose.waitForIdle()
 

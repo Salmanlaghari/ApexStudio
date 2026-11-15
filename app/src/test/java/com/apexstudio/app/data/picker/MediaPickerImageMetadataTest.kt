@@ -40,6 +40,7 @@ class MediaPickerImageMetadataTest {
             bitmap.recycle()
         }
         StrictImageProvider.imageFile = imageFile
+        StrictImageProvider.imageMimeType = "image/png"
         StrictImageProvider.unsupportedProjectionQueries = 0
         StrictImageProvider.streamOpens = 0
         val provider = Robolectric.buildContentProvider(StrictImageProvider::class.java)
@@ -73,6 +74,57 @@ class MediaPickerImageMetadataTest {
             StrictImageProvider.streamOpens)
 
         imageFile.delete()
+    }
+
+    @Test
+    fun `provider JPEG EXIF orientation determines portrait display aspect`() {
+        val context = RuntimeEnvironment.getApplication()
+        val imageFile = File(context.cacheDir, "provider-image-exif.jpg")
+        val bitmap = Bitmap.createBitmap(192, 108, Bitmap.Config.ARGB_8888)
+        try {
+            imageFile.outputStream().use { output ->
+                assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 100, output))
+            }
+        } finally {
+            bitmap.recycle()
+        }
+        android.media.ExifInterface(imageFile.absolutePath).apply {
+            setAttribute(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_ROTATE_90.toString(),
+            )
+            saveAttributes()
+        }
+        StrictImageProvider.imageFile = imageFile
+        StrictImageProvider.imageMimeType = "image/jpeg"
+        StrictImageProvider.streamOpens = 0
+        val provider = Robolectric.buildContentProvider(StrictImageProvider::class.java)
+            .create(ProviderInfo().apply {
+                authority = AUTHORITY
+                exported = false
+                grantUriPermissions = true
+            })
+            .get()
+        ShadowContentResolver.registerProviderInternal(AUTHORITY, provider)
+        val uri = Uri.parse("content://$AUTHORITY/document/rotated-photo")
+
+        val extract = MediaPickerHelper::class.java
+            .getDeclaredMethod("extractMetadata", Uri::class.java)
+            .apply { isAccessible = true }
+        val result = try {
+            extract.invoke(MediaPickerHelper(context), uri) as? MediaMetadata
+        } finally {
+            imageFile.delete()
+            StrictImageProvider.imageMimeType = "image/png"
+        }
+
+        assertNotNull("valid EXIF JPEG must be read from a generic provider", result)
+        assertEquals(192, result!!.width)
+        assertEquals(108, result.height)
+        assertEquals(90, result.rotationDegrees)
+        assertEquals(9f / 16f, result.sourceDisplayAspectRatio!!, 0.001f)
+        assertEquals("dimensions and EXIF are read through separate provider streams", 2,
+            StrictImageProvider.streamOpens)
     }
 
     @Test
@@ -111,7 +163,7 @@ class MediaPickerImageMetadataTest {
     class StrictImageProvider : ContentProvider() {
         override fun onCreate(): Boolean = true
 
-        override fun getType(uri: Uri): String = "image/png"
+        override fun getType(uri: Uri): String = imageMimeType
 
         override fun query(
             uri: Uri,
@@ -150,6 +202,7 @@ class MediaPickerImageMetadataTest {
 
         companion object {
             lateinit var imageFile: File
+            var imageMimeType = "image/png"
             var unsupportedProjectionQueries = 0
             var streamOpens = 0
         }

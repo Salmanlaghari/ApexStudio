@@ -10,10 +10,14 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
+import com.apexstudio.app.data.filter.GpuColorProfiles
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -92,6 +96,61 @@ class VideoTimelineHeaderTest {
             .fetchSemanticsNode().boundsInRoot
 
         assertTrue("Ruler labels overlap at minimum zoom: first=$firstLabel next=$nextLabel", nextLabel.left >= firstLabel.right)
+    }
+
+    @Test
+    fun stateDrivenTimelineForwardsEveryMultiSelectMutation() {
+        var duplicated = false
+        var grouped = false
+        var speedApplied = false
+        var filterApplied = false
+        var lutApplied = false
+        val clip = MediaClip("main", "Main", "file:///main.mp4", 10_000L, trimEndMs = 10_000L)
+        val state = EditorState(
+            project = Project(id = "p", name = "Project", durationMs = 10_000L, clips = listOf(clip)),
+            durationMs = 10_000L,
+            multiSelectMode = true,
+            selectedClipIds = setOf("main")
+        )
+        compose.setContent {
+            VideoTimeline(
+                state = state,
+                onScrub = {},
+                onSelectClip = {},
+                onReorderClips = {},
+                onAddMedia = {},
+                onSplitClip = { _, _ -> },
+                onDuplicateClip = {},
+                onDeleteClip = {},
+                onZoomChange = {},
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                onDuplicateSelectedClips = { duplicated = true },
+                onGroupSelectedClips = { grouped = true },
+                onApplySpeedToSelectedClips = { speedApplied = true },
+                onApplyFilterToSelectedClips = { filterApplied = true },
+                onApplyLutToSelectedClips = { _, _ -> lutApplied = true },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        fun invokeAction(tag: String) {
+            compose.onNodeWithTag("timeline-multiselect-actions").performClick()
+            compose.onNodeWithTag(tag).performScrollTo().performClick()
+        }
+        invokeAction("timeline-action-duplicate")
+        invokeAction("timeline-action-group")
+        invokeAction("timeline-action-speed-1.5x")
+        invokeAction("timeline-action-filter-vignette")
+        invokeAction("timeline-action-lut-${GpuColorProfiles.ALL.first().id}")
+
+        compose.runOnIdle {
+            assertTrue(duplicated)
+            assertTrue(grouped)
+            assertTrue(speedApplied)
+            assertTrue(filterApplied)
+            assertTrue(lutApplied)
+        }
     }
 
     @Test

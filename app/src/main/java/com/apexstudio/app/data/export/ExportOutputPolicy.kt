@@ -130,6 +130,22 @@ internal fun isVerifiedFasterCfrSource(
 }
 
 /**
+ * Project export must not drop samples solely because metadata reports an integer-multiple CFR
+ * source; use its full PTS audit when available. Preserve speed-effect and ordinary rate-cap behavior.
+ */
+internal fun shouldDropProjectSourceFrames(
+    adjustment: SourceFrameRateAdjustment,
+    sourceFrameRate: Float?,
+    sourceCadence: SourceFrameCadenceAudit?,
+    requestedFps: Int,
+    speedEffectApplied: Boolean
+): Boolean = adjustment.dropSourceFrames && (
+    speedEffectApplied ||
+        !shouldInspectSourceCadenceForCfrNormalization(sourceFrameRate, requestedFps, speedEffectApplied) ||
+        isVerifiedFasterCfrSource(sourceFrameRate, sourceCadence, requestedFps, speedEffectApplied)
+    )
+
+/**
  * Run after source geometry/speed/animation but before PiP and foreground overlays.
  * A fixed output size avoids accidentally encoding a 4K source for a 720p request.
  * Only a known source cadence above the target gets FrameDropEffect; equal/lower/unknown sources

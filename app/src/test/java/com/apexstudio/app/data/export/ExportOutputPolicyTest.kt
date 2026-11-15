@@ -102,6 +102,25 @@ class ExportOutputPolicyTest {
         assertFalse(isVerifiedFasterCfrSource(60f, constant60, 30, speedEffectApplied = true))
     }
 
+    @Test
+    fun projectFrameDropRequiresSourceCadenceProofWhenTheRateScanIsApplicable() {
+        val constant60 = auditSourceFrameTimestamps((0 until 60).map { it * 16_667L }, 60f)
+        val variable60 = auditSourceFrameTimestamps(
+            listOf(0L, 16_667L, 33_334L, 83_334L, 100_001L, 116_668L), 60f
+        )
+        val reported60ButActual30 = auditSourceFrameTimestamps((0 until 30).map { it * 33_333L }, 60f)
+        val fasterMetadata = sourceFrameRateAdjustment(60f, 30, speedEffectApplied = false)
+
+        assertTrue(shouldDropProjectSourceFrames(fasterMetadata, 60f, constant60, 30, speedEffectApplied = false))
+        assertFalse(shouldDropProjectSourceFrames(fasterMetadata, 60f, variable60, 30, speedEffectApplied = false))
+        assertFalse(shouldDropProjectSourceFrames(fasterMetadata, 60f, reported60ButActual30, 30, speedEffectApplied = false))
+
+        val ordinary30To24 = sourceFrameRateAdjustment(30f, 24, speedEffectApplied = false)
+        assertTrue(shouldDropProjectSourceFrames(ordinary30To24, 30f, null, 24, speedEffectApplied = false))
+        val accelerated = sourceFrameRateAdjustment(30f, 30, constantSpeed = 2f, speedEffectApplied = true)
+        assertTrue(shouldDropProjectSourceFrames(accelerated, 30f, null, 30, speedEffectApplied = true))
+    }
+
     @Test fun `8K request uses exact landscape and portrait UHD output dimensions`() {
         assertEquals(7680 to 4320, AspectCropTransformation.targetSizeFor("8K", "16:9"))
         assertEquals(4320 to 7680, AspectCropTransformation.targetSizeFor("8K", "9:16"))

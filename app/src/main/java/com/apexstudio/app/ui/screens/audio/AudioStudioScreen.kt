@@ -145,9 +145,9 @@ fun AudioStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f, "audio-eq-low") { vm.setLowEQ(it.toInt().toShort()) }
-                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f, "audio-eq-mid") { vm.setMidEQ(it.toInt().toShort()) }
-                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f, "audio-eq-high") { vm.setHighEQ(it.toInt().toShort()) }
+                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f, "audio-eq-low") { vm.setLowEQ((it * 1000f).toInt().toShort()) }
+                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f, "audio-eq-mid") { vm.setMidEQ((it * 1000f).toInt().toShort()) }
+                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f, "audio-eq-high") { vm.setHighEQ((it * 1000f).toInt().toShort()) }
                     }
                 }
             }

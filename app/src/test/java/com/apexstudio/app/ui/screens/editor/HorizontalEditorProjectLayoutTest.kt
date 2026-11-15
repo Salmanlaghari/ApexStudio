@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
@@ -176,7 +175,10 @@ class HorizontalEditorProjectLayoutTest {
         compose.onAllNodesWithText("Split").assertCountEquals(1)
         compose.onNodeWithTag("mobile-editor-clip-options").assertIsDisplayed()
 
-        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText("Filters")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Filters action exposes a successful accessibility action", action())
+            }
         compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
         val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val panel = compose.onNodeWithTag("filter-workspace-panel").fetchSemanticsNode().boundsInRoot
@@ -208,7 +210,10 @@ class HorizontalEditorProjectLayoutTest {
 
         val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         compose.onAllNodesWithText("Filters").assertCountEquals(1)
-        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText("Filters")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Filters action exposes a successful accessibility action", action())
+            }
         compose.waitForIdle()
         compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
         val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot

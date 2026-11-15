@@ -794,7 +794,9 @@ private fun ToolbarBarRow(
                                 fontSize = if (compact) 9.sp else 10.sp,
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1,
-                                softWrap = false
+                                softWrap = false,
+                                modifier = Modifier.width(targetWidth),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }

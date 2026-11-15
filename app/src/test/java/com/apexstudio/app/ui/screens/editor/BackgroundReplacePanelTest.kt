@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.and
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.presentation.viewmodel.BackgroundPhase
 import com.apexstudio.app.presentation.viewmodel.BackgroundUiState

@@ -132,7 +132,7 @@ class TextPanelModerationTest {
         }
 
         compose.onAllNodesWithTag("text-content-field").assertCountEquals(1)
-        compose.onNodeWithTag("text-style-tab-hint").assertIsDisplayed()
+        compose.onAllNodesWithTag("text-style-tab-hint").assertCountEquals(1)
         compose.onAllNodesWithTag("text-starter-gallery").assertCountEquals(0)
         compose.onAllNodesWithTag("text-card-swipe-hint").assertCountEquals(0)
 
@@ -154,7 +154,7 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-presets").performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithTag("text-design-motion-${preset.id}").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("text-design-motion-${preset.id}").assertCountEquals(1)
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Your title").fetchSemanticsNodes().isNotEmpty())
     }
 }

@@ -41,7 +41,8 @@ internal fun exportTargetBitrate(config: ExportEngine.ExportConfig): Int {
 /**
  * Media3 1.11.x can stall muxing when continuous audio crosses a long video-sample gap.
  * Below 60 fps keep the existing long-gap fill unless the full source PTS audit proves
- * constant cadence at the requested rate; then use that source interval to preserve its anchors.
+ * constant cadence at the requested rate; then repeat just after the longest observed source
+ * interval, so a repeat event does not collide with a natural source PTS.
  * At 60 fps and above, ask the codec to repeat at the target interval. VFR and unknown sources
  * keep the existing behavior; final PTS assertions remain the cadence contract.
  */
@@ -66,6 +67,8 @@ internal fun exportVideoEncoderSettings(
 
 /** A 0.5-fps metadata tolerance avoids changing cadence for nominal/rounded source rates. */
 private const val SOURCE_FRAME_RATE_TOLERANCE_FPS = 0.5f
+/** Avoid scheduling a repeated frame on the same PTS as a verified source frame. */
+private const val VERIFIED_CFR_REPEAT_PHASE_GUARD_US = 1_000L
 
 internal data class SourceFrameRateAdjustment(
     val dropSourceFrames: Boolean
@@ -132,7 +135,7 @@ internal fun shouldInspectSourceCadenceForRepeatInterval(
     return targetFps < 60 && kotlin.math.abs(sourceFps - targetFps) <= SOURCE_FRAME_RATE_TOLERANCE_FPS
 }
 
-/** Use a shorter repeat interval only when source metadata and the full PTS scan prove target-rate CFR. */
+/** Use a shorter repeat interval only when metadata and full PTS prove target-rate CFR. */
 internal fun verifiedCfrSourceRepeatIntervalUs(
     sourceFrameRate: Float?,
     sourceCadence: SourceFrameCadenceAudit?,
@@ -144,12 +147,14 @@ internal fun verifiedCfrSourceRepeatIntervalUs(
     }
     val targetFps = effectiveExportFrameRate(requestedFps)
     val reportedFps = sourceFrameRate?.takeIf { it.isFinite() && it > 0f } ?: return null
-    val measuredFps = sourceCadence?.constantFrameRateFps ?: return null
+    val cadence = sourceCadence ?: return null
+    val measuredFps = cadence.constantFrameRateFps ?: return null
+    val maximumObservedIntervalUs = cadence.maxIntervalUs ?: return null
     val tolerance = maxOf(SOURCE_FRAME_RATE_TOLERANCE_FPS, targetFps * 0.02f)
     if (kotlin.math.abs(reportedFps - targetFps) > tolerance ||
         kotlin.math.abs(measuredFps - reportedFps) > maxOf(SOURCE_FRAME_RATE_TOLERANCE_FPS, reportedFps * 0.02f)
     ) return null
-    return kotlin.math.round(1_000_000.0 / measuredFps).toLong().takeIf { it > 0L }
+    return (maximumObservedIntervalUs + VERIFIED_CFR_REPEAT_PHASE_GUARD_US).takeIf { it > 0L }
 }
 
 /** True only when metadata and the complete source PTS sequence prove an integer-multiple CFR input. */

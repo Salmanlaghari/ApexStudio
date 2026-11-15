@@ -104,7 +104,7 @@ class ExportOutputPolicyTest {
 
     @Test
     fun sameRateRepeatIntervalRequiresFullCfrProofAndMatchingMetadata() {
-        val constant30 = auditSourceFrameTimestamps((0 until 30).map { it * 33_333L }, 30f)
+        val constant30 = auditSourceFrameTimestamps((0 until 30).map { it * 1_000_000L / 30 }, 30f)
         val variable30 = auditSourceFrameTimestamps(
             listOf(0L, 33_333L, 66_666L, 150_000L, 183_333L, 216_666L),
             30f
@@ -119,7 +119,9 @@ class ExportOutputPolicyTest {
         assertFalse(shouldInspectSourceCadenceForRepeatInterval(null, 30, speedEffectApplied = false))
         assertFalse(shouldInspectSourceCadenceForRepeatInterval(60f, 30, speedEffectApplied = false))
         assertFalse(shouldInspectSourceCadenceForRepeatInterval(30f, 30, speedEffectApplied = true))
-        assertEquals(33_333L, verifiedCfrSourceRepeatIntervalUs(30f, constant30, 30, speedEffectApplied = false))
+        assertEquals(33_333L, constant30.minIntervalUs)
+        assertEquals(33_334L, constant30.maxIntervalUs)
+        assertEquals(34_334L, verifiedCfrSourceRepeatIntervalUs(30f, constant30, 30, speedEffectApplied = false))
         assertNull(verifiedCfrSourceRepeatIntervalUs(30f, variable30, 30, speedEffectApplied = false))
         assertNull(verifiedCfrSourceRepeatIntervalUs(30f, misreported30, 30, speedEffectApplied = false))
         assertNull(verifiedCfrSourceRepeatIntervalUs(null, constant30, 30, speedEffectApplied = false))
@@ -128,7 +130,7 @@ class ExportOutputPolicyTest {
             EXPORT_REPEAT_PREVIOUS_FRAME_INTERVAL_US,
             exportVideoEncoderSettings(config).repeatPreviousFrameIntervalUs
         )
-        assertEquals(33_333L, exportVideoEncoderSettings(config, 33_333L).repeatPreviousFrameIntervalUs)
+        assertEquals(34_334L, exportVideoEncoderSettings(config, 34_334L).repeatPreviousFrameIntervalUs)
     }
 
     @Test

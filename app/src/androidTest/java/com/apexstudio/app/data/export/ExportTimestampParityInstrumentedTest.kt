@@ -3140,7 +3140,11 @@ class ExportTimestampParityInstrumentedTest {
         val timestamps = output.presentationTimesUs
         assertFalse("$label must contain video samples", timestamps.isEmpty())
         assertFalse("$label must not contain negative PTS", timestamps.any { it < 0L })
-        assertEquals("$label must not contain duplicate presentation timestamps", timestamps.size, timestamps.distinct().size)
+        assertEquals(
+            "$label must not contain duplicate presentation timestamps; PTS=${timestamps.joinToString()}",
+            timestamps.size,
+            timestamps.distinct().size
+        )
         val movieDurationUs = output.movieDurationUs
         assertTrue(
             "$label must report a positive movie duration; video track=${output.videoTrackDurationUs}us; " +

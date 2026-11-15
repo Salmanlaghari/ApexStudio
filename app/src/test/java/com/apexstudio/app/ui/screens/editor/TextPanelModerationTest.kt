@@ -172,16 +172,16 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-edit").assertIsDisplayed()
-        compose.onNodeWithText("Text & Font").assertIsDisplayed()
+        compose.onNodeWithText("Text & Font").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("text-tab-styles")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithText("Style & Color").assertIsDisplayed()
+        compose.onNodeWithText("Style & Color").performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithTag("text-content-field").assertCountEquals(0)
 
         compose.onNodeWithTag("text-tab-animation")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
-        compose.onNodeWithText("Preview & Intro").assertIsDisplayed()
-        compose.onNodeWithText("Mask").assertIsDisplayed()
+        compose.onNodeWithText("Preview & Intro").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Mask").performScrollTo().assertIsDisplayed()
     }
 
     @Test

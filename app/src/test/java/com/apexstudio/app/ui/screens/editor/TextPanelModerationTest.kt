@@ -172,7 +172,7 @@ class TextPanelModerationTest {
         }
 
         compose.onNodeWithTag("text-tab-edit").assertIsDisplayed()
-        compose.onNodeWithTag("text-content-field").assertIsDisplayed()
+        compose.onNodeWithText("Text & Font").assertIsDisplayed()
         compose.onNodeWithTag("text-tab-styles")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.onNodeWithText("Style & Color").assertIsDisplayed()

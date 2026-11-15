@@ -224,31 +224,17 @@ fun EditorViewModel.setLutCompareSplitPosition(split: Float) = _state.update {
     it.copy(lutCompareSplitPosition = split.coerceIn(0f, 1f))
 }
 
-fun EditorViewModel.setLutContrast(value: Float) = _state.update { it.copy(lutContrast = value.coerceIn(0.5f, 2.0f)) }
-
-fun EditorViewModel.setLutSaturation(value: Float) = _state.update { it.copy(lutSaturation = value.coerceIn(0f, 2.0f)) }
-
-fun EditorViewModel.setLutTemperature(value: Float) = _state.update { it.copy(lutTemperature = value.coerceIn(2000f, 9000f)) }
-
-fun EditorViewModel.setLutTint(value: Float) = _state.update { it.copy(lutTint = value.coerceIn(-100f, 100f)) }
-
 fun EditorViewModel.resetLutGrading() {
     val before = _state.value
     val resetSettings = com.apexstudio.app.domain.model.ProjectLutSettings()
     val projectNeedsReset = before.project?.let { effectiveProjectLutSettings(it) != resetSettings } == true
-    val panelNeedsReset = before.activeFilterId != null || before.filterIntensity != 1f ||
-        before.lutContrast != 1f || before.lutSaturation != 1f ||
-        before.lutTemperature != 5000f || before.lutTint != 0f || before.lutCompareMode
+    val panelNeedsReset = before.activeFilterId != null || before.filterIntensity != 1f || before.lutCompareMode
     if (!projectNeedsReset && !panelNeedsReset) return
     pushUndo()
     _state.update {
         it.copy(
             activeFilterId = null,
             filterIntensity = 1.0f,
-            lutContrast = 1.0f,
-            lutSaturation = 1.0f,
-            lutTemperature = 5000f,
-            lutTint = 0f,
             lutCompareMode = false
         )
     }

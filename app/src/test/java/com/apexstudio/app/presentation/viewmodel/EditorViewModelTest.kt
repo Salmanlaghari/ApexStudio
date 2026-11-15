@@ -276,15 +276,6 @@ class EditorViewModelTest {
     }
 
     @Test
-    fun `setLutTemperature coerces into kelvin range`() {
-        val vm = viewModel()
-        vm.setLutTemperature(50000f)
-        assertEquals(9000f, vm.state.value.lutTemperature, 0.001f)
-        vm.setLutTemperature(100f)
-        assertEquals(2000f, vm.state.value.lutTemperature, 0.001f)
-    }
-
-    @Test
     fun `curve preview stays live and Done commits one undo step`() {
         val originalKeyframe = com.apexstudio.app.domain.model.Keyframe(
             id = "end", timeMs = 1_000L, scale = 1f,

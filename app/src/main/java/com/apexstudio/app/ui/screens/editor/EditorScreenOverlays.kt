@@ -257,10 +257,6 @@ fun ColorGradingPanelOverlay(
                 splitPosition = state.lutCompareSplitPosition,
                 favoriteIds = state.lutFavoriteIds,
                 customLuts = state.customImportedLuts,
-                contrast = state.lutContrast,
-                saturation = state.lutSaturation,
-                temperatureK = state.lutTemperature,
-                tint = state.lutTint,
                 thumbnails = state.filterThumbnails,
                 galleryViewMode = state.lutGalleryViewMode,
                 isLoadingThumbnails = state.filterThumbnailsLoading,
@@ -273,10 +269,6 @@ fun ColorGradingPanelOverlay(
                 onToggleFavorite = { vm.toggleLutFavorite(it) },
                 onToggleCompare = { vm.toggleLutCompareMode() },
                 onSplitPositionChange = { vm.setLutCompareSplitPosition(it) },
-                onContrastChange = { vm.setLutContrast(it) },
-                onSaturationChange = { vm.setLutSaturation(it) },
-                onTemperatureChange = { vm.setLutTemperature(it) },
-                onTintChange = { vm.setLutTint(it) },
                 onReset = { vm.resetLutGrading() },
                 onClose = {
                     vm.closeFilterPanel()

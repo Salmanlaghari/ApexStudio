@@ -221,10 +221,6 @@ data class EditorState(
     val lutCompareSplitPosition: Float = 0.5f,
     val lutFavoriteIds: Set<String> = emptySet(),
     val customImportedLuts: List<com.apexstudio.app.data.filter.FilterPreset> = emptyList(),
-    val lutContrast: Float = 1.0f,
-    val lutSaturation: Float = 1.0f,
-    val lutTemperature: Float = 5000f,
-    val lutTint: Float = 0f,
     val lutGalleryViewMode: LutGalleryViewMode = LutGalleryViewMode.STRIP,
     // ---- Phase 3: Pack panels ----
     val editPackPanelOpen: Boolean = false,

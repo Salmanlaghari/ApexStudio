@@ -2,9 +2,6 @@ package com.apexstudio.app.ui.screens.editor
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -66,7 +63,6 @@ import kotlinx.coroutines.launch
  * - Live Before / After Comparison split wiper and hold-to-compare peek
  * - View mode switcher: Multi-column Gallery Grid vs Compact Filmstrip
  * - Frame Sync action to sample whatever video frame the playhead is currently parked at
- * - Secondary color adjustments: Temperature, Tint, Contrast, and Saturation
  * - Favorite presets management and custom search
  */
 @Composable
@@ -79,10 +75,6 @@ fun ColorGradingLutPanel(
     splitPosition: Float,
     favoriteIds: Set<String>,
     customLuts: List<FilterPreset>,
-    contrast: Float,
-    saturation: Float,
-    temperatureK: Float,
-    tint: Float,
     thumbnails: Map<String?, androidx.compose.ui.graphics.ImageBitmap> = emptyMap(),
     galleryViewMode: LutGalleryViewMode = LutGalleryViewMode.GRID,
     isLoadingThumbnails: Boolean = false,
@@ -92,10 +84,6 @@ fun ColorGradingLutPanel(
     onToggleFavorite: (String) -> Unit,
     onToggleCompare: () -> Unit,
     onSplitPositionChange: (Float) -> Unit,
-    onContrastChange: (Float) -> Unit,
-    onSaturationChange: (Float) -> Unit,
-    onTemperatureChange: (Float) -> Unit,
-    onTintChange: (Float) -> Unit,
     onGalleryViewModeChange: (LutGalleryViewMode) -> Unit = {},
     onRefreshThumbnails: () -> Unit = {},
     onReset: () -> Unit,
@@ -109,7 +97,6 @@ fun ColorGradingLutPanel(
     var searchVisible by remember { mutableStateOf(false) }
     var selectedCategoryId by remember { mutableStateOf("all") }
     var isHoldingOriginal by remember { mutableStateOf(false) }
-    var showFineTuneControls by remember { mutableStateOf(false) }
 
     // Raw video frame (un-filtered baseline sample)
     val rawVideoFrame = thumbnails[null]
@@ -294,24 +281,6 @@ fun ColorGradingLutPanel(
                     Icons.Default.RestartAlt,
                     contentDescription = "Reset Grading",
                     tint = ApexPalette.TextSecondary,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-
-            Spacer(Modifier.width(4.dp))
-
-            // White Balance & Tone Fine-Tune Toggle
-            IconButton(
-                onClick = { showFineTuneControls = !showFineTuneControls },
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(if (showFineTuneControls) ApexPalette.NeonPurple.copy(alpha = 0.2f) else ApexPalette.BgElevated)
-            ) {
-                Icon(
-                    Icons.Default.Tune,
-                    contentDescription = "White Balance & Tone",
-                    tint = if (showFineTuneControls) ApexPalette.NeonPurple else ApexPalette.TextSecondary,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -606,83 +575,6 @@ fun ColorGradingLutPanel(
             )
         }
 
-        // --- 7. Secondary Color Adjustments (White Balance, Tone) ---
-        AnimatedVisibility(visible = showFineTuneControls) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(ApexPalette.BgElevated)
-                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
-                    .padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                // Color Temperature (Kelvin)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Temp", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.width(42.dp))
-                    Slider(
-                        value = temperatureK,
-                        onValueChange = onTemperatureChange,
-                        valueRange = 2500f..8500f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonAmber,
-                            activeTrackColor = ApexPalette.NeonAmber
-                        ),
-                        modifier = Modifier.weight(1f).height(24.dp)
-                    )
-                    Text("${temperatureK.toInt()}K", color = ApexPalette.NeonAmber, fontSize = 9.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
-                }
-
-                // Tint
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tint", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.width(42.dp))
-                    Slider(
-                        value = tint,
-                        onValueChange = onTintChange,
-                        valueRange = -50f..50f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonPink,
-                            activeTrackColor = ApexPalette.NeonPink
-                        ),
-                        modifier = Modifier.weight(1f).height(24.dp)
-                    )
-                    Text(String.format("%+d", tint.toInt()), color = ApexPalette.NeonPink, fontSize = 9.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
-                }
-
-                // Contrast
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Contrast", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.width(42.dp))
-                    Slider(
-                        value = contrast,
-                        onValueChange = onContrastChange,
-                        valueRange = 0.5f..1.8f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan
-                        ),
-                        modifier = Modifier.weight(1f).height(24.dp)
-                    )
-                    Text(String.format("%.1fx", contrast), color = ApexPalette.NeonCyan, fontSize = 9.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
-                }
-
-                // Saturation
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sat", color = ApexPalette.TextSecondary, fontSize = 10.sp, modifier = Modifier.width(42.dp))
-                    Slider(
-                        value = saturation,
-                        onValueChange = onSaturationChange,
-                        valueRange = 0.0f..2.0f,
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan
-                        ),
-                        modifier = Modifier.weight(1f).height(24.dp)
-                    )
-                    Text(String.format("%.1fx", saturation), color = ApexPalette.NeonCyan, fontSize = 9.sp, modifier = Modifier.width(38.dp), textAlign = TextAlign.End)
-                }
-            }
-        }
     }
 }
 

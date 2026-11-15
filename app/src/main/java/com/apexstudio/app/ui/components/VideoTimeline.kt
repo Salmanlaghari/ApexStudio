@@ -2179,6 +2179,11 @@ private fun TimelineVideoLayerRow(
                 // Trim-handle drag state (pixels, local until commit).
                 var trimStartDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
                 var trimEndDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
+                // Preserve the physical pointer delta separately from the rendered offset: the
+                // preview is rounded through output milliseconds, so feeding it back into the
+                // next event accumulates drift on speed-ramped clips.
+                var trimStartRequestedDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
+                var trimEndRequestedDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
                 val density = LocalDensity.current
                 // Snap targets are computed at drag END (the only place
                 // they're read) from the live playhead — never
@@ -2358,7 +2363,8 @@ private fun TimelineVideoLayerRow(
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val requestedDxPx = trimStartDxPx + dragAmount.x
+                                                val requestedDxPx = trimStartRequestedDxPx + dragAmount.x
+                                                trimStartRequestedDxPx = requestedDxPx
                                                 val newStart = timelineTrimStartForOutputDeltaMs(
                                                     clip,
                                                     sourceTrimDeltaToMs(requestedDxPx, msToDp, density.density)
@@ -2372,14 +2378,15 @@ private fun TimelineVideoLayerRow(
                                             onDragEnd = {
                                                 val newStart = timelineTrimStartForOutputDeltaMs(
                                                     clip,
-                                                    sourceTrimDeltaToMs(trimStartDxPx, msToDp, density.density)
+                                                    sourceTrimDeltaToMs(trimStartRequestedDxPx, msToDp, density.density)
                                                 )
+                                                trimStartRequestedDxPx = 0f
                                                 trimStartDxPx = 0f
                                                 if (newStart != clip.trimStartMs) {
                                                     onTrimClip(clip.id, newStart, clip.trimEndMs)
                                                 }
                                             },
-                                            onDragCancel = { trimStartDxPx = 0f }
+                                            onDragCancel = { trimStartRequestedDxPx = 0f; trimStartDxPx = 0f }
                                         )
                                     }
                             )
@@ -2395,7 +2402,8 @@ private fun TimelineVideoLayerRow(
                                         detectDragGestures(
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
-                                                val requestedDxPx = trimEndDxPx + dragAmount.x
+                                                val requestedDxPx = trimEndRequestedDxPx + dragAmount.x
+                                                trimEndRequestedDxPx = requestedDxPx
                                                 val newEnd = timelineTrimEndForOutputDeltaMs(
                                                     clip,
                                                     sourceTrimDeltaToMs(requestedDxPx, msToDp, density.density)
@@ -2407,14 +2415,15 @@ private fun TimelineVideoLayerRow(
                                             onDragEnd = {
                                                 val newEnd = timelineTrimEndForOutputDeltaMs(
                                                     clip,
-                                                    sourceTrimDeltaToMs(trimEndDxPx, msToDp, density.density)
+                                                    sourceTrimDeltaToMs(trimEndRequestedDxPx, msToDp, density.density)
                                                 )
+                                                trimEndRequestedDxPx = 0f
                                                 trimEndDxPx = 0f
                                                 if (newEnd != clip.trimEndMs) {
                                                     onTrimClip(clip.id, clip.trimStartMs, newEnd)
                                                 }
                                             },
-                                            onDragCancel = { trimEndDxPx = 0f }
+                                            onDragCancel = { trimEndRequestedDxPx = 0f; trimEndDxPx = 0f }
                                         )
                                     }
                             )

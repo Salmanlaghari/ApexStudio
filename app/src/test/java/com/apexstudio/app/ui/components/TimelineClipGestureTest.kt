@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
@@ -20,7 +21,10 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.swipe
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.SpeedPoint
+import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.trimClip
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -49,6 +53,7 @@ class TimelineClipGestureTest {
     private fun timeline(
         selectedClipId: String?,
         clips: List<MediaClip> = listOf(clip("clip-a")),
+        totalDurationMs: Long = clips.sumOf { it.durationMs }.coerceAtLeast(1_000L),
         onSelectClip: (String) -> Unit = {},
         onReorderClips: (List<String>) -> Unit = {},
         onMoveClipOffset: (String, Long) -> Unit = { _, _ -> },
@@ -59,7 +64,7 @@ class TimelineClipGestureTest {
     ) {
         VideoTimeline(
             clips = clips,
-            totalDurationMs = clips.sumOf { it.durationMs }.coerceAtLeast(1_000L),
+            totalDurationMs = totalDurationMs,
             playheadMs = 0L,
             selectedClipId = selectedClipId,
             onSelectClip = onSelectClip,
@@ -216,15 +221,27 @@ class TimelineClipGestureTest {
     }
 
     @Test
-    fun speedRampedOverlayHeadGripUsesOutputTimeGeometry() = checkRampedOverlayTrim(head = true)
+    fun speedRampedOverlayHeadGripUsesOutputTimeGeometry() =
+        checkRampedOverlayTrim(head = true, dragDeltaPx = 54f)
 
     @Test
-    fun speedRampedOverlayTailGripUsesOutputTimeGeometry() = checkRampedOverlayTrim(head = false)
+    fun speedRampedOverlayHeadGripExpandsAndPreservesRightEdge() =
+        checkRampedOverlayTrim(head = true, dragDeltaPx = -54f)
 
-    private fun checkRampedOverlayTrim(head: Boolean) {
+    @Test
+    fun speedRampedOverlayTailGripUsesOutputTimeGeometry() =
+        checkRampedOverlayTrim(head = false, dragDeltaPx = 54f)
+
+    @Test
+    fun speedRampedOverlayTailGripCanContract() =
+        checkRampedOverlayTrim(head = false, dragDeltaPx = -54f)
+
+    private fun checkRampedOverlayTrim(head: Boolean, dragDeltaPx: Float) {
         val overlay = clip("ramped-overlay").copy(
-            durationMs = 4_000L,
-            trimEndMs = 1_500L,
+            durationMs = 10_000L,
+            trimStartMs = 2_000L,
+            trimEndMs = 8_000L,
+            timelineOffsetMs = 6_000L,
             type = ClipType.OVERLAY,
             trackIndex = 1,
             speedPoints = listOf(
@@ -233,7 +250,24 @@ class TimelineClipGestureTest {
                 SpeedPoint(1f, 2f),
             ),
         )
-        var committed: Pair<Long, Long>? = null
+        val projectDurationMs = 20_000L
+        val project = Project(
+            id = "overlay-gesture-project",
+            name = "Overlay gesture project",
+            durationMs = projectDurationMs,
+            clips = listOf(overlay),
+        )
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.value = viewModel.state.value.copy(
+                project = project,
+                durationMs = projectDurationMs,
+            )
+        }
+        var trimCallbackCount = 0
+        val timelineClips = mutableStateOf(listOf(overlay))
+        // The overlay starts at 6s (324dp at 1x); position the selected edge
+        // within the narrow test viewport before injecting the gesture.
+        val timelineScrollState = ScrollState(if (head) 500 else 1_450)
         composeRule.setContent {
             val configuration = LocalViewConfiguration.current
             CompositionLocalProvider(
@@ -244,38 +278,63 @@ class TimelineClipGestureTest {
             ) {
                 timeline(
                     selectedClipId = overlay.id,
-                    clips = listOf(overlay),
-                    onTrimClip = { _, start, end -> committed = start to end },
+                    clips = timelineClips.value,
+                    totalDurationMs = projectDurationMs,
+                    scrollState = timelineScrollState,
+                    onTrimClip = { clipId, start, end ->
+                        trimCallbackCount++
+                        vm.trimClip(clipId, start, end)
+                        timelineClips.value = vm.state.value.project?.clips.orEmpty()
+                    },
                 )
             }
         }
+        composeRule.waitForIdle()
 
         val grip = composeRule.onNodeWithTag(
             "timeline-overlay-trim-${if (head) "start" else "end"}-${overlay.id}",
             useUnmergedTree = true,
         )
-        val gripBounds = grip.fetchSemanticsNode().boundsInRoot
+        grip.assertIsDisplayed()
+        val before = vm.state.value.project!!.clips.single()
         grip.performTouchInput {
-            down(center)
-            moveBy(Offset(54f, 0f)) // 500 output ms at 2x density.
-            up()
+            swipe(
+                start = center,
+                end = center + Offset(dragDeltaPx, 0f),
+                durationMillis = 300,
+            ) // 500 output ms at 2x density.
         }
         composeRule.waitForIdle()
 
-        val (start, end) = committed ?: throw AssertionError(
-            "No overlay trim callback: bounds=$gripBounds root=${composeRule.onRoot().fetchSemanticsNode().boundsInRoot} " +
-                "rail=${composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot}"
-        )
+        val after = vm.state.value.project!!.clips.single()
         composeRule.runOnIdle {
-            val changed = overlay.copy(trimStartMs = start, trimEndMs = end)
-            val outputDelta = if (head) {
-                overlay.effectiveDurationMs() - changed.effectiveDurationMs()
+            assertEquals("trim grip should commit exactly one edit", 1, trimCallbackCount)
+            val expectedDurationChange =
+                if ((head && dragDeltaPx > 0f) || (!head && dragDeltaPx < 0f)) -500.0 else 500.0
+            assertEquals(
+                expectedDurationChange,
+                (after.effectiveDurationMs() - before.effectiveDurationMs()).toDouble(),
+                2.0,
+            )
+            org.junit.Assert.assertTrue(after.trimStartMs >= 0L)
+            org.junit.Assert.assertTrue(after.trimEndMs - after.trimStartMs >= 100L)
+            org.junit.Assert.assertTrue(after.trimEndMs <= after.durationMs)
+
+            val beforeBoundary = if (head) before.trimStartMs else before.trimEndMs
+            val afterBoundary = if (head) after.trimStartMs else after.trimEndMs
+            if (dragDeltaPx > 0f) org.junit.Assert.assertTrue(afterBoundary > beforeBoundary)
+            else org.junit.Assert.assertTrue(afterBoundary < beforeBoundary)
+            val outputEquivalentSourceDelta = if (dragDeltaPx > 0f) 500L else -500L
+            org.junit.Assert.assertNotEquals(beforeBoundary + outputEquivalentSourceDelta, afterBoundary)
+
+            if (head) {
+                assertEquals(
+                    before.timelineOffsetMs + before.effectiveDurationMs(),
+                    after.timelineOffsetMs + after.effectiveDurationMs(),
+                )
             } else {
-                changed.effectiveDurationMs() - overlay.effectiveDurationMs()
+                assertEquals(before.timelineOffsetMs, after.timelineOffsetMs)
             }
-            assertEquals(500.0, outputDelta.toDouble(), 2.0)
-            if (head) org.junit.Assert.assertNotEquals(overlay.trimStartMs + 500L, start)
-            else org.junit.Assert.assertNotEquals(overlay.trimEndMs + 500L, end)
         }
     }
 }

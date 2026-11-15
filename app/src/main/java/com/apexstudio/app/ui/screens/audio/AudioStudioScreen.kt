@@ -16,8 +16,6 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +24,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +40,7 @@ import com.apexstudio.app.presentation.viewmodel.EditorViewModelFactory
 import com.apexstudio.app.ui.components.RealAudioWaveform
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
+import com.apexstudio.app.ui.screens.editor.SfxLibraryPanelOverlay
 import com.apexstudio.app.ui.theme.ApexPalette
 import com.apexstudio.app.util.WaveformGenerator
 import com.apexstudio.app.data.audio.TrackWaveformCache
@@ -151,93 +154,6 @@ fun AudioStudioScreen(
                 }
             }
 
-            SectionLabel("AI VOICE ENHANCEMENT")
-            GlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 14.dp
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.GraphicEq,
-                                null,
-                                tint = ApexPalette.BgDeep,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "AI Noise Reduction",
-                                color = ApexPalette.TextPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "Reduce noise & enhance clarity",
-                                color = ApexPalette.TextSecondary,
-                                fontSize = 9.sp
-                            )
-                        }
-                        Switch(
-                            checked = state.aiVoiceEnhance,
-                            onCheckedChange = { vm.toggleAiVoice() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = ApexPalette.NeonCyan,
-                                checkedTrackColor = ApexPalette.NeonCyan.copy(alpha = 0.3f)
-                            )
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Clarity",
-                        color = ApexPalette.TextSecondary,
-                        fontSize = 9.sp
-                    )
-                    Slider(
-                        value = state.clarity,
-                        onValueChange = { vm.setClarity(it) },
-                        colors = SliderDefaults.colors(
-                            thumbColor = ApexPalette.NeonCyan,
-                            activeTrackColor = ApexPalette.NeonCyan,
-                            inactiveTrackColor = ApexPalette.BgElevated
-                        )
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(32.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(ApexPalette.NeonCyan, ApexPalette.NeonPurple)
-                                )
-                            )
-                            .clickable { vm.toggleAiVoice() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "Apply Enhancement",
-                            color = ApexPalette.BgDeep,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-            }
-
             SectionLabel("VOICE CHANGER + EFFECTS")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -291,17 +207,59 @@ fun AudioStudioScreen(
                 }
             }
 
-            SectionLabel("SOUND FX LIBRARY")
+            SectionLabel("SOUND EFFECTS")
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    for (name in listOf("Riser", "Transition", "Ambience", "Whoosh", "Impact")) {
-                        FxLibraryRow(name)
-                        Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                        .clickable(role = Role.Button) { vm.openSfxLibraryPanel() }
+                        .testTag("audio-open-sfx-library")
+                        .padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.NeonPurple.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.GraphicEq, null, tint = ApexPalette.NeonPurple, modifier = Modifier.size(17.dp))
                     }
+                    Spacer(Modifier.width(9.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Browse procedural sound effects", color = ApexPalette.TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Preview, render and add clips to this project", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                    }
+                    Icon(Icons.Default.Add, null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(18.dp))
                 }
+            }
+        }
+        if (audioState.sfxLibraryPanelOpen) {
+            Dialog(
+                onDismissRequest = { vm.closeSfxLibraryPanel() },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                SfxLibraryPanelOverlay(
+                    state = audioState,
+                    vm = vm,
+                    onAddEffect = { effect, filePath, durationMs, intensity ->
+                        vm.addAudioTrack(
+                            name = effect.displayName,
+                            uri = filePath,
+                            kind = AudioTrack.Kind.SFX,
+                            sourceDurationMs = durationMs,
+                            sfxEffectId = effect.id,
+                            sfxIntensity = intensity
+                        )
+                    }
+                )
             }
         }
     }
@@ -547,60 +505,6 @@ private fun EqKnob(name: String, freq: String, value: Float, onValueChange: (Flo
     }
 }
 
-@Composable
-private fun FxLibraryRow(name: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(ApexPalette.BgElevated)
-            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(8.dp))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.radialGradient(
-                        listOf(ApexPalette.NeonEmerald.copy(alpha = 0.4f), Color.Transparent)
-                    )
-                )
-                .border(1.dp, ApexPalette.NeonEmerald.copy(alpha = 0.5f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.MusicNote,
-                null,
-                tint = ApexPalette.NeonEmerald,
-                modifier = Modifier.size(14.dp)
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                name,
-                color = ApexPalette.TextPrimary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                "FX Library",
-                color = ApexPalette.TextTertiary,
-                fontSize = 8.sp
-            )
-        }
-        Icon(
-            Icons.Default.PlayArrow,
-            null,
-            tint = ApexPalette.NeonCyan,
-            modifier = Modifier
-                .size(20.dp)
-                .clickable { }
-        )
-    }
-}
 // ====================================================================
 // Phase E: voice-changer + audio effects composables.
 // ====================================================================

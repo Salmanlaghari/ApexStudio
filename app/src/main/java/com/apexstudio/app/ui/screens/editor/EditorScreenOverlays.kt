@@ -620,6 +620,11 @@ fun TextPanelOverlay(
                     vm.closeTextPanel()
                 },
                 onOpenTextMask = { vm.openTextMaskPanel() },
+                onToggleTextKeyframe = {
+                    if (textClip != null && activeOverlayId != null) {
+                        vm.toggleTextKeyframeAtPlayhead(textClip.id, activeOverlayId)
+                    }
+                },
                 captionUiState = captionUiState,
                 onAutoCaptions = {
                     textClip?.let {

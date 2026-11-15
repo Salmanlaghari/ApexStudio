@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashMarker
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.data.picker.MediaPickerHelper
+import com.apexstudio.app.data.picker.projectAspectRatioFromMedia
 import com.apexstudio.app.data.picker.PreviewStartupLatency
 import com.apexstudio.app.data.picker.persistPickedMediaToAppStorage
 import com.apexstudio.app.data.repository.MediaRepository
@@ -250,8 +251,9 @@ fun HomeScreen(
                 val firstSelectedVideo = pickedClips.firstOrNull { it.first.type == ClipType.VIDEO }
                 val projectName = metadataList.first().name.substringBeforeLast('.')
                 // Normal Add Video and AI Add Video share this project-creation path.
-                // Persist source geometry before the editor's player has decoded a frame.
-                val sourceAspect = firstSelectedVideo?.first?.sourceVideoAspectRatio
+                // Persist source geometry before video decode; still-only projects use the
+                // image display aspect so their portrait/landscape shell is correct too.
+                val sourceAspect = projectAspectRatioFromMedia(metadataList)
                 val newProject = repo.createProject(
                     name = projectName,
                     clips = clips,

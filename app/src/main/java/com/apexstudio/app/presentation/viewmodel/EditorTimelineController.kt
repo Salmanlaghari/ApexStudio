@@ -1336,24 +1336,6 @@ fun EditorViewModel.duplicateClip(clipId: String) {
     )
 }
 
-
-fun EditorViewModel.cutClipAtPlayhead() {
-    val clipId = _state.value.selectedClipId ?: return
-    val atMs = _state.value.currentTimeMs
-    pushUndo()
-    _state.update { s ->
-        s.copy(project = s.project?.copy(
-            clips = s.project.clips.map {
-                if (it.id == clipId) {
-                    val end = atMs.coerceIn(it.trimStartMs, it.trimEndMs)
-                    it.copy(trimEndMs = end, durationMs = end - it.trimStartMs)
-                } else it
-            }
-        ))
-    }
-}
-
-
 fun EditorViewModel.deleteClip(clipId: String) {
     pushUndo()
     _state.update { s ->

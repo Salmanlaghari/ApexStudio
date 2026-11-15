@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
+import com.apexstudio.app.data.picker.projectAspectRatioFromMedia
 import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
@@ -399,11 +400,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             if (isOverlayPick && created != null) {
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
-                val aspect = if (isImage) {
-                    ProjectAspectRatio.fromDimensions(resolvedMeta.width, resolvedMeta.height)
-                } else {
-                    resolvedMeta.sourceVideoAspectRatio
-                } ?: (16f / 9f)
+                val aspect = effectiveMeta.sourceDisplayAspectRatio ?: (16f / 9f)
                 // First free overlay layer (OVL1 = trackIndex 1, ...),
                 // or the explicitly requested layer from the V2 "+".
                 // Multi-pick spreads across consecutive free layers.
@@ -434,7 +431,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             it.type == ClipType.VIDEO && it.trackIndex == 0
         }
         val importedMainAspect = if (!routedToOverlay && (replace || !hasExistingMainVideo)) {
-            mediaList.firstOrNull { it.type == ClipType.VIDEO }?.sourceVideoAspectRatio
+            projectAspectRatioFromMedia(mediaList)
         } else null
         val projectAspect = when {
             routedToOverlay -> s.project?.videoAspectRatio

@@ -14,6 +14,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -63,12 +64,43 @@ class MediaPickerImageMetadataTest {
         assertEquals(MediaPickerHelper.DEFAULT_IMAGE_DURATION_MS, result.durationMs)
         assertEquals(41, result.width)
         assertEquals(23, result.height)
+        assertEquals(0, result.rotationDegrees)
+        assertEquals(41f / 23f, result.sourceDisplayAspectRatio!!, 0.001f)
+        assertNull(result.sourceVideoAspectRatio)
         assertEquals("image extraction must not ask for MediaStore video columns", 0,
             StrictImageProvider.unsupportedProjectionQueries)
-        assertEquals("image dimensions are read from the provider stream", 1,
+        assertEquals("image dimensions and EXIF orientation use provider streams", 2,
             StrictImageProvider.streamOpens)
 
         imageFile.delete()
+    }
+
+    @Test
+    fun `still image display aspect honors EXIF rotation and falls back only when no video exists`() {
+        val portraitPhoto = MediaMetadata(
+            uri = "content://$AUTHORITY/rotated-photo",
+            name = "rotated.jpg",
+            durationMs = 3_000L,
+            width = 1920,
+            height = 1080,
+            fps = 30,
+            type = ClipType.IMAGE,
+            rotationDegrees = 90
+        )
+
+        assertEquals(9f / 16f, portraitPhoto.sourceDisplayAspectRatio!!, 0.001f)
+        assertNull(portraitPhoto.sourceVideoAspectRatio)
+        assertEquals(9f / 16f, projectAspectRatioFromMedia(listOf(portraitPhoto))!!, 0.001f)
+        assertEquals(
+            16f / 9f,
+            projectAspectRatioFromMedia(listOf(portraitPhoto, portraitPhoto.copy(type = ClipType.VIDEO, rotationDegrees = 0)))!!,
+            0.001f
+        )
+        assertEquals(90, photoRotationDegreesFromExif(android.media.ExifInterface.ORIENTATION_ROTATE_90))
+        assertEquals(180, photoRotationDegreesFromExif(android.media.ExifInterface.ORIENTATION_ROTATE_180))
+        assertEquals(270, photoRotationDegreesFromExif(android.media.ExifInterface.ORIENTATION_ROTATE_270))
+        assertEquals(90, photoRotationDegreesFromExif(android.media.ExifInterface.ORIENTATION_TRANSPOSE))
+        assertEquals(270, photoRotationDegreesFromExif(android.media.ExifInterface.ORIENTATION_TRANSVERSE))
     }
 
     private companion object {

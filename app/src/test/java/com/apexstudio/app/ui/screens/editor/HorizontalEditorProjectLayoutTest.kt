@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -31,18 +32,24 @@ import org.robolectric.annotation.Config
 class HorizontalEditorProjectLayoutTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun editor(aspectRatio: Float): EditorViewModel {
+    private fun editor(
+        aspectRatio: Float,
+        clipType: ClipType = ClipType.VIDEO,
+        hasDecodedVideoSize: Boolean = true,
+        exportAspectRatio: String = if (aspectRatio > 1f) "16:9" else "9:16",
+    ): EditorViewModel {
         val clip = MediaClip(
             id = "main-video",
             name = "Project video",
             uri = "file:///missing-horizontal-layout-test.mp4",
             durationMs = 12_000L,
             trimEndMs = 12_000L,
+            type = clipType,
         )
         return EditorViewModel().also { vm ->
             vm._export.value = vm.export.value.copy(
                 settings = vm.export.value.settings.copy(
-                    aspectRatio = if (aspectRatio > 1f) "16:9" else "9:16"
+                    aspectRatio = exportAspectRatio
                 )
             )
             vm._state.value = vm.state.value.copy(
@@ -54,8 +61,8 @@ class HorizontalEditorProjectLayoutTest {
                     videoAspectRatio = aspectRatio,
                 ),
                 durationMs = 12_000L,
-                videoWidth = if (aspectRatio > 1f) 1920 else 1080,
-                videoHeight = if (aspectRatio > 1f) 1080 else 1920,
+                videoWidth = if (!hasDecodedVideoSize) 0 else if (aspectRatio > 1f) 1920 else 1080,
+                videoHeight = if (!hasDecodedVideoSize) 0 else if (aspectRatio > 1f) 1080 else 1920,
                 audioWaveform = floatArrayOf(0.1f, 0.7f, 0.3f, 0.8f, 0.2f),
             )
         }
@@ -88,6 +95,14 @@ class HorizontalEditorProjectLayoutTest {
             val nodes = compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes()
             nodes.isEmpty() || nodes.all { !it.layoutInfo.isPlaced }
         }
+    }
+
+    private fun assertPortraitShellFromSavedProjectAspect() {
+        compose.onNodeWithTag("horizontal-project-workspace").assertDoesNotExist()
+        compose.onNodeWithTag("portrait-preview-pane").assertIsDisplayed()
+        compose.onNodeWithTag("portrait-timeline-pane").assertIsDisplayed()
+        val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        assertTrue("A portrait still uses its saved display aspect: $preview", preview.height > preview.width)
     }
 
     @Test
@@ -284,5 +299,32 @@ class HorizontalEditorProjectLayoutTest {
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Decoded portrait source keeps a tall preview despite saved landscape output: $preview",
             preview.height > preview.width)
+    }
+
+    @Test
+    fun portraitStillUsesSavedSourceAspectOnNormalEntryWithoutVideoDimensions() {
+        show(editor(
+            aspectRatio = 9f / 16f,
+            clipType = ClipType.IMAGE,
+            hasDecodedVideoSize = false,
+            exportAspectRatio = "16:9"
+        ))
+
+        assertPortraitShellFromSavedProjectAspect()
+    }
+
+    @Test
+    fun portraitStillUsesSavedSourceAspectOnAiEntryWithoutVideoDimensions() {
+        show(
+            editor(
+                aspectRatio = 9f / 16f,
+                clipType = ClipType.IMAGE,
+                hasDecodedVideoSize = false,
+                exportAspectRatio = "16:9"
+            ),
+            entryWorkspace = "ai"
+        )
+
+        assertPortraitShellFromSavedProjectAspect()
     }
 }

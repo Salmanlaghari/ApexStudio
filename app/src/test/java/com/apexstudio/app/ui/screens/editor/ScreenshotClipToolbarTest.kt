@@ -121,17 +121,23 @@ class ScreenshotClipToolbarTest {
             }
         }
 
-        val priorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.map { label ->
+        // The selected-clip row is intentionally horizontally scrollable. At
+        // 375dp the first priority actions are visible at rest, while later
+        // actions remain reachable rather than being displayed simultaneously.
+        val initiallyVisiblePriorityBounds = CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.take(4).map { label ->
             composeRule.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         }
         assertTrue(
-            "Horizontal selected-video actions keep the approved priority order",
-            priorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
+            "Horizontal selected-video actions keep the visible approved priority order",
+            initiallyVisiblePriorityBounds.zipWithNext().all { (left, right) -> left.right <= right.left }
         )
+        CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER.drop(4).forEach { label ->
+            composeRule.onNodeWithText(label).performScrollTo().assertIsDisplayed()
+        }
 
-        composeRule.onNodeWithText("Keyframe").performClick()
+        composeRule.onNodeWithText("Keyframe").performScrollTo().performClick()
         assertEquals("Keyframe calls the project action", 1, calls["keyframe"] ?: 0)
-        composeRule.onNodeWithText("Animation").performClick()
+        composeRule.onNodeWithText("Animation").performScrollTo().performClick()
         assertEquals("Animation opens the keyframe editor", 1, calls["animation"] ?: 0)
     }
 

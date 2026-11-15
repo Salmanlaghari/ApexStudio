@@ -39,7 +39,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -396,8 +395,7 @@ fun BackgroundReplacePanel(
                 Text(
                     "Green/blue screens? Open Chroma key + wallpapers",
                     color = ApexPalette.NeonCyan,
-                    fontSize = 11.sp,
-                    modifier = Modifier.testTag("background-chroma-key-link")
+                    fontSize = 11.sp
                 )
             }
 

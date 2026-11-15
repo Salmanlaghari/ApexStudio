@@ -71,9 +71,14 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 enum class TextPanelTab {
+    /** Text entry and the real registered font browser. */
     EDIT,
+    /** Intro/outro, mask, and movement/effects controls. */
     ANIMATION,
+    /** Real text/design motion templates. */
     PRESETS,
+    /** Visual formatting controls separated from text entry. */
+    STYLES,
     CAPTIONS
 }
 
@@ -166,6 +171,8 @@ fun TextPanel(
     // Opens the mask panel (shape/feather/invert) for the selected
     // text overlay; mask keyframes live on the timeline gold strip.
     onOpenTextMask: () -> Unit = {},
+    // Adds/removes a real shared text keyframe at the current playhead.
+    onToggleTextKeyframe: () -> Unit = {},
     initialTab: TextPanelTab = TextPanelTab.EDIT,
     timelineDurationMs: Long = 0L,
     playheadMs: Long = 0L,
@@ -235,9 +242,10 @@ fun TextPanel(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             listOf(
-                TextPanelTab.EDIT to "Edit text",
-                TextPanelTab.ANIMATION to "Motion",
-                TextPanelTab.PRESETS to "Styles",
+                TextPanelTab.PRESETS to "Templates",
+                TextPanelTab.EDIT to "Fonts",
+                TextPanelTab.STYLES to "Styles",
+                TextPanelTab.ANIMATION to "Effects",
                 TextPanelTab.CAPTIONS to "Auto captions"
             ).forEach { (tab, label) ->
                 val isSel = activeTab == tab
@@ -347,6 +355,26 @@ fun TextPanel(
         }
 
         if (activeTab != TextPanelTab.CAPTIONS) Spacer(Modifier.height(8.dp))
+        if (selected != null && activeTab != TextPanelTab.CAPTIONS) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = "◇  Keyframe",
+                    color = ApexThemeTokens.current.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onToggleTextKeyframe)
+                        .testTag("text-keyframe-action")
+                        .semantics { contentDescription = "Toggle text keyframe at playhead" }
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+        }
 
         // Keep this advanced multi-layer template beside the style gallery,
         // not in front of the basic Add text flow.
@@ -474,7 +502,7 @@ fun TextPanel(
         // Mask row: shape/feather/invert for the selected text, edited
         // in the Mask panel. A mask with keyframes shows the gold
         // strip on the timeline text lane (drag diamonds to retime).
-        if (activeTab != TextPanelTab.PRESETS) Row(
+        if (activeTab == TextPanelTab.ANIMATION) Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
@@ -510,7 +538,7 @@ fun TextPanel(
         Spacer(Modifier.height(10.dp))
 
         when (activeTab) {
-            TextPanelTab.EDIT -> {
+            TextPanelTab.EDIT, TextPanelTab.STYLES -> {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(end = 4.dp),
@@ -701,7 +729,7 @@ fun TextPanel(
 
                         }
                     }
-                    item {
+                    if (activeTab == TextPanelTab.STYLES) item {
                         TextFeatureCard("Style & Color") {
 
                 // Bold / Italic toggles
@@ -910,7 +938,7 @@ fun TextPanel(
 
                         }
                     }
-                    item {
+                    if (activeTab == TextPanelTab.STYLES) item {
                         TextFeatureCard("Layout") {
                 // Text alignment relative to the anchor point
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1034,7 +1062,8 @@ fun TextPanel(
 
                         }
                     }
-                    item {
+                    }
+                    if (activeTab == TextPanelTab.STYLES) item {
                         TextFeatureCard("Text Layer") {
                 // Quick Duplicate and Delete Buttons
                 Row(

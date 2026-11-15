@@ -157,4 +157,48 @@ class TextPanelModerationTest {
         compose.onAllNodesWithTag("text-design-motion-${preset.id}").assertCountEquals(1)
         org.junit.Assert.assertTrue(compose.onAllNodesWithText("Your title").fetchSemanticsNodes().isNotEmpty())
     }
+
+
+    @Test
+    fun contextualTabsKeepTextFontsStylesAndEffectsInHonestCategories() {
+        val overlay = TextOverlay(id = "title", text = "My words")
+        compose.setContent {
+            TextPanel(
+                overlays = listOf(overlay), selectedId = overlay.id,
+                onAdd = {}, onSelect = {}, onTextChange = {}, onColorChange = {},
+                onBgChange = {}, onSizeChange = {}, onDelete = {}, onClose = {}
+            )
+        }
+
+        compose.onNodeWithTag("text-tab-edit").assertIsDisplayed()
+        compose.onNodeWithTag("text-content-field").assertIsDisplayed()
+        compose.onNodeWithTag("text-tab-styles")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("Style & Color").assertIsDisplayed()
+        compose.onAllNodesWithTag("text-content-field").assertCountEquals(0)
+
+        compose.onNodeWithTag("text-tab-animation")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("Preview & Intro").assertIsDisplayed()
+        compose.onNodeWithText("Mask").assertIsDisplayed()
+    }
+
+    @Test
+    fun selectedTextLayerKeyframeActionInvokesExistingCallback() {
+        var keyframeToggles = 0
+        val overlay = TextOverlay(id = "title", text = "My words")
+        compose.setContent {
+            TextPanel(
+                overlays = listOf(overlay), selectedId = overlay.id,
+                onAdd = {}, onSelect = {}, onTextChange = {}, onColorChange = {},
+                onBgChange = {}, onSizeChange = {}, onDelete = {}, onClose = {},
+                onToggleTextKeyframe = { keyframeToggles++ }
+            )
+        }
+
+        compose.onNodeWithTag("text-keyframe-action")
+            .performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.runOnIdle { assertEquals(1, keyframeToggles) }
+    }
+
 }

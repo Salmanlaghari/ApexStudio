@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.semantics.SemanticsActions
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.CaptionUiState

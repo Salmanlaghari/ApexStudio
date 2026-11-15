@@ -3,10 +3,11 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -132,8 +133,8 @@ class TextPanelModerationTest {
 
         compose.onNodeWithTag("text-content-field").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("text-style-tab-hint").assertIsDisplayed()
-        compose.onNodeWithTag("text-starter-gallery").assertDoesNotExist()
-        compose.onNodeWithTag("text-card-swipe-hint").assertDoesNotExist()
+        compose.onAllNodesWithTag("text-starter-gallery").assertCountEquals(0)
+        compose.onAllNodesWithTag("text-card-swipe-hint").assertCountEquals(0)
 
         compose.onNodeWithTag("text-tab-presets")
             .performSemanticsAction(SemanticsActions.OnClick) { it() }

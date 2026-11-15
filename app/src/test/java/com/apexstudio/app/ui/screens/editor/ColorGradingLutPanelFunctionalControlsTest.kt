@@ -1,8 +1,9 @@
 package com.apexstudio.app.ui.screens.editor
 
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -48,7 +49,7 @@ class ColorGradingLutPanelFunctionalControlsTest {
         }
 
         compose.onNodeWithText("Color Grading & Filters").assertIsDisplayed()
-        compose.onNodeWithContentDescription("White Balance & Tone").assertDoesNotExist()
+        compose.onAllNodesWithContentDescription("White Balance & Tone").assertCountEquals(0)
         compose.onNodeWithContentDescription("Compare Before/After").performClick()
         compose.runOnIdle { assertTrue(compareToggled) }
     }

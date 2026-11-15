@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -75,7 +76,10 @@ class HorizontalEditorProjectLayoutTest {
 
     private fun waitForFilterWorkspaceDismissed() {
         compose.waitUntil(timeoutMillis = 5_000L) {
-            compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes().isEmpty()
+            val nodes = compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes()
+            nodes.isEmpty() || runCatching {
+                compose.onNodeWithTag("filter-workspace-panel").assertIsNotDisplayed()
+            }.isSuccess
         }
     }
 

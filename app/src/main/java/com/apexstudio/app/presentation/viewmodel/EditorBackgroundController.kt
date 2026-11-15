@@ -39,7 +39,7 @@ data class BackgroundUiState(
     val imageUri: String? = null
 )
 
-enum class BackgroundPhase { IDLE, NEED_DOWNLOAD, PROCESSING, DONE, FAILED }
+enum class BackgroundPhase { IDLE, PROCESSING, DONE, FAILED }
 
 /** Immutable identity of the project/clip input which an async result was built from. */
 internal data class BackgroundApplyVersion(

@@ -339,12 +339,6 @@ fun BackgroundReplacePanel(
 
             // Status / progress
             when (ui.phase) {
-                BackgroundPhase.NEED_DOWNLOAD -> {
-                    Text(
-                        "The model is bundled with the app. Tap Apply to prepare it; no download is needed.",
-                        color = ApexPalette.TextSecondary, fontSize = 11.sp
-                    )
-                }
                 BackgroundPhase.PROCESSING -> {
                     LinearProgressIndicator(
                         progress = { ui.progress01.coerceIn(0f, 1f) },

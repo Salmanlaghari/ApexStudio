@@ -1,10 +1,12 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import androidx.lifecycle.ViewModelStore
 import com.apexstudio.app.data.picker.MediaMetadata
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
@@ -21,6 +23,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@OptIn(ExperimentalCoroutinesApi::class)
 class EditorProjectAspectRatioControllerTest {
     private fun mainClip() = MediaClip(
         id = "main",
@@ -87,12 +90,14 @@ class EditorProjectAspectRatioControllerTest {
 
     private fun importIntoEmptyProject(projectId: String, media: List<MediaMetadata>): Project {
         Dispatchers.setMain(UnconfinedTestDispatcher())
+        val viewModelStore = ViewModelStore()
         try {
             val context = RuntimeEnvironment.getApplication()
             val initialProject = Project(id = projectId, name = projectId, durationMs = 0L)
             val vm = EditorViewModel(context = context, projectId = projectId).apply {
                 _state.update { it.copy(project = initialProject, durationMs = 0L) }
             }
+            viewModelStore.put(projectId, vm)
             vm.onMediaPicked(media)
             return runBlocking {
                 withTimeout(5_000L) {
@@ -102,6 +107,7 @@ class EditorProjectAspectRatioControllerTest {
                 }
             }
         } finally {
+            viewModelStore.clear()
             Dispatchers.resetMain()
         }
     }

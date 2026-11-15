@@ -50,9 +50,24 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun secondRulerUsesAWhiteSurfaceWithReadableDarkLabels() {
-        assertEquals(Color.White, TIMELINE_RULER_BACKGROUND)
-        assertEquals(Color(0xFF1E293B), TIMELINE_RULER_LABEL_COLOR)
+    fun referenceTimelineUsesDarkRulerAndHighContrastLaneTokens() {
+        assertEquals(Color(0xFF111A2C), TIMELINE_RULER_BACKGROUND)
+        assertEquals(Color(0xFFD7E6F3), TIMELINE_RULER_LABEL_COLOR)
+        assertEquals(Color(0xFF0B1220), TIMELINE_CANVAS_BACKGROUND)
+        assertEquals(Color(0xFF17152A), TIMELINE_TEXT_LANE_BACKGROUND)
+        assertEquals(Color(0xFF0D1727), TIMELINE_AUDIO_LANE_BACKGROUND)
+        assertEquals(Color(0xFF43E6DC), TIMELINE_SELECTED_TRIM_COLOR)
+        assertTrue("dark ruler must not regress to the legacy white surface", TIMELINE_RULER_BACKGROUND != Color.White)
+    }
+
+    @Test
+    fun selectedMainClipExposesBothTrimHandlesForCompactEditing() {
+        composeRule.setContent { workspace(widthDp = 375, selectedClipId = "main") }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("timeline-trim-start-main", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("timeline-trim-end-main", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("timeline-selection-accent-main", useUnmergedTree = true).assertExists()
     }
 
     private fun clip(

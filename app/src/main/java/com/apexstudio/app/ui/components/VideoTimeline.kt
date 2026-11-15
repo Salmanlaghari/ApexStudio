@@ -286,8 +286,16 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
 private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 64.dp
 private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 44.dp
 
-internal val TIMELINE_RULER_BACKGROUND = Color.White
-internal val TIMELINE_RULER_LABEL_COLOR = Color(0xFF1E293B)
+/** Reference-aligned timeline surfaces: dark canvas, bright timecode, cyan playhead. */
+internal val TIMELINE_RULER_BACKGROUND = Color(0xFF111A2C)
+internal val TIMELINE_RULER_LABEL_COLOR = Color(0xFFD7E6F3)
+internal val TIMELINE_RULER_TICK_COLOR = Color(0xFF64748B)
+internal val TIMELINE_RULER_MAJOR_TICK_COLOR = Color(0xFF9FB3C8)
+internal val TIMELINE_RULER_BASELINE_COLOR = Color(0xFF33445D)
+internal val TIMELINE_CANVAS_BACKGROUND = Color(0xFF0B1220)
+internal val TIMELINE_TEXT_LANE_BACKGROUND = Color(0xFF17152A)
+internal val TIMELINE_AUDIO_LANE_BACKGROUND = Color(0xFF0D1727)
+internal val TIMELINE_SELECTED_TRIM_COLOR = Color(0xFF43E6DC)
 
 internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
     minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.24f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
@@ -1877,7 +1885,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f * 33.33f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFFD1D5DB),
+                                color = TIMELINE_RULER_TICK_COLOR.copy(alpha = 0.55f),
                                 start = Offset(fXPx, h - 3f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1893,7 +1901,7 @@ private fun TimelineTimeRuler(
                             val fMs = secStartMs + (f5 * 166.7f).toLong()
                             val fXPx = (fMs * msToDp).dp.toPx()
                             drawLine(
-                                color = Color(0xFF9CA3AF),
+                                color = TIMELINE_RULER_MAJOR_TICK_COLOR,
                                 start = Offset(fXPx, h - 5.5f),
                                 end = Offset(fXPx, h),
                                 strokeWidth = 1f
@@ -1905,7 +1913,7 @@ private fun TimelineTimeRuler(
                 // Half-second tick (15 frames at 30fps)
                 val halfXPx = ((secStartMs + 500L) * msToDp).dp.toPx()
                 drawLine(
-                    color = if (secondWidthDp >= 180.dp) theme.primary.copy(alpha = 0.8f) else Color(0xFF64748B),
+                    color = if (secondWidthDp >= 180.dp) theme.primary.copy(alpha = 0.8f) else TIMELINE_RULER_TICK_COLOR,
                     start = Offset(halfXPx, h - if (secondWidthDp >= 180.dp) 8f else 6f),
                     end = Offset(halfXPx, h),
                     strokeWidth = if (secondWidthDp >= 180.dp) 1.5f else 1f
@@ -1913,7 +1921,7 @@ private fun TimelineTimeRuler(
 
                 // Full second tick
                 drawLine(
-                    color = Color(0xFF475569),
+                    color = TIMELINE_RULER_MAJOR_TICK_COLOR,
                     start = Offset(secXPx, h - 12f),
                     end = Offset(secXPx, h),
                     strokeWidth = 1.5f
@@ -1922,7 +1930,7 @@ private fun TimelineTimeRuler(
 
             // Neutral baseline keeps timing separate from clip selection accents.
             drawLine(
-                color = Color(0xFFCBD5E1),
+                color = TIMELINE_RULER_BASELINE_COLOR,
                 start = Offset(0f, h - 0.75f),
                 end = Offset(size.width, h - 0.75f),
                 strokeWidth = 1.5f
@@ -2686,7 +2694,7 @@ private fun KeyframeDiamondStrip(
     Box(
         modifier = modifier
             .width(stripWidthDp)
-            .then(if (showLaneBackground) Modifier.background(Color(0xFFE9EDF2).copy(alpha = 0.6f)) else Modifier)
+            .then(if (showLaneBackground) Modifier.background(TIMELINE_TEXT_LANE_BACKGROUND) else Modifier)
     ) {
         val spanDur = spanDurationMs.coerceAtLeast(1L)
         keyframes.forEach { kf ->
@@ -2888,7 +2896,7 @@ private fun TimelineVideoTrack(
     // as the boundary marker between them.
     Box(
         modifier = modifier
-            .background(Color(0xFF0B1220))
+            .background(TIMELINE_CANVAS_BACKGROUND)
     ) {
             videoClips.forEachIndexed { index, clip ->
                 val isSelected = clip.id == selectedClipId
@@ -3156,7 +3164,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 6.dp, height = 30.dp)
-                                    .background(Brush.verticalGradient(listOf(EditorPalette.NeonPurple, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
+                                    .background(Brush.verticalGradient(listOf(TIMELINE_SELECTED_TRIM_COLOR, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
                             )
                         }
                         // Right grip: trim end
@@ -3209,7 +3217,7 @@ private fun TimelineVideoTrack(
                             Box(
                                 modifier = Modifier
                                     .size(width = 6.dp, height = 30.dp)
-                                    .background(Brush.verticalGradient(listOf(EditorPalette.NeonPurple, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
+                                    .background(Brush.verticalGradient(listOf(TIMELINE_SELECTED_TRIM_COLOR, EditorPalette.NeonCyan)), RoundedCornerShape(3.dp))
                             )
                         }
                     }
@@ -3697,7 +3705,7 @@ private fun TimelineFxTrack(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(10.dp)
-                        .background(Color(0xFFE9EDF2).copy(alpha = 0.6f))
+                        .background(TIMELINE_TEXT_LANE_BACKGROUND)
                 ) {
                     fxKeyframes.forEach { kf ->
                         val frac = (kf.timeMs.toFloat() / durationMs.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
@@ -3860,7 +3868,7 @@ private fun TimelineAudioTrack(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF0D1727))
+            .background(TIMELINE_AUDIO_LANE_BACKGROUND)
             .border(1.dp, EditorPalette.NeonCyan.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
             .padding(vertical = 3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)

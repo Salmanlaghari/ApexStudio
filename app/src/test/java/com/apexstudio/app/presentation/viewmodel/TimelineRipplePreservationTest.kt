@@ -266,6 +266,20 @@ class TimelineRipplePreservationTest {
     }
 
     @Test
+    fun `bulk duplicate places selected overlay after its rippled source`() {
+        val vm = vm(video("source").copy(speedMultiplier = 2f), video("tail"), overlay("selected-overlay", 20_000L))
+        vm._state.update { it.copy(selectedClipIds = setOf("source", "selected-overlay"), multiSelectMode = true) }
+
+        vm.duplicateSelectedClips()
+
+        val clips = vm.state.value.project!!.clips
+        val rippledSource = clips.single { it.id == "selected-overlay" }
+        val copy = clips.last { it.type == ClipType.OVERLAY && it.id != "selected-overlay" }
+        assertEquals(25_000L, rippledSource.timelineOffsetMs)
+        assertEquals(rippledSource.timelineOffsetMs + rippledSource.effectiveDurationMs(), copy.timelineOffsetMs)
+    }
+
+    @Test
     fun `bulk speed filter and LUT persist as one selection action each`() {
         val vm = vm(video("one"), video("two"))
         vm._state.update { it.copy(selectedClipIds = setOf("one", "two"), multiSelectMode = true) }

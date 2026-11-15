@@ -75,13 +75,14 @@ fun EditorViewModel.duplicateSelectedClips(): Boolean {
                 val wholeGroupSelected = current.clips.count { it.groupId == members.first().groupId } == members.size && members.all { it.id in selectedIds }
                 if (wholeGroupSelected) "group_${UUID.randomUUID()}" else null
             }
+        val rippledOffsets = rippled.associate { it.id to it.timelineOffsetMs }
         val copies = targets.map { target ->
             val copyId = "clip_${UUID.randomUUID()}_dup"
             target.copy(
                 id = copyId,
                 groupId = target.groupId?.let { copiedGroupIds[it] },
                 timelineOffsetMs = if (target.type == com.apexstudio.app.domain.model.ClipType.OVERLAY) {
-                    target.timelineOffsetMs + target.effectiveDurationMs()
+                    (rippledOffsets[target.id] ?: target.timelineOffsetMs) + target.effectiveDurationMs()
                 } else target.timelineOffsetMs,
                 // Child ids are persisted independently and must not collide
                 // with the source or with another copy.

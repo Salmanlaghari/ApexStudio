@@ -221,7 +221,13 @@ internal fun projectCompositionUnsupportedReason(
         return "Project export does not support AR filters."
     }
     if (config.transitionType != null || config.transitionGlId != null) return "Project export does not support export-wide transitions."
-    if (config.textOverlays.isNotEmpty() || config.stickers.isNotEmpty()) return "Project export does not support export-wide captions or stickers; attach them to a video clip."
+    if (config.textOverlays.isNotEmpty()) return "Project export does not support export-wide captions; attach them to a video clip."
+    if (config.stickers.any { !it.isPngSticker() && it.symbolOrUri.isBlank() }) {
+        return "Project export has a project sticker without a renderable emoji or asset."
+    }
+    if (config.stickers.any { !it.startMs.isValidProjectOverlayTime(it.endMs) }) {
+        return "Project export has a project sticker with an invalid time range."
+    }
     if (config.workspaceEffects.isNotEmpty()) return "Project export does not support export-wide ranged filters; attach them to a video clip."
     if (config.rotationAngle != 0f || config.isFlippedHorizontal || config.isFlippedVertical) {
         return "Project export does not support global rotation or flips."
@@ -300,6 +306,28 @@ internal fun projectEmojiStickerAsTextOverlay(sticker: StickerOverlay): TextOver
     opacity = sticker.opacity,
     keyframes = sticker.keyframes
 )
+
+/** Build project-clock sticker effects for composition-level rendering above the assembled V1 video. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal fun projectStickerExportEffects(
+    context: android.content.Context,
+    stickers: List<StickerOverlay>,
+    aspectRatio: Float
+): List<androidx.media3.common.Effect> = buildList {
+    stickers.forEach { sticker ->
+        if (sticker.isPngSticker()) {
+            add(com.apexstudio.app.data.effect.StickerGlEffect(context, sticker, aspectRatio))
+        } else {
+            add(
+                com.apexstudio.app.data.effect.TextOverlayGlEffect(
+                    context,
+                    projectEmojiStickerAsTextOverlay(sticker),
+                    aspectRatio
+                )
+            )
+        }
+    }
+}
 
 /**
  * Applies the same crop and size to every item, including clips whose input

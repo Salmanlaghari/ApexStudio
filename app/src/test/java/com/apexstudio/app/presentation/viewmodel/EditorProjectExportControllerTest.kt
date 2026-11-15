@@ -45,6 +45,15 @@ class EditorProjectExportControllerTest {
         assertEquals(0f, buildProjectExportConfig(state, AudioStudioState(isMuted = true), settings).volume, 0f)
     }
 
+    @Test fun `project stickers are carried into the whole project export config`() {
+        val sticker = StickerOverlay(id = "project-heart", startMs = 250L, endMs = 1_500L)
+        val edited = state.copy(project = state.project!!.copy(stickers = listOf(sticker)))
+        val config = buildProjectExportConfig(edited, AudioStudioState(), settings)
+
+        assertEquals(listOf(sticker), config.stickers)
+        assertNull(wholeProjectExportUnsupportedReason(edited, AudioStudioState(), settings))
+    }
+
     @Test fun `saved Color grade reaches the standard project export with later main-track clips`() {
         val grade = ColorStudioGrade(brightness = .18f, saturation = 1.2f, sharpness = .35f)
         val laterClip = first.copy(id = "added-later", uri = "file:///later.mp4")

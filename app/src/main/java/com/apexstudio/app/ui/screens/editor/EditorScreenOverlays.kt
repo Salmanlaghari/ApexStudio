@@ -1720,8 +1720,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     val stickerOwnerClip = if (isTransitionPreview) null else
         selectedClip?.takeIf { it.type == ClipType.VIDEO && it.trackIndex == 0 }
             ?: state.project?.clips?.firstOrNull { it.type == ClipType.VIDEO && it.trackIndex == 0 }
+    // Keep project-wide stickers above clip-attached stickers, matching the export composition layer.
     val stickers = if (isTransitionPreview) emptyList() else
-        state.project?.stickers.orEmpty() + stickerOwnerClip?.stickers.orEmpty()
+        stickerOwnerClip?.stickers.orEmpty() + state.project?.stickers.orEmpty()
     val stickerTimeMsById = buildMap {
         stickerOwnerClip?.let { owner ->
             val previewTimeMs = com.apexstudio.app.domain.model.ClipTimeMapping.stickerOutputTimeAtProjectTime(

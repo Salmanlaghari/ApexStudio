@@ -65,9 +65,19 @@ class ProjectExportPreflightTest {
         )) assertNotNull(projectVisualScopeUnsupportedReason(edited))
     }
 
-    @Test fun `stickers cannot be silently dropped from whole project export`() {
-        assertNotNull(projectVisualScopeUnsupportedReason(state.copy(project = state.project!!.copy(
-            stickers = listOf(StickerOverlay())))))
+    @Test fun `project stickers reach whole project export while invalid timing still fails closed`() {
+        val sticker = StickerOverlay(id = "global", startMs = 200L, endMs = 900L)
+        val edited = state.copy(project = state.project!!.copy(stickers = listOf(sticker)))
+        assertNull(projectVisualScopeUnsupportedReason(edited))
+        assertEquals(
+            listOf(sticker),
+            buildProjectExportConfig(edited, AudioStudioState(), ExportSettings()).stickers
+        )
+        assertNull(wholeProjectExportUnsupportedReason(edited, AudioStudioState(), ExportSettings()))
+
+        val invalid = edited.copy(project = edited.project!!.copy(stickers = listOf(sticker.copy(startMs = -1L))))
+        assertTrue(wholeProjectExportUnsupportedReason(invalid, AudioStudioState(), ExportSettings())!!
+            .contains("project sticker with an invalid time range"))
     }
 
     @Test fun `supported persisted junction reaches whole project composition export`() {

@@ -271,7 +271,16 @@ class ProjectCompositionExportTest {
         ))!!.contains("timeline audio overlays"))
         assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(
             textOverlays = listOf(TextOverlay(id = "global", text = "global"))
-        ))!!.contains("export-wide captions or stickers"))
+        ))!!.contains("export-wide captions"))
+        assertNull(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig(
+            stickers = listOf(StickerOverlay(id = "global", startMs = 200L, endMs = 900L))
+        )))
+        assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig(
+            stickers = listOf(StickerOverlay(id = "blank-global", symbolOrUri = "", startMs = 0L, endMs = 900L))
+        ))!!.contains("without a renderable emoji or asset"))
+        assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig(
+            stickers = listOf(StickerOverlay(id = "invalid-global", startMs = -1L, endMs = 900L))
+        ))!!.contains("project sticker with an invalid time range"))
         assertTrue(projectCompositionUnsupportedReason(base, ExportEngine.ExportConfig().copy(fps = 29))!!.contains("fps"))
     }
 

@@ -191,6 +191,12 @@ internal fun exportFrameRateDisclosure(frameRate: Int): String =
         "The selected fps is an output target. No motion interpolation is used."
     }
 
+internal fun exportFrameRateOptionsForScope(wholeProject: Boolean): List<Int> =
+    if (wholeProject) listOf(24, 30, 60) else listOf(24, 30, 60, 90, 120)
+
+internal fun exportFrameRateForScope(frameRate: Int, wholeProject: Boolean): Int =
+    frameRate.takeIf { it in exportFrameRateOptionsForScope(wholeProject) } ?: 60
+
 @Composable
 internal fun ExportPrimarySettingsRows(
     resolution: String,

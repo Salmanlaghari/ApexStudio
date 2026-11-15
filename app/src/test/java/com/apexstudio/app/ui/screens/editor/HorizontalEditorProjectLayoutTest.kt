@@ -151,7 +151,9 @@ class HorizontalEditorProjectLayoutTest {
         compose.waitForIdle()
 
         val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
-        compose.onNodeWithText("Filters").performClick()
+        // The selected-clip row and persistent global dock can both expose Filters;
+        // target the last (global-dock) action so this geometry test is unambiguous.
+        compose.onAllNodesWithText("Filters").onLast().performClick()
         compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
         val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         val panel = compose.onNodeWithTag("filter-workspace-panel").fetchSemanticsNode().boundsInRoot

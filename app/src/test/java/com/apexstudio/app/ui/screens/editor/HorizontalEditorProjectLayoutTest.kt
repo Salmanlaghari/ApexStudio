@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -69,6 +70,12 @@ class HorizontalEditorProjectLayoutTest {
                 vm = vm,
                 entryWorkspace = entryWorkspace,
             )
+        }
+    }
+
+    private fun waitForFilterWorkspaceDismissed() {
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes().isEmpty()
         }
     }
 
@@ -138,7 +145,7 @@ class HorizontalEditorProjectLayoutTest {
             panel.top >= open.bottom - 1f)
 
         compose.onNodeWithContentDescription("Close filters").performClick()
-        compose.waitForIdle()
+        waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertEquals("Closing Filters preserves the original preview frame", before, closed)
     }
@@ -150,7 +157,7 @@ class HorizontalEditorProjectLayoutTest {
         // Normal portrait edit entry opens the reference Filters workspace once;
         // close it before exercising the real Filters dock action below.
         compose.onNodeWithContentDescription("Close filters").performClick()
-        compose.waitForIdle()
+        waitForFilterWorkspaceDismissed()
         compose.runOnIdle { vm.selectClip("main-video") }
         compose.waitForIdle()
 
@@ -169,7 +176,7 @@ class HorizontalEditorProjectLayoutTest {
             panel.top >= open.bottom - 1f)
 
         compose.onNodeWithContentDescription("Close filters").performClick()
-        compose.waitForIdle()
+        waitForFilterWorkspaceDismissed()
         val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertEquals("Closing portrait Filters preserves the preview horizontally", before.left, closed.left, 1f)
         assertEquals("Closing portrait Filters preserves the preview vertically", before.top, closed.top, 1f)

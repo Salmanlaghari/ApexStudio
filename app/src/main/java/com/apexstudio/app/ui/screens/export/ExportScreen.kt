@@ -97,7 +97,21 @@ fun ExportScreen(
             vm.updateExport { it.copy(resolution = selectedResolution) }
         }
     }
-    val selectedFps = export.settings.frameRate.toFloat()
+    val storedFrameRate = export.settings.frameRate
+    val effectiveFrameRate = exportFrameRateForScope(storedFrameRate, wholeProject)
+    val selectedFps = effectiveFrameRate.toFloat()
+    LaunchedEffect(wholeProject, storedFrameRate) {
+        if (effectiveFrameRate != storedFrameRate) {
+            vm.updateExport { it.copy(frameRate = effectiveFrameRate) }
+        }
+    }
+    val setProjectScope: (Boolean) -> Unit = { projectScope ->
+        val compatibleFrameRate = exportFrameRateForScope(export.settings.frameRate, projectScope)
+        if (compatibleFrameRate != export.settings.frameRate) {
+            vm.updateExport { it.copy(frameRate = compatibleFrameRate) }
+        }
+        wholeProject = projectScope
+    }
     val activeFxId = editorState.activeFxId
     // Pro Phase 1: aspect ratio + bitrate from ExportSettings
     val selectedAspect = export.settings.aspectRatio
@@ -199,7 +213,10 @@ fun ExportScreen(
                         "${formatByteCount(preflight.availableBytes)}. Choose a lower bitrate/resolution " +
                         "or free storage, then retry."
                 )
-                else -> if (wholeProject) vm.startWholeProjectExport() else vm.startExport(
+                else -> if (wholeProject) {
+                    vm.updateExport { it.copy(frameRate = effectiveFrameRate) }
+                    vm.startWholeProjectExport()
+                } else vm.startExport(
                     resolution = selectedResolution, fps = selectedFps.toInt(), quality = selectedQuality,
                     aspectRatio = selectedAspect, bitrateMbps = selectedBitrateMbps
                 )
@@ -299,8 +316,8 @@ fun ExportScreen(
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = !wholeProject, enabled = !export.isExporting, onClick = { wholeProject = false }, label = { Text("Selected clip") })
-                            FilterChip(selected = wholeProject, enabled = !export.isExporting, onClick = { wholeProject = true }, label = { Text("Whole project") })
+                            FilterChip(selected = !wholeProject, enabled = !export.isExporting, onClick = { setProjectScope(false) }, label = { Text("Selected clip") })
+                            FilterChip(selected = wholeProject, enabled = !export.isExporting, onClick = { setProjectScope(true) }, label = { Text("Whole project") })
                         }
                         Text(
                             if (wholeProject) "Whole project: main timeline videos, global LUT, color and FX; hard cuts only. Photos, visible PiP, AR and advanced composition are unsupported."
@@ -342,7 +359,7 @@ fun ExportScreen(
                         }
                         Text("OUTPUT FPS • ${selectedFps.toInt()} fps", color = ApexPalette.TextSecondary, fontSize = 10.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for (fps in listOf(24, 30, 60, 90, 120)) {
+                            for (fps in exportFrameRateOptionsForScope(wholeProject)) {
                                 CompactExportChoice("$fps", selectedFps.toInt() == fps, !export.isExporting) { vm.updateExport { it.copy(frameRate = fps) } }
                             }
                         }

@@ -96,4 +96,25 @@ class ExportScreenCancelTest {
         }
     }
 
+    @Test fun embeddedWholeProjectScopeHidesUnsupportedFpsAndNormalizesSavedRate() {
+        val vm = EditorViewModel()
+        val clip = com.apexstudio.app.domain.model.MediaClip("v", "Video", "file:///v.mp4", 5000L, trimEndMs = 5000L)
+        vm._state.value = vm.state.value.copy(
+            project = com.apexstudio.app.domain.model.Project("p", "P", 5000L, clips = listOf(clip)),
+            selectedClipId = clip.id
+        )
+        vm._export.value = vm.export.value.copy(
+            isExportEngineReady = true,
+            settings = vm.export.value.settings.copy(frameRate = 120)
+        )
+        compose.setContent {
+            ExportScreen(projectId = "p", onBack = {}, onExport = {}, vm = vm, embedded = true)
+        }
+
+        compose.onNodeWithText("Whole project", substring = false).performClick()
+        compose.runOnIdle { assertEquals(60, vm.export.value.settings.frameRate) }
+        compose.onNodeWithText("90", substring = false).assertDoesNotExist()
+        compose.onNodeWithText("120", substring = false).assertDoesNotExist()
+    }
+
 }

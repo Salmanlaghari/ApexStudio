@@ -153,11 +153,9 @@ fun EditorViewModel.setActiveFilter(id: String?) = _state.update { it.copy(activ
 
 fun EditorViewModel.setFilterIntensity(v: Float) = _state.update { it.copy(filterIntensity = v.coerceIn(0f, 1f)) }
 
-/** Applies a catalog LUT as a project edit; imported custom LUTs remain transient until their assets are persisted too. */
+/** Applies a bundled, downloaded, or imported LUT as a project edit. */
 fun EditorViewModel.applyManualLutFilter(id: String?) {
-    val before = _state.value
     _state.update { it.copy(activeFilterId = id) }
-    if (id != null && before.customImportedLuts.any { it.id == id }) return
     commitManualLutSettings()
 }
 
@@ -167,7 +165,6 @@ fun EditorViewModel.commitManualLutSettings() = commitManualLutSettings(recordUn
 private fun EditorViewModel.commitManualLutSettings(recordUndo: Boolean) {
     val snapshot = _state.value
     val filterId = snapshot.activeFilterId
-    if (filterId != null && snapshot.customImportedLuts.any { it.id == filterId }) return
     val project = snapshot.project ?: return
     val intensity = snapshot.filterIntensity.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 1f
     val next = com.apexstudio.app.domain.model.ProjectLutSettings(filterId, intensity)
@@ -249,7 +246,7 @@ fun EditorViewModel.importCustomCubeLut(name: String, inputStream: java.io.Input
         _state.update { it.copy(customImportedLuts = it.customImportedLuts + preset) }
         // New LUT added: drop cached thumbnails so they regenerate with it.
         com.apexstudio.app.data.filter.FilterThumbnailGenerator.invalidateDynamicCache()
-        setActiveFilter(preset.id)
+        applyManualLutFilter(preset.id)
     }
     return preset
 }

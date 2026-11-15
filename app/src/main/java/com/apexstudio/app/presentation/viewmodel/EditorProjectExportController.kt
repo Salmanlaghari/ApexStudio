@@ -20,6 +20,15 @@ import com.apexstudio.app.presentation.state.EditorState
 import kotlinx.coroutines.flow.update
 
 import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+internal fun resolveProjectExportFilterPreset(
+    state: EditorState,
+    manifestFilters: List<FilterPreset>
+): FilterPreset? {
+    val filterId = state.activeFilterId ?: return null
+    return manifestFilters.firstOrNull { it.id == filterId }
+        ?: state.customImportedLuts.firstOrNull { it.id == filterId }
+}
+
 internal fun projectMainExportClips(state: EditorState): List<MediaClip> =
     state.project?.clips.orEmpty().filter {
         it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
@@ -91,7 +100,7 @@ internal fun wholeProjectExportUnsupportedReason(
             state.activeFilterId == state.activeGpuFilterConfig.filterPresetId
     return projectVisualScopeUnsupportedReason(state)
     ?: if (state.activeFilterId != null && !activeFilterMirrorsViralHdr && filterPreset == null) {
-        "The selected global filter is unavailable for export. Reapply the filter or use selected-clip export."
+        "The selected global LUT is unavailable for export. Re-import the custom LUT or choose another filter."
     } else if (state.activeFxId != null && FxPreset.byId(state.activeFxId) == null &&
         com.apexstudio.app.data.fx.DownloadedEffectRepository.effects.value.none { it.id == state.activeFxId }
     ) {
@@ -124,8 +133,9 @@ fun EditorViewModel.startWholeProjectExport() {
             snapshot.activeFilterId == snapshot.activeGpuFilterConfig.filterPresetId
     val filterPreset = if (!activeFilterMirrorsViralHdr && snapshot.activeFilterId != null && context != null) {
         try {
-            com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
-                .firstOrNull { it.id == snapshot.activeFilterId }
+            val lutEngine = com.apexstudio.app.data.filter.LutFilterEngine(context)
+            resolveProjectExportFilterPreset(snapshot, lutEngine.manifest.filters)
+                ?.takeIf(lutEngine::isCustomLutAvailable)
         } catch (_: Exception) {
             null
         }

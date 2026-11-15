@@ -354,6 +354,83 @@ class ProjectFxPersistenceTest {
     }
 
     @Test
+    fun `custom LUT selection and asset survive project reopen and resolve for export`() = runBlocking {
+        val base = ApplicationProvider.getApplicationContext<Context>()
+        val root = File(base.cacheDir, "project-custom-lut-${System.nanoTime()}")
+        val files = File(root, "files").apply { mkdirs() }
+        val context = object : ContextWrapper(base) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = files
+        }
+        val projectId = "project-custom-lut-${System.nanoTime()}"
+        val repository = ProjectRepository(context)
+        val store = ViewModelStore()
+
+        fun openEditor() = EditorViewModel(context = context, projectId = projectId).also {
+            store.put("project-custom-lut-editor", it)
+        }
+
+        try {
+            repository.saveProject(Project(id = projectId, name = "Custom LUT", durationMs = 10_000L))
+            val firstOpen = openEditor()
+            withTimeout(20_000L) { firstOpen.state.first { it.project?.id == projectId } }
+            val savedAt = firstOpen.state.value.lastAutoSaveMs
+            delay(2L)
+
+            val cube = """
+                LUT_3D_SIZE 2
+                0 0 0
+                1 0 0
+                0 1 0
+                1 1 0
+                0 0 1
+                1 0 1
+                0 1 1
+                0.5 0.5 0.5
+            """.trimIndent()
+            val preset = firstOpen.importCustomCubeLut(
+                "Editorial custom",
+                java.io.ByteArrayInputStream(cube.toByteArray(Charsets.UTF_8))
+            )
+            assertNotNull(preset)
+            val lutId = preset!!.id
+            withTimeout(30_000L) {
+                firstOpen.state.first {
+                    it.project?.manualLutOverride?.filterId == lutId && it.lastAutoSaveMs > savedAt
+                }
+            }
+
+            store.clear()
+            val reopened = openEditor()
+            val restored = withTimeout(30_000L) {
+                reopened.state.first { state ->
+                    state.project?.id == projectId &&
+                        state.activeFilterId == lutId &&
+                        state.customImportedLuts.any { it.id == lutId }
+                }
+            }
+            val resolved = resolveProjectExportFilterPreset(
+                restored,
+                com.apexstudio.app.data.filter.LutFilterEngine(context).manifest.filters
+            )
+            assertEquals(lutId, resolved?.id)
+            val exportConfig = buildProjectExportConfig(
+                restored,
+                AudioStudioState(),
+                com.apexstudio.app.domain.model.ExportSettings(
+                    resolution = "1080p", frameRate = 30, aspectRatio = "16:9", bitrateMbps = 12
+                ),
+                resolved
+            )
+            assertEquals(lutId, exportConfig.filterPreset?.id)
+        } finally {
+            store.clear()
+            repository.deleteProject(projectId)
+            withContext(Dispatchers.IO) { root.deleteRecursively() }
+        }
+    }
+
+    @Test
     fun `installed downloaded FX override survives repository reopen reaches export and clear`() = runBlocking {
         val base = ApplicationProvider.getApplicationContext<Context>()
         val root = File(base.cacheDir, "downloaded-fx-persistence-${System.nanoTime()}")

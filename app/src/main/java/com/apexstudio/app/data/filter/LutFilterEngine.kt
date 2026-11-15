@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 
 /**
@@ -48,6 +49,12 @@ object CubeLutParser {
 /** Loads bundled and on-demand LUT files for preview, thumbnails, and export. */
 class LutFilterEngine(private val context: Context) {
 
+    private companion object {
+        const val CUSTOM_ASSET_PREFIX = "custom/"
+        const val CUSTOM_STORAGE_DIR = "custom_luts"
+        val CUSTOM_FILE_NAME = Regex("""lut_[A-Za-z0-9_-]+\.cube""", RegexOption.IGNORE_CASE)
+    }
+
     private val bundledManifest: FilterManifest by lazy { loadManifest() }
     val manifest: FilterManifest
         get() = FilterManifest.withDownloadedPresets(bundledManifest)
@@ -57,6 +64,9 @@ class LutFilterEngine(private val context: Context) {
         if (preset.asset.startsWith(DownloadedLutFilterRepository.ASSET_PREFIX)) {
             return DownloadedLutFilterRepository.loadVerifiedLut(context, preset)
         }
+        if (preset.asset.startsWith(CUSTOM_ASSET_PREFIX)) {
+            return loadCustomLut(preset.asset)
+        }
         return try {
             context.assets.open(preset.asset).use { input ->
                 BufferedReader(InputStreamReader(input)).use { reader -> CubeLutParser.parse(reader) }
@@ -64,6 +74,33 @@ class LutFilterEngine(private val context: Context) {
         } catch (e: Exception) {
             val matrix = FilterColorMatrix.getRawMatrix(preset.id)
             LutBitmapCache.generateLutFromMatrix(matrix, 16)
+        }
+    }
+
+    /** Imported LUTs live in app-private storage; this check is cheap enough for export preflight. */
+    fun isCustomLutAvailable(preset: FilterPreset): Boolean =
+        !preset.asset.startsWith(CUSTOM_ASSET_PREFIX) || customLutFile(preset.asset) != null
+
+    private fun loadCustomLut(assetPath: String): FloatArray? {
+        val file = customLutFile(assetPath) ?: return null
+        return try {
+            file.bufferedReader().use(CubeLutParser::parse)
+        } catch (error: Exception) {
+            Log.w("LutFilterEngine", "Failed to read imported LUT ${assetPath.removePrefix(CUSTOM_ASSET_PREFIX)}", error)
+            null
+        }
+    }
+
+    private fun customLutFile(assetPath: String): File? {
+        if (!assetPath.startsWith(CUSTOM_ASSET_PREFIX)) return null
+        val fileName = assetPath.removePrefix(CUSTOM_ASSET_PREFIX)
+        if (!CUSTOM_FILE_NAME.matches(fileName)) return null
+        return try {
+            val root = File(context.filesDir, CUSTOM_STORAGE_DIR).canonicalFile
+            val file = File(root, fileName).canonicalFile
+            file.takeIf { it.parentFile == root && it.isFile }
+        } catch (_: Exception) {
+            null
         }
     }
 

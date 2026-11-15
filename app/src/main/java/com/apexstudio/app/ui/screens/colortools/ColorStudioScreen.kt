@@ -162,7 +162,7 @@ fun ColorStudioScreen(
                     modifier = Modifier.weight(1f))
                 TextButton(onClick = { grade = ColorStudioGrade(); processingError = null }) { Text("Reset") }
                 TextButton(onClick = onBack) { Text("Close") }
-                TextButton(onClick = { applyGradeThen(onBack) }) { Text("Apply") }
+                TextButton(onClick = { applyGradeThen(onBack) }) { Text("Apply & preview") }
             }
         } else AppTopBar(title = "Color", subtitle = "ApexStudio • Color Grading", onBack = onBack,
             onExport = { applyGradeThen(onExport) })
@@ -183,7 +183,7 @@ fun ColorStudioScreen(
                 BeforeAfterPreview(sourceFrame?.bitmap, gradedFrame, split, { split = it.coerceIn(0f, 1f) },
                     if (embedded) 1.36f else 16f / 9f, Modifier.fillMaxWidth(),
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
-                Text("Source-frame preview only. Apply saves the grade to all current and future main-track videos. Finish editing, then export the project once.",
+                Text("Paused source-frame preview. Apply & preview saves the grade and returns to Edit for live video preview; it affects all current and future main-track videos. Export when finished.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
                 LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
                     .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),

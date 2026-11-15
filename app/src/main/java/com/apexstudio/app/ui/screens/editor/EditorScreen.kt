@@ -1404,13 +1404,14 @@ private fun EditorScreenContent(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
             .background(ApexPalette.BgBase)
     ) {
+    Column(Modifier.fillMaxSize()) {
         if (editorChromeVisible(state.isFullscreenPreview)) {
             TopAppBarSection(
                 title = state.project?.name ?: "Untitled project",
@@ -1583,8 +1584,9 @@ private fun EditorScreenContent(
                 },
                 onNext = onExport,
                 onColorWorkspace = onColor,
-                referenceToolMode = workspaceTarget != null,
-                referenceActiveTool = if (workspaceTarget != null) {
+                // Keep the landscape dock's measured height stable while its workspace is overlaid.
+                referenceToolMode = workspaceTarget != null && !horizontalProjectLayout,
+                referenceActiveTool = if (workspaceTarget != null && !horizontalProjectLayout) {
                     when {
                         workspaceIsFilters -> "Filters"
                         workspaceOpenTimeActions -> "Actions"
@@ -1671,7 +1673,14 @@ private fun EditorScreenContent(
                 Text("Importing phone music…", color = ApexPalette.TextSecondary, modifier = Modifier.padding(6.dp))
             }
         }
-        workspaceTarget?.let { captured ->
+    }
+    // The workspace is a bottom overlay: opening it must not consume height from the preview/timeline column.
+    workspaceTarget?.let { captured ->
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+        ) {
             ClipEffectWorkspaceHost(
                 filters = workspaceIsFilters,
                 projectId = projectId,
@@ -1702,6 +1711,7 @@ private fun EditorScreenContent(
                 openTimeActions = workspaceOpenTimeActions
             )
         }
+    }
     }
 
     val aiPanelTarget = resolveLockedAiVideoTarget(projectId, state, aiPanelTargetClipId)

@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1474,7 +1475,8 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     drawingBrushWidth: Float = com.apexstudio.app.domain.model.VideoDrawingStroke.DEFAULT_WIDTH,
     fitAvailableHeight: Boolean = false,
     mediaImportProgress: MediaImportProgress = MediaImportProgress.IDLE,
-    onCancelMediaImport: (() -> Unit)? = null
+    onCancelMediaImport: (() -> Unit)? = null,
+    lockPreviewGeometry: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1583,9 +1585,23 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         val stageSize = if (isFullscreenPreview) PreviewStageSize(maxWidth.value, maxHeight.value)
             else fittedPreviewStageSize(maxWidth.value, stageHeightLimit, previewStageAspectRatio)
                 ?: PreviewStageSize(maxWidth.value, stageHeightLimit)
+        // A viewport or media-aspect change should recompute, not reuse stale geometry.
+        var lastUnlockedStageSize by remember(state.project?.id, maxWidth, previewStageAspectRatio) {
+            mutableStateOf<PreviewStageSize?>(null)
+        }
+        val displayedStageSize = if (lockPreviewGeometry) {
+            lastUnlockedStageSize ?: stageSize
+        } else {
+            stageSize
+        }
+        SideEffect {
+            if (!lockPreviewGeometry && !isFullscreenPreview && lastUnlockedStageSize != stageSize) {
+                lastUnlockedStageSize = stageSize
+            }
+        }
         Box(
             Modifier
-                .size(stageSize.width.dp, stageSize.height.dp)
+                .size(displayedStageSize.width.dp, displayedStageSize.height.dp)
                 .testTag("editor-preview-frame")
                 .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
                 .background(Color.Black)

@@ -1,16 +1,23 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.selectClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -66,6 +73,21 @@ class HorizontalEditorProjectLayoutTest {
                 entryWorkspace = entryWorkspace,
             )
         }
+        compose.waitForIdle()
+    }
+
+    private fun closeFilterWorkspaceThroughAccessibility() {
+        compose.onNodeWithTag("filter-close")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Close Filters exposes a successful accessibility action", action())
+            }
+    }
+
+    private fun waitForFilterWorkspaceDismissed() {
+        compose.waitUntil(timeoutMillis = 5_000L) {
+            val nodes = compose.onAllNodesWithTag("filter-workspace-panel").fetchSemanticsNodes()
+            nodes.isEmpty() || nodes.all { !it.layoutInfo.isPlaced }
+        }
     }
 
     @Test
@@ -108,6 +130,78 @@ class HorizontalEditorProjectLayoutTest {
             compose.onNodeWithContentDescription(label).assertIsDisplayed()
         }
         compose.onNodeWithTag("mobile-editor-clip-options").assertDoesNotExist()
+    }
+
+    @Test
+    fun openingLandscapeFiltersKeepsPreviewLockedAndSharedActionsUnique() {
+        val vm = editor(16f / 9f)
+        show(vm)
+        compose.runOnIdle { vm.selectClip("main-video") }
+        compose.waitForIdle()
+
+        val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        compose.onAllNodesWithText("Trim").assertCountEquals(1)
+        compose.onAllNodesWithText("Split").assertCountEquals(1)
+        compose.onNodeWithTag("mobile-editor-clip-options").assertIsDisplayed()
+
+        compose.onNodeWithText("Filters")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Filters action exposes a successful accessibility action", action())
+            }
+        compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
+        val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        val panel = compose.onNodeWithTag("filter-workspace-panel").fetchSemanticsNode().boundsInRoot
+        assertEquals("Filters must not move the preview horizontally", before.left, open.left, 1f)
+        assertEquals("Filters must not move the preview vertically", before.top, open.top, 1f)
+        assertEquals("Filters must not resize the preview width", before.width, open.width, 1f)
+        assertEquals("Filters must not resize the preview height", before.height, open.height, 1f)
+        assertTrue("The panel stays below and does not cover the locked preview: preview=$open panel=$panel",
+            panel.top >= open.bottom - 1f)
+
+        closeFilterWorkspaceThroughAccessibility()
+        waitForFilterWorkspaceDismissed()
+        val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        assertEquals("Closing Filters preserves the original preview frame", before, closed)
+    }
+
+    @Test
+    fun openingPortraitFiltersKeepsPreviewLocked() {
+        val vm = editor(9f / 16f)
+        show(vm)
+        // Normal portrait edit entry opens the reference Filters workspace once;
+        // close it before exercising the real Filters dock action below.
+        closeFilterWorkspaceThroughAccessibility()
+        waitForFilterWorkspaceDismissed()
+        compose.runOnIdle { vm.selectClip("main-video") }
+        compose.waitForIdle()
+
+        val before = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        compose.onAllNodesWithText("Filters").assertCountEquals(1)
+        compose.onNodeWithText("Filters")
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Filters action exposes a successful accessibility action", action())
+            }
+        compose.waitForIdle()
+        compose.onNodeWithTag("filter-workspace-panel").assertIsDisplayed()
+        val open = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        val panel = compose.onNodeWithTag("filter-workspace-panel").fetchSemanticsNode().boundsInRoot
+        assertEquals("Portrait Filters must not move the preview horizontally", before.left, open.left, 1f)
+        assertEquals("Portrait Filters must not move the preview vertically", before.top, open.top, 1f)
+        assertEquals("Portrait Filters must not resize the preview width", before.width, open.width, 1f)
+        assertEquals("Portrait Filters must not resize the preview height", before.height, open.height, 1f)
+        assertTrue("The portrait panel stays below the preview: preview=$open panel=$panel",
+            panel.top >= open.bottom - 1f)
+        val toolbar = compose.onNodeWithTag("editor_global_toolbar").fetchSemanticsNode().boundsInRoot
+        assertTrue("The portrait workspace stays above the reference toolbar: panel=$panel toolbar=$toolbar",
+            panel.bottom <= toolbar.top + 1f)
+
+        closeFilterWorkspaceThroughAccessibility()
+        waitForFilterWorkspaceDismissed()
+        val closed = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        assertEquals("Closing portrait Filters preserves the preview horizontally", before.left, closed.left, 1f)
+        assertEquals("Closing portrait Filters preserves the preview vertically", before.top, closed.top, 1f)
+        assertEquals("Closing portrait Filters preserves the preview width", before.width, closed.width, 1f)
+        assertEquals("Closing portrait Filters preserves the preview height", before.height, closed.height, 1f)
     }
 
     @Test

@@ -506,16 +506,21 @@ fun ContextualBottomToolbar(
         else -> null
     }
 
-    // Restore the historical two-level dock: selected-item actions sit above
-    // the persistent eight-tool global dock. More temporarily adds a scrollable
-    // secondary row without replacing the global tools or introducing tabs.
+    // The phone dock keeps clip-specific controls above the global edit row.
+    // Shared actions such as Trim and Split stay in one place instead of being
+    // repeated in both rows; More still exposes the complete advanced toolbox.
     fun routed(item: CtxToolItem) = item.copy(onClick = {
         onBeforeToolAction()
         item.onClick()
     })
     val showClipBar = hasSelection && !isPlaying && !referenceToolMode
     val clipPageItems = clipItems.map(::routed)
-    val toolsItems = (if (referenceToolMode) referenceItems else mainItems).map(::routed)
+    // A selected video already has a contextual Filters action; avoid showing
+    // the same callback again in the persistent dock while that row is visible.
+    val globalItems = if (showClipBar && selectionKind == ToolbarSelectionKind.VIDEO) {
+        mainItems.filterNot { it.label == "Filters" }
+    } else mainItems
+    val toolsItems = (if (referenceToolMode) referenceItems else globalItems).map(::routed)
     val moreItems = secondaryItems.map(::routed)
     val horizontalEditItems = listOf(
         CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
@@ -541,8 +546,6 @@ fun ContextualBottomToolbar(
     ).map(::routed)
     val easyClipItems = when (selectionKind) {
         ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
-            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
             CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
             CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
             CtxToolItem("Keyframe", DiamondOutlineIcon, tint = ApexPalette.NeonCyan, onClick = onToggleKeyframe),
@@ -551,8 +554,6 @@ fun ContextualBottomToolbar(
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         ).map(::routed)
         ToolbarSelectionKind.AUDIO -> listOf(
-            CtxToolItem("Trim", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onTrim),
-            CtxToolItem("Split", Icons.Default.CallSplit, tint = ApexPalette.NeonCyan, onClick = onSplit),
             CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
             CtxToolItem("Fade", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onFade),
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
@@ -604,8 +605,8 @@ fun ContextualBottomToolbar(
                     surfaceColor = Color(0xFF151F2D),
                     modifier = Modifier.testTag("mobile-editor-clip-options"),
                     itemWidth = 58.dp,
-                    fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 6 else null,
-                    barHeight = 64.dp,
+                    fitVisibleCount = if (selectionKind == ToolbarSelectionKind.VIDEO) 4 else null,
+                    barHeight = 56.dp,
                     roundedSurface = true,
                     leadingContent = {
                         Box(
@@ -626,7 +627,7 @@ fun ContextualBottomToolbar(
                 modifier = Modifier.testTag("mobile-editor-edit-tools"),
                 itemWidth = 64.dp,
                 fitVisibleCount = 5,
-                barHeight = 70.dp,
+                barHeight = 60.dp,
                 roundedSurface = true
             )
             if (showMoreTools) {

@@ -200,7 +200,10 @@ android {
               testDescriptor: org.gradle.api.tasks.testing.TestDescriptor,
               outputEvent: org.gradle.api.tasks.testing.TestOutputEvent
             ) {
-              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest") {
+              if (
+                testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest" ||
+                outputEvent.message.contains("PR300_WORKSPACE_DIAG")
+              ) {
                 print(outputEvent.message)
               }
             }
@@ -219,11 +222,14 @@ android {
               result: org.gradle.api.tasks.testing.TestResult
             ) {
               println("CI_TEST_FINISHED ${testDescriptor.className}.${testDescriptor.name} ${result.resultType}")
-              if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest" &&
-                result.resultType != org.gradle.api.tasks.testing.TestResult.ResultType.SUCCESS
-              ) {
-                println("BRP_DIAG CI failure stack traces for ${testDescriptor.className}.${testDescriptor.name}")
-                result.exceptions.forEach { it.printStackTrace(System.out) }
+              if (result.failedTestCount > 0) {
+                if (testDescriptor.className == "com.apexstudio.app.ui.screens.editor.BackgroundReplacePanelTest") {
+                  println("BRP_DIAG CI failure stack traces for ${testDescriptor.className}.${testDescriptor.name}")
+                }
+                result.exceptions.forEachIndexed { index, failure ->
+                  println("CI_TEST_FAILURE ${testDescriptor.className}.${testDescriptor.name} exception=$index")
+                  failure.printStackTrace(System.out)
+                }
               }
             }
           })

@@ -557,7 +557,7 @@ fun TextPanel(
                             }
                         }
                     }
-                    item {
+                    if (activeTab == TextPanelTab.EDIT) item {
                         TextFeatureCard("Text & Font") {
                 OutlinedTextField(
                     value = selected.text,
@@ -1060,7 +1060,6 @@ fun TextPanel(
 
                 Spacer(Modifier.height(10.dp))
 
-                        }
                     }
                     }
                     if (activeTab == TextPanelTab.STYLES) item {

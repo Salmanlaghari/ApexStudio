@@ -3,6 +3,7 @@ package com.apexstudio.app.presentation.viewmodel
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apexstudio.app.data.media.VideoThumbnailExtractor
+import com.apexstudio.app.data.picker.projectAspectRatioFromMedia
 import com.apexstudio.app.data.template.ShortsTemplateCatalog
 import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
@@ -337,6 +338,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
         val asOverlay = s.pendingAddAsOverlay
         val asAudio = s.pendingAddAsAudio
         val targetLayer = s.pendingAddToLayer?.coerceIn(1, MAX_VIDEO_LAYERS - 1)
+        val routedToOverlay = asOverlay || targetLayer != null
         if (asAudio && !replace) {
             mediaList.forEach { meta ->
                 val uri = if (context != null) {
@@ -399,11 +401,7 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             if (isOverlayPick && created != null) {
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
-                val aspect = if (isImage) {
-                    ProjectAspectRatio.fromDimensions(resolvedMeta.width, resolvedMeta.height)
-                } else {
-                    resolvedMeta.sourceVideoAspectRatio
-                } ?: (16f / 9f)
+                val aspect = effectiveMeta.sourceDisplayAspectRatio ?: (16f / 9f)
                 // First free overlay layer (OVL1 = trackIndex 1, ...),
                 // or the explicitly requested layer from the V2 "+".
                 // Multi-pick spreads across consecutive free layers.
@@ -426,15 +424,32 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 newClips += withImportedMainVideoFitDefault(created)
             }
         }
-        val existingClips = if (replace) emptyList() else (s.project?.clips ?: emptyList())
+        val clipsBeforeImport = s.project?.clips.orEmpty()
+        val contextForSampleCheck = context
+        // Empty editor projects may be seeded with a generated sample clip for preview.
+        // Treat that exact synthetic clip as empty when the user imports their first
+        // main-track media; overlay imports still keep it as the composition base.
+        val onlyGeneratedSampleClip = if (
+            !replace &&
+            !routedToOverlay &&
+            contextForSampleCheck != null &&
+            clipsBeforeImport.size == 1
+        ) {
+            val candidate = clipsBeforeImport.single()
+            candidate.type == ClipType.VIDEO &&
+                candidate.trackIndex == 0 &&
+                candidate.name == "Sample_V1.mp4" &&
+                candidate.uri == com.apexstudio.app.data.media.SampleVideoGenerator
+                    .getOrCreateSampleVideo(contextForSampleCheck)
+        } else false
+        val existingClips = if (replace || onlyGeneratedSampleClip) emptyList() else clipsBeforeImport
 
         val updatedClips = existingClips + newClips
-        val routedToOverlay = asOverlay || targetLayer != null
-        val hasExistingMainVideo = !replace && s.project?.clips.orEmpty().any {
+        val hasExistingMainVideo = existingClips.any {
             it.type == ClipType.VIDEO && it.trackIndex == 0
         }
         val importedMainAspect = if (!routedToOverlay && (replace || !hasExistingMainVideo)) {
-            mediaList.firstOrNull { it.type == ClipType.VIDEO }?.sourceVideoAspectRatio
+            projectAspectRatioFromMedia(mediaList)
         } else null
         val projectAspect = when {
             routedToOverlay -> s.project?.videoAspectRatio

@@ -3,6 +3,7 @@ package com.apexstudio.app.data.picker
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.OpenableColumns
@@ -46,11 +47,27 @@ data class MediaMetadata(
     /** Monotonic timestamp when the picker returned this selection; transient import metadata only. */
     val selectionResultElapsedRealtimeMs: Long? = null
 ) {
-    /** Early main-video geometry; the player probe can still correct legacy or rotated files. */
-    val sourceVideoAspectRatio: Float?
-        get() = if (type == ClipType.VIDEO) {
+    /** Display geometry for visual media; the player probe can correct video metadata later. */
+    val sourceDisplayAspectRatio: Float?
+        get() = if (type == ClipType.VIDEO || type == ClipType.IMAGE) {
             ProjectAspectRatio.fromDimensions(width, height, rotationDegrees)
         } else null
+
+    /** Video-only alias retained for callers whose behavior is explicitly video-specific. */
+    val sourceVideoAspectRatio: Float?
+        get() = if (type == ClipType.VIDEO) sourceDisplayAspectRatio else null
+}
+
+/** Keep existing video-first project behavior; use the first still when no video was selected. */
+internal fun projectAspectRatioFromMedia(media: List<MediaMetadata>): Float? =
+    media.firstOrNull { it.type == ClipType.VIDEO }?.sourceVideoAspectRatio
+        ?: media.firstOrNull { it.type == ClipType.IMAGE }?.sourceDisplayAspectRatio
+
+internal fun photoRotationDegreesFromExif(orientation: Int): Int = when (orientation) {
+    ExifInterface.ORIENTATION_ROTATE_90, ExifInterface.ORIENTATION_TRANSPOSE -> 90
+    ExifInterface.ORIENTATION_ROTATE_180 -> 180
+    ExifInterface.ORIENTATION_ROTATE_270, ExifInterface.ORIENTATION_TRANSVERSE -> 270
+    else -> 0
 }
 
 data class MediaImportProgress(
@@ -242,7 +259,8 @@ class MediaPickerHelper(private val context: Context) {
                     width = options.outWidth.coerceAtLeast(0),
                     height = options.outHeight.coerceAtLeast(0),
                     fps = 30,
-                    type = ClipType.IMAGE
+                    type = ClipType.IMAGE,
+                    rotationDegrees = readImageRotationDegrees(uri)
                 )
                 CrashMarker.clear(context)
                 return image
@@ -275,6 +293,18 @@ class MediaPickerHelper(private val context: Context) {
             CrashMarker.clear(context)
             null
         }
+    }
+
+    private fun readImageRotationDegrees(uri: Uri): Int = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val orientation = ExifInterface(input).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION,
+                ExifInterface.ORIENTATION_NORMAL
+            )
+            photoRotationDegreesFromExif(orientation)
+        } ?: 0
+    } catch (_: Exception) {
+        0
     }
 
     private fun queryMediaStore(uri: Uri): MediaMetadata? {

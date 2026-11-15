@@ -1,17 +1,30 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import androidx.lifecycle.ViewModelStore
+import com.apexstudio.app.data.picker.MediaMetadata
+import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
+@OptIn(ExperimentalCoroutinesApi::class)
 class EditorProjectAspectRatioControllerTest {
     private fun mainClip() = MediaClip(
         id = "main",
@@ -52,5 +65,61 @@ class EditorProjectAspectRatioControllerTest {
 
         assertEquals(16f / 9f, vm.state.value.project!!.videoAspectRatio!!, 0.0001f)
         assertEquals("1:1", vm.export.value.settings.aspectRatio)
+    }
+
+    @Test
+    fun importingExifRotatedStillPersistsPortraitProjectAspect() {
+        val image = MediaMetadata(
+            uri = "file:///portrait-still.jpg",
+            name = "portrait-still.jpg",
+            durationMs = 3_000L,
+            width = 1_920,
+            height = 1_080,
+            fps = 30,
+            type = ClipType.IMAGE,
+            rotationDegrees = 90,
+        )
+
+        val imported = importIntoEmptyProject(
+            "portrait-still-project",
+            listOf(image),
+        )
+
+        assertEquals(ClipType.IMAGE, imported.clips.single().type)
+        assertEquals(9f / 16f, imported.videoAspectRatio!!, 0.001f)
+    }
+
+    private fun importIntoEmptyProject(projectId: String, media: List<MediaMetadata>): Project {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val viewModelStore = ViewModelStore()
+        return try {
+            val context = RuntimeEnvironment.getApplication()
+            val initialProject = Project(id = projectId, name = projectId, durationMs = 0L)
+            val projectRepository = ProjectRepository(context)
+            runBlocking { projectRepository.saveProject(initialProject) }
+
+            val vm = EditorViewModel(context = context, projectId = projectId)
+            viewModelStore.put(projectId, vm)
+            runBlocking {
+                withTimeout(10_000L) {
+                    vm.state.first { it.project?.id == projectId }
+                }
+            }
+            vm.onMediaPicked(media)
+            runBlocking {
+                withTimeout(10_000L) {
+                    projectRepository.loadAll().first { projects ->
+                        projects.any { project ->
+                            project.id == projectId &&
+                                project.clips.size == media.size &&
+                                project.videoAspectRatio != null
+                        }
+                    }.single { it.id == projectId }
+                }
+            }
+        } finally {
+            viewModelStore.clear()
+            Dispatchers.resetMain()
+        }
     }
 }

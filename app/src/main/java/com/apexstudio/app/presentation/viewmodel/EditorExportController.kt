@@ -173,18 +173,17 @@ fun EditorViewModel.startExport(
         ?: com.apexstudio.app.data.filter.GpuFilterConfig()
     val usesViralHdrPipeline = selectedGpuFilterConfig.activeProfileId ==
         com.apexstudio.app.data.filter.OneTapLooks.VIRAL_HDR_ID
-    val filterPreset: com.apexstudio.app.data.filter.FilterPreset?
-    if (!usesViralHdrPipeline && s.activeFilterId != null && context != null) {
+    val filterPreset = if (!usesViralHdrPipeline && s.activeFilterId != null && context != null) {
         try {
             val lutEngine = com.apexstudio.app.data.filter.LutFilterEngine(context)
-            filterPreset = resolveProjectExportFilterPreset(s, lutEngine.manifest.filters)
+            resolveProjectExportFilterPreset(s, lutEngine.manifest.filters)
                 ?.takeIf(lutEngine::isCustomLutAvailable)
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Failed to load filter manifest for export", e)
-            filterPreset = null
+            null
         }
     } else {
-        filterPreset = null
+        null
     }
     if (s.activeFilterId != null && !usesViralHdrPipeline && filterPreset == null) {
         _export.update {

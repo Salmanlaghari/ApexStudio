@@ -181,11 +181,10 @@ private fun EditorScreenContent(
     )
     val horizontalProjectLayout = usesHorizontalProjectLayout(editorLayoutAspectRatio)
     val windowConfiguration = LocalConfiguration.current
-    // Source geometry wins for the phone shell: a landscape clip on a portrait
-    // phone still gets the full-width 16:9 preview + dedicated timeline. The
-    // side-by-side landscape workspace is reserved for an actually wide window
-    // when the source itself did not already select that source-first shell.
-    val useLandscapeWorkspace = windowConfiguration.screenWidthDp > windowConfiguration.screenHeightDp &&
+    // Media aspect always chooses the preview/timeline arrangement. A wide
+    // window only gets a properties action; it must not replace a portrait
+    // source-first preview with a side-by-side inspector.
+    val showWideWindowPropertiesAction = windowConfiguration.screenWidthDp > windowConfiguration.screenHeightDp &&
         !horizontalProjectLayout
     // Keep the timeline in composition while changing only its available height;
     // this retains its remembered scroll position, selection and media bindings.
@@ -1466,15 +1465,16 @@ private fun EditorScreenContent(
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
         AdaptiveEditorWorkspace(
-            // PR169/170's preview-first stacked shell is the editor default;
-            // adaptive landscape remains available to explicit workspace hosts.
-            landscape = useLandscapeWorkspace,
+            // The editor follows the actual media aspect on every window size.
+            // The explicit side-inspector layout remains available to other hosts.
+            landscape = false,
             horizontalProjectMode = horizontalProjectLayout,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
             compactTimelinePaneHeight = compactTimelinePaneHeight,
             manualTimelinePaneHeight = manualTimelinePaneHeight,
             onManualTimelinePaneHeightChange = { manualTimelinePaneHeightDp = it?.value },
+            showVideoPropertiesAction = showWideWindowPropertiesAction,
             preview = {
         CompositionLocalProvider(LocalEditorPreviewEffects provides currentEffects) {
         EditorPreviewSection(

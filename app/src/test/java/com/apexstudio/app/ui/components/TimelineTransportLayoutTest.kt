@@ -53,6 +53,25 @@ class TimelineTransportLayoutTest {
         composeRule.onNodeWithContentDescription("Keyframe editing unavailable").assertIsNotEnabled()
     }
 
+    @Test fun selectedClipKeepsKeyframeVisibleButDisabledOutsideItsActiveRange() {
+        var toggles = 0
+        val reason = "Move the playhead inside the selected clip to add a keyframe"
+        composeRule.setContent {
+            Column(Modifier.width(320.dp)) {
+                PlaybackControlBar(
+                    canEditKeyframe = false,
+                    onToggleKeyframe = { toggles += 1 },
+                    showInlineKeyframe = true,
+                    keyframeUnavailableDescription = reason,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("playback-keyframe-button").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription(reason).assertIsNotEnabled()
+        composeRule.runOnIdle { assertEquals(0, toggles) }
+    }
+
     @Test fun playheadTimecodeSitsAboveAVisuallyCenteredPlayButtonAt320dp() {
         composeRule.setContent {
             Column(Modifier.width(320.dp)) {

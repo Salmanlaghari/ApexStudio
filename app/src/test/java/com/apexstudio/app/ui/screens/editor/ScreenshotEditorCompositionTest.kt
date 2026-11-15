@@ -38,15 +38,18 @@ class ScreenshotEditorCompositionTest {
         )
     }
 
-    @Test fun lowerToolsKeepKeyframeAndFullAnimationPropertiesAccessible() {
+    @Test fun playbackKeyframeToggleAndSelectedAnimationActionEditTheRealClip() {
         val vm = editor()
         val original = vm.state.value.project
         val picker = com.apexstudio.app.data.picker.MediaPickerHelper(androidx.test.core.app.ApplicationProvider.getApplicationContext())
         compose.setContent {
             val state by vm.state.collectAsState()
-            EditorBottomToolbarSection(state, vm, picker)
+            Column(Modifier.requiredSize(375.dp, 830.dp)) {
+                EditorTransportSection(state, vm, seekPlayerAndState = {}, onOpenAddMediaMenu = {})
+                EditorBottomToolbarSection(state, vm, picker)
+            }
         }
-        compose.onNodeWithText("Keyframe").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Add keyframe").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, vm.state.value.project!!.clips.single().keyframes.keyframes.size) }
         compose.onNodeWithText("Animation").performScrollTo().performClick()
         compose.runOnIdle {
@@ -72,7 +75,10 @@ class ScreenshotEditorCompositionTest {
         compose.onNodeWithTag("timeline-add-at-end").assertDoesNotExist()
         compose.onNodeWithTag("timeline-overflow").assertDoesNotExist()
         compose.onNodeWithContentDescription("Add Clip").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Add keyframe").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Add keyframe").assertIsDisplayed()
+        val playback = compose.onNodeWithTag("editor-playback-controls", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val keyframe = compose.onNodeWithTag("playback-keyframe-button", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Keyframe toggle is inside the fixed playback row", keyframe.top >= playback.top && keyframe.bottom <= playback.bottom)
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("The ruler stays directly above the video track", ruler.bottom <= track.top && track.top - ruler.bottom < 12f)

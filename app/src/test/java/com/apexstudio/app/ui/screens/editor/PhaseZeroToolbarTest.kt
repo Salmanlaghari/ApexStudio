@@ -202,7 +202,6 @@ class PhaseZeroToolbarTest {
             onTrim = { count("trim") },
             onMask = { count("mask") },
             onDuplicate = { count("duplicate") },
-            onToggleKeyframe = { count("keyframe") },
             onOverlayProps = { count("overlay-props") },
             onAudioMix = { count("audio-mix") },
             onRecord = { count("record") },

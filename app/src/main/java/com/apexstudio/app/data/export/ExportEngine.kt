@@ -477,6 +477,30 @@ class ExportEngine(private val context: Context) {
                         com.apexstudio.app.data.effect.AspectCropTransformation.targetSizeFor(
                             config.resolution, config.aspectRatio
                         )
+                    val allProjectStickerEffects = if (config.stickers.isEmpty()) {
+                        emptyList()
+                    } else {
+                        projectStickerExportEffects(
+                            context,
+                            config.stickers,
+                            outputWidth.toFloat() / outputHeight
+                        )
+                    }
+                    // A lone clip beginning at project time zero has the same item and project
+                    // clock. Keep that safe case on Media3's direct-item path so adding a
+                    // project sticker does not switch the source video to a different
+                    // composition render graph. Multi-clip, offset, or transition projects
+                    // still composite project stickers after assembly.
+                    val inlineProjectStickers = allProjectStickerEffects.isNotEmpty() &&
+                        plan.entries.size == 1 &&
+                        plan.entries.single().timelineStartMs == 0L &&
+                        plan.transitions.isEmpty()
+                    val inlineProjectStickerEffects = if (inlineProjectStickers) {
+                        allProjectStickerEffects
+                    } else emptyList()
+                    val compositionProjectStickerEffects = if (inlineProjectStickers) {
+                        emptyList()
+                    } else allProjectStickerEffects
                     val sourceFormatsByUri = mutableMapOf<String, SourceVideoFormatAudit>()
                     fun sourceFormatFor(uri: String, clipId: String): SourceVideoFormatAudit =
                         sourceFormatsByUri.getOrPut(uri) {
@@ -767,6 +791,7 @@ class ExportEngine(private val context: Context) {
                                     effectiveExportFrameRate(config.fps).toFloat()
                                 ))
                             }
+                            inlineProjectStickerEffects.forEach { effect -> add(effect) }
                         }
                         val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
                         val input = MediaItem.Builder()
@@ -779,28 +804,19 @@ class ExportEngine(private val context: Context) {
                             )
                             .build()
                         EditedMediaItem.Builder(input)
-                            .setEffects(Effects(audioProcessors, videoEffects))
-                            .build()
-                    }
-                    val projectStickerEffects = if (config.stickers.isEmpty()) {
-                        emptyList()
-                    } else {
-                        projectStickerExportEffects(
-                            context,
-                            config.stickers,
-                            outputWidth.toFloat() / outputHeight
-                        )
+                        .setEffects(Effects(audioProcessors, videoEffects))
+                        .build()
                     }
                     val directSingleItem = items.singleOrNull()?.takeIf {
-                        plan.transitions.isEmpty() && projectStickerEffects.isEmpty()
+                        plan.transitions.isEmpty() && compositionProjectStickerEffects.isEmpty()
                     }
                     val composition = if (directSingleItem != null) {
                         null
                     } else if (plan.transitions.isEmpty()) {
                         Composition.Builder(EditedMediaItemSequence.withAudioAndVideoFrom(items))
                             .apply {
-                                if (projectStickerEffects.isNotEmpty()) {
-                                    setEffects(Effects(emptyList(), projectStickerEffects))
+                                if (compositionProjectStickerEffects.isNotEmpty()) {
+                                    setEffects(Effects(emptyList(), compositionProjectStickerEffects))
                                 }
                             }
                             .build()
@@ -872,7 +888,7 @@ class ExportEngine(private val context: Context) {
                             .setEffects(Effects(
                                 emptyList(),
                                 listOf(com.apexstudio.app.data.gl.PackedTransitionGlEffect(plan)) +
-                                    projectStickerEffects
+                                    compositionProjectStickerEffects
                             ))
                             .build()
                     }

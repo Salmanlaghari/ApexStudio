@@ -192,33 +192,37 @@ class RestoredEditorInstrumentedTest {
                 assertTrue("Camera entry must not return to the editor", !device.hasObject(By.text("Camera")))
                 assertTrue("Lenses entry must not return to the editor", !device.hasObject(By.text("Lenses")))
 
-                // Exercise the compact contextual header action, not a direct VM toggle.
-                device.findObject(By.desc("Add keyframe")).click()
+                // Exercise the single fixed-row toggle, not a direct VM mutation.
+                val addKeyframe = device.findObject(By.desc("Add keyframe"))
+                assertTrue("Keyframe toggle must stay inside the fixed playback row",
+                    addKeyframe.visibleBounds.top >= play.visibleBounds.top &&
+                        addKeyframe.visibleBounds.bottom <= play.visibleBounds.bottom)
+                assertTrue("Selected-clip tools must not duplicate the playback keyframe toggle",
+                    !device.hasObject(By.desc("Keyframe")))
+                addKeyframe.click()
                 val keyframeDeadline = System.currentTimeMillis() + 5_000L
                 while (vm.state.value.project?.clips?.firstOrNull()?.keyframes?.keyframes.isNullOrEmpty() &&
                     System.currentTimeMillis() < keyframeDeadline
                 ) {
                     Thread.sleep(100L)
                 }
-                val headerKeyframe = device.findObject(By.desc("Remove keyframe"))
-                assertNotNull("Header action must switch to remove after creating a pin", headerKeyframe)
-                assertTrue("Compact action belongs between timeline focus control and real tracks",
-                    headerKeyframe.visibleBounds.top >= timeline.visibleBounds.bottom &&
-                        headerKeyframe.visibleBounds.bottom < dock.visibleBounds.top)
-                // The lower selected-clip action is independent of the compact header icon.
-                assertTrue("Lower Keyframe action is missing", device.wait(Until.hasObject(By.desc("Keyframe")), 10_000L))
-                device.findObject(By.desc("Keyframe")).click()
+                val removeKeyframe = device.findObject(By.desc("Remove keyframe"))
+                assertNotNull("Playback action must switch to remove after creating a pin", removeKeyframe)
+                assertTrue("Remove action remains in the playback row",
+                    removeKeyframe.visibleBounds.top >= play.visibleBounds.top &&
+                        removeKeyframe.visibleBounds.bottom <= play.visibleBounds.bottom)
+                removeKeyframe.click()
                 val removeDeadline = System.currentTimeMillis() + 15_000L
                 while (vm.state.value.project!!.clips.first().keyframes.keyframes.isNotEmpty() &&
                     System.currentTimeMillis() < removeDeadline) Thread.sleep(100L)
-                assertTrue("Lower Keyframe should remove the same real pin; selected=${vm.state.value.selectedClipId}, pins=${vm.state.value.project!!.clips.first().keyframes.keyframes}, position=${vm.state.value.playerPositionMs}",
+                assertTrue("Playback Keyframe should remove the same real pin; selected=${vm.state.value.selectedClipId}, pins=${vm.state.value.project!!.clips.first().keyframes.keyframes}, position=${vm.state.value.playerPositionMs}",
                     vm.state.value.project!!.clips.first().keyframes.keyframes.isEmpty())
-                device.findObject(By.desc("Keyframe")).click()
+                device.findObject(By.desc("Add keyframe")).click()
                 val addDeadline = System.currentTimeMillis() + 15_000L
                 while (vm.state.value.project!!.clips.first().keyframes.keyframes.isEmpty() &&
                     System.currentTimeMillis() < addDeadline) Thread.sleep(100L)
                 // The selected-clip row is horizontally scrollable on narrow phones.
-                val toolsY = device.findObject(By.desc("Keyframe")).visibleBounds.centerY()
+                val toolsY = device.findObject(By.desc("Volume")).visibleBounds.centerY()
                 device.swipe(device.displayWidth * 4 / 5, toolsY, device.displayWidth * 2 / 5, toolsY, 25)
                 assertTrue("Lower Animation action is missing", device.wait(Until.hasObject(By.desc("Animation")), 10_000L))
                 device.findObject(By.desc("Animation")).click()

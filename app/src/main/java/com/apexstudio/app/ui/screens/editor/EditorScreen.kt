@@ -1666,18 +1666,6 @@ private fun EditorScreenContent(
                         ).show()
                     }
                 },
-                onToggleKeyframe = {
-                    val clip = selectedKeyframeVideo(state)
-                    if (clip != null) {
-                        vm.toggleKeyframeAtPlayheadFor(clip.id)
-                    } else {
-                        android.widget.Toast.makeText(
-                            context,
-                            "Keyframe: select a visible video, photo, or overlay clip and place the playhead within it",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
                 onOverlay = {
                     if ((state.project?.clips?.any {
                         it.type == ClipType.VIDEO || it.type == ClipType.IMAGE

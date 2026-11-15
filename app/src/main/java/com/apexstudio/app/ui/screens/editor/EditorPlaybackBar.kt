@@ -7,8 +7,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,7 +52,8 @@ fun PlaybackControlBar(
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
     canNavigate: Boolean = true,
-    showInlineKeyframe: Boolean = true
+    showInlineKeyframe: Boolean = true,
+    keyframeUnavailableDescription: String = "Keyframe editing unavailable"
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -118,7 +117,12 @@ fun PlaybackControlBar(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (showInlineKeyframe) {
-                    KeyframeDiamondAddButton(hasKeyframeAtPlayhead, canEditKeyframe, onToggleKeyframe)
+                    KeyframeDiamondAddButton(
+                        hasKeyframeAtPlayhead,
+                        canEditKeyframe,
+                        onToggleKeyframe,
+                        keyframeUnavailableDescription,
+                    )
                 } else {
                     Spacer(Modifier.width(48.dp))
                 }
@@ -162,74 +166,22 @@ private fun TransportIconButton(
     }
 }
 
-/** Only shown for the selected video layer, immediately above the timeline. */
 @Composable
-internal fun SelectedVideoKeyframeControl(
+private fun KeyframeDiamondAddButton(
     hasKeyframeAtPlayhead: Boolean,
-    onToggleKeyframe: () -> Unit,
-    onOpenAnimation: () -> Unit,
-    onOpenPosition: () -> Unit = {},
-    onOpenScale: () -> Unit = {},
-    onOpenRotation: () -> Unit = {},
-    onOpenOpacity: () -> Unit = {},
-    onPreviousFrame: (() -> Unit)? = null,
-    onNextFrame: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    enabled: Boolean,
+    onClick: () -> Unit,
+    unavailableDescription: String = "Keyframe editing unavailable",
 ) {
-    // Historical single-row transport: keep the preview/timeline space, with
-    // newer property shortcuts reachable horizontally rather than a second card.
-    Row(
-        modifier = modifier.fillMaxWidth().height(44.dp)
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            KeyframeDiamondAddButton(hasKeyframeAtPlayhead, true, onToggleKeyframe)
-            Text("Keyframe", color = EditorPalette.TextPrimary, fontSize = 11.sp,
-                modifier = Modifier.clickable(onClick = onToggleKeyframe, role = Role.Button))
-        }
-        Row(
-            Modifier.height(40.dp).clip(RoundedCornerShape(7.dp))
-                .clickable(onClick = onOpenAnimation, role = Role.Button)
-                .semantics { contentDescription = "Edit video keyframe animation" }
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Link, null, tint = EditorPalette.TextSecondary, modifier = Modifier.size(17.dp))
-            Text("Animation", color = EditorPalette.TextSecondary, fontSize = 11.sp,
-                modifier = Modifier.padding(start = 3.dp))
-        }
-        SelectedVideoPropertyButton("Position", onOpenPosition, Modifier.width(72.dp).height(36.dp))
-        SelectedVideoPropertyButton("Scale", onOpenScale, Modifier.width(64.dp).height(36.dp))
-        SelectedVideoPropertyButton("Rotation", onOpenRotation, Modifier.width(72.dp).height(36.dp))
-        SelectedVideoPropertyButton("Opacity", onOpenOpacity, Modifier.width(72.dp).height(36.dp))
-        onPreviousFrame?.let { SelectedVideoPropertyButton("−1f", it, Modifier.width(56.dp).height(36.dp)) }
-        onNextFrame?.let { SelectedVideoPropertyButton("+1f", it, Modifier.width(56.dp).height(36.dp)) }
-    }
-}
-
-@Composable
-private fun SelectedVideoPropertyButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
-        modifier.fillMaxHeight().clip(RoundedCornerShape(6.dp))
-            .background(EditorPalette.BgBase)
-            .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick, role = Role.Button)
-            .semantics { contentDescription = "Open $label keyframe controls" },
-        contentAlignment = Alignment.Center
-    ) {
-        Text(label, color = EditorPalette.TextSecondary, fontSize = 10.sp, maxLines = 1)
-    }
-}
-
-@Composable
-private fun KeyframeDiamondAddButton(hasKeyframeAtPlayhead: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val color = if (!enabled) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) EditorPalette.NeonCyan else EditorPalette.TextSecondary
     Box(
-        Modifier.size(width = 48.dp, height = 40.dp).clickable(enabled = enabled, onClick = onClick, role = Role.Button)
-            .semantics { contentDescription = if (!enabled) "Keyframe editing unavailable" else if (hasKeyframeAtPlayhead) "Remove keyframe" else "Add keyframe" },
+        Modifier.size(width = 48.dp, height = 40.dp)
+            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+            .testTag("playback-keyframe-button")
+            .semantics {
+                contentDescription = if (!enabled) unavailableDescription
+                else if (hasKeyframeAtPlayhead) "Remove keyframe" else "Add keyframe"
+            },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.size(20.dp)) {

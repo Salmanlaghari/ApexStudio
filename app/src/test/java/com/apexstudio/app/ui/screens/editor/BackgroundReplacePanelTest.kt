@@ -1,8 +1,9 @@
 package com.apexstudio.app.ui.screens.editor
 
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -47,7 +48,7 @@ class BackgroundReplacePanelTest {
         compose.onNodeWithText(
             "The model is bundled with the app. Tap Apply to prepare it; no download is needed."
         ).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Download model (244 KB)").assertDoesNotExist()
+        compose.onAllNodesWithText("Download model (244 KB)").assertCountEquals(0)
         compose.onNodeWithText("Apply background").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Green/blue screens? Open Chroma key + wallpapers")
             .performScrollTo()

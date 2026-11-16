@@ -1785,7 +1785,10 @@ private fun TimelineTimeRuler(
                     }
 
                     pointerScope.awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial
+                        )
                         var movedBeyondSlop = false
                         var horizontalDrag = false
                         var tapCancelled = false
@@ -1794,7 +1797,7 @@ private fun TimelineTimeRuler(
                         var releaseConsumed = false
 
                         while (true) {
-                            val event = awaitPointerEvent()
+                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
                             if (event.changes.any { it.id != down.id && it.pressed }) {
                                 tapCancelled = true
                             }

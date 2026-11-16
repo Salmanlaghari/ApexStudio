@@ -470,6 +470,7 @@ private fun EditorScreenContent(
                     )?.let { latencyMs ->
                         Log.i("PreviewStartupLatency", "selection_to_first_rendered_video_frame_ms=$latencyMs")
                     }
+                    vm.setPlayerError(null)
                     vm.recordPreviewFrameRendered(player.currentMediaItem?.mediaId)
                 }
                 override fun onPlayerError(error: PlaybackException) {

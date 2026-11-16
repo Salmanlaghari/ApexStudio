@@ -2919,6 +2919,24 @@ private fun TimelineVideoTrack(
             start
         }
     }
+    val junctionTimesMs = remember(videoClips, transitions, transitionPlan, clipTimelineStarts) {
+        videoClips.zipWithNext().mapIndexed { index, (fromClip, toClip) ->
+            val planned = transitionPlan.transitions.firstOrNull {
+                it.from.clip.id == fromClip.id && it.to.clip.id == toClip.id
+            }
+            planned?.let { it.startMs + it.durationMs / 2L }
+                ?: transitionPlan.entries.firstOrNull { it.clip.id == fromClip.id }?.timelineEndMs
+                ?: (clipTimelineStarts.getOrElse(index) { 0L } + fromClip.effectiveDurationMs())
+        }
+    }
+    val junctionBadgeWidthsDp = remember(videoClips, transitions) {
+        videoClips.zipWithNext().map { (fromClip, toClip) ->
+            if (transitions.any { it.fromClipId == fromClip.id && it.toClipId == toClip.id }) 38f else 26f
+        }
+    }
+    val junctionBadgeLayouts = remember(junctionTimesMs, junctionBadgeWidthsDp, msToDp) {
+        timelineTransitionBadgeLayouts(junctionTimesMs, junctionBadgeWidthsDp, msToDp)
+    }
 
     // CapCut-style flat filmstrip: no border, radius or padding —
     // the clips run edge to edge, with the transition junction badge
@@ -3367,15 +3385,30 @@ private fun TimelineVideoTrack(
                     val junctionTimeMs = plannedTransition?.let { it.startMs + it.durationMs / 2L }
                         ?: transitionPlan.entries.firstOrNull { it.clip.id == clip.id }?.timelineEndMs
                         ?: (clipTimelineStarts.getOrElse(index) { 0L } + clipDur)
-                    val badgeWidthDp = if (junctionTransition != null) 38.dp else 26.dp
+                    val badgeLayout = junctionBadgeLayouts.getOrElse(index) {
+                        TimelineTransitionBadgeLayout(compact = false, verticalLane = 1)
+                    }
+                    val normalBadgeWidthDp = junctionBadgeWidthsDp.getOrElse(index) {
+                        if (junctionTransition != null) 38f else 26f
+                    }
+                    val badgeWidthDp = (if (badgeLayout.compact) 24f else normalBadgeWidthDp).dp
+                    val badgeVerticalOffset = when (badgeLayout.verticalLane) {
+                        0 -> (-18).dp
+                        2 -> 18.dp
+                        else -> 0.dp
+                    }
                     TimelineTransitionJunctionBadge(
                         transition = junctionTransition,
                         enabled = clip.type == com.apexstudio.app.domain.model.ClipType.VIDEO &&
                             nextClip.type == com.apexstudio.app.domain.model.ClipType.VIDEO,
+                        compact = badgeLayout.compact,
                         onClick = { onOpenTransition(clip.id, nextClip.id) },
                         modifier = Modifier
                             .align(Alignment.CenterStart)
-                            .offset(x = (junctionTimeMs * msToDp).dp - badgeWidthDp / 2)
+                            .offset(
+                                x = (junctionTimeMs * msToDp).dp - badgeWidthDp / 2,
+                                y = badgeVerticalOffset,
+                            )
                             .zIndex(10f)
                     )
                 }
@@ -4438,6 +4471,54 @@ private fun TimelineZoomHud(
     }
 }
 
+internal data class TimelineTransitionBadgeLayout(
+    val compact: Boolean,
+    /** 0 = upper lane, 1 = centered lane, 2 = lower lane. */
+    val verticalLane: Int,
+)
+
+/** Prevent adjacent transition badges from hiding each other's label or tap target. */
+internal fun timelineTransitionBadgeLayouts(
+    junctionTimesMs: List<Long>,
+    normalBadgeWidthsDp: List<Float>,
+    dpPerMs: Float,
+    minimumGapDp: Float = 4f,
+): List<TimelineTransitionBadgeLayout> {
+    require(junctionTimesMs.size == normalBadgeWidthsDp.size) {
+        "Each transition junction needs one badge width"
+    }
+    if (junctionTimesMs.isEmpty()) return emptyList()
+
+    val safeScale = dpPerMs.takeIf { it.isFinite() && it > 0f } ?: 0f
+    val centersDp = junctionTimesMs.map { it.toDouble() * safeScale.toDouble() }
+    val compact = BooleanArray(junctionTimesMs.size)
+    for (left in junctionTimesMs.indices) {
+        for (right in left + 1 until junctionTimesMs.size) {
+            val distanceDp = kotlin.math.abs(centersDp[right] - centersDp[left]).toFloat()
+            val requiredGapDp = (normalBadgeWidthsDp[left] + normalBadgeWidthsDp[right]) / 2f + minimumGapDp
+            if (distanceDp < requiredGapDp) {
+                compact[left] = true
+                compact[right] = true
+            }
+        }
+    }
+
+    val occupiedLanes = List(3) { mutableListOf<Pair<Double, Float>>() }
+    return junctionTimesMs.indices.map { index ->
+        val badgeIsCompact = compact[index]
+        val widthDp = if (badgeIsCompact) 24f else normalBadgeWidthsDp[index]
+        val laneCandidates = if (badgeIsCompact) listOf(0, 2, 1) else listOf(1)
+        val lane = laneCandidates.firstOrNull { candidate ->
+            occupiedLanes[candidate].none { (otherCenterDp, otherWidthDp) ->
+                kotlin.math.abs(centersDp[index] - otherCenterDp) <
+                    (widthDp + otherWidthDp) / 2f + minimumGapDp
+            }
+        } ?: 1
+        occupiedLanes[lane].add(centersDp[index] to widthDp)
+        TimelineTransitionBadgeLayout(compact = badgeIsCompact, verticalLane = lane)
+    }
+}
+
 /**
  * Interactive Transition Junction Button between adjacent video clips on the timeline.
  */
@@ -4446,6 +4527,7 @@ private fun TimelineTransitionJunctionBadge(
     transition: ClipTransition?,
     onClick: () -> Unit,
     enabled: Boolean = true,
+    compact: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val hasTransition = transition != null
@@ -4459,8 +4541,8 @@ private fun TimelineTransitionJunctionBadge(
     Box(
         modifier = modifier
             .size(
-                width = if (hasTransition) 38.dp else 26.dp,
-                height = if (hasTransition) 30.dp else 26.dp
+                width = if (compact) 24.dp else if (hasTransition) 38.dp else 26.dp,
+                height = if (compact) 16.dp else if (hasTransition) 30.dp else 26.dp
             )
             .graphicsLayer { alpha = if (enabled) 1f else 0.42f }
             .clip(RoundedCornerShape(6.dp))
@@ -4477,7 +4559,14 @@ private fun TimelineTransitionJunctionBadge(
             .padding(horizontal = 2.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center
     ) {
-        if (hasTransition) {
+        if (compact) {
+            Icon(
+                imageVector = if (hasTransition) transDef?.icon ?: Icons.Default.Transform else Icons.Default.Transform,
+                contentDescription = if (hasTransition) transDef?.name ?: "Transition" else "Add Transition",
+                tint = if (hasTransition) Color(0xFF007F76) else Color(0xFF0F172A),
+                modifier = Modifier.size(11.dp)
+            )
+        } else if (hasTransition) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center

@@ -50,6 +50,26 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
+    fun crowdedTransitionBadgesCompactAndUseSeparateRows() {
+        val crowded = timelineTransitionBadgeLayouts(
+            junctionTimesMs = listOf(1_000L, 1_040L, 1_080L),
+            normalBadgeWidthsDp = listOf(38f, 38f, 38f),
+            dpPerMs = 0.3f,
+        )
+        assertTrue(crowded.all { it.compact })
+        assertEquals(3, crowded.map { it.verticalLane }.distinct().size)
+        assertTrue(crowded.all { it.verticalLane in 0..2 })
+
+        val spaced = timelineTransitionBadgeLayouts(
+            junctionTimesMs = listOf(1_000L, 4_000L),
+            normalBadgeWidthsDp = listOf(38f, 38f),
+            dpPerMs = 0.054f,
+        )
+        assertTrue(spaced.none { it.compact })
+        assertEquals(listOf(1, 1), spaced.map { it.verticalLane })
+    }
+
+    @Test
     fun referenceTimelineUsesDarkRulerAndHighContrastLaneTokens() {
         assertEquals(Color(0xFF111A2C), TIMELINE_RULER_BACKGROUND)
         assertEquals(Color(0xFFD7E6F3), TIMELINE_RULER_LABEL_COLOR)

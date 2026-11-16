@@ -693,9 +693,9 @@ class ExportTimestampParityInstrumentedTest {
         val projectBaselineName = "sticker-project-baseline-$id.mp4"
         val projectName = "sticker-project-$id.mp4"
         val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
-        // Use a constant-background source so independent AVC exports isolate sticker
-        // compositing instead of differing because of unrelated source motion and
-        // frame-wide rate-control decisions. The strict pixel threshold below is unchanged.
+        // Use a constant-background 30fps source so independent AVC exports isolate
+        // sticker compositing from motion-driven rate-control drift while retaining the
+        // original CFR timestamp cadence. The strict pixel threshold stays unchanged.
         val baselineConfig = ExportEngine.ExportConfig(
             resolution = "720p",
             fps = 30,
@@ -978,7 +978,7 @@ class ExportTimestampParityInstrumentedTest {
         }
 
         try {
-            instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
+            instrumentation.context.assets.open("export/static_30fps_flat_fixture.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
             }
             val sourceTrack = readVideoTrack(source)

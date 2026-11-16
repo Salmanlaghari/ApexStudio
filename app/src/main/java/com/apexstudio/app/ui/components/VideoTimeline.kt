@@ -1077,7 +1077,20 @@ fun VideoTimeline(
                                     .testTag("timeline-ruler")
                             )
 
-                            if (hasMainVideo) Spacer(Modifier.height(10.dp))
+                            if (hasMainVideo) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .pointerInput(scrollState) {
+                                            detectHorizontalDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                scrollState.dispatchRawDelta(-dragAmount)
+                                            }
+                                        }
+                                        .testTag("timeline-header-scroll-gap")
+                                )
+                            }
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
                             // layer 0 only). Keep its timing model untouched;

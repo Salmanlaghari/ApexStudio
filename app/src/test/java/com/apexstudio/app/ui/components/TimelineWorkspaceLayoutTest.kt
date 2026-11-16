@@ -499,6 +499,12 @@ class TimelineWorkspaceLayoutTest {
         val rootBounds = root.fetchSemanticsNode().boundsInRoot
         val rulerBounds = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
+        val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "The scroll gap must begin below the ruler; ruler=$rulerBounds, gap=$gapBounds",
+            gapBounds.top >= rulerBounds.bottom - 1f
+        )
         val rulerXInRoot = rulerBounds.left + x - rootBounds.left
         val rulerYInRoot = rulerBounds.center.y - rootBounds.top
         assertTrue(

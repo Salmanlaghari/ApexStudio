@@ -1016,17 +1016,12 @@ fun VideoTimeline(
                 // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
                 // tracks scroll vertically. Horizontally synced with the scrolling content via
                 // translationX (no recomposition per scroll frame); clipped above scrolling rows.
-                // Unclaimed horizontal drags pan the shared canvas; ruler and clip handlers win.
+                // The empty gap pans the shared canvas without intercepting ruler or clip input.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .scrollable(
-                            state = scrollState,
-                            orientation = Orientation.Horizontal,
-                            reverseDirection = true
-                        )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
@@ -1073,6 +1068,11 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(10.dp)
+                                        .scrollable(
+                                            state = scrollState,
+                                            orientation = Orientation.Horizontal,
+                                            reverseDirection = true
+                                        )
                                         .testTag("timeline-header-scroll-gap")
                                 )
                             }

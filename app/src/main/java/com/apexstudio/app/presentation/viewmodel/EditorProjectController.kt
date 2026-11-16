@@ -170,6 +170,21 @@ internal fun EditorViewModel.loadProject() {
         val firstClipId = updatedP.clips.firstOrNull { it.type == ClipType.VIDEO }?.id
             ?: updatedP.clips.firstOrNull()?.id
         activeFxSelectionRequest++
+        // Publish the separate mixer mirror before exposing this project snapshot. StateFlow
+        // observers may treat the project id as loaded and edit immediately (notably with an
+        // unconfined dispatcher), so the project and audio flows must be coherent at that point.
+        val mixerIds = _audio.value.tracks.map { it.id }.toSet()
+        val projectIds = updatedP.audioTracks.map { it.id }.toSet()
+        if (mixerIds != projectIds) {
+            Log.w(
+                "EditorViewModel",
+                "Audio track lists diverged on load (mixer=${mixerIds.size}, project=${projectIds.size}) — syncing mixer from project"
+            )
+        }
+        _audio.update {
+            it.copy(tracks = updatedP.audioTracks, isMuted = updatedP.originalVideoMuted)
+        }
+
         _state.update {
             val validSelectedClipIds = it.selectedClipIds.intersect(updatedP.clips.map { clip -> clip.id }.toSet())
             it.copy(
@@ -198,24 +213,6 @@ internal fun EditorViewModel.loadProject() {
                 // must not start playback before the user presses Play.
                 isPlaying = false
             )
-        }
-
-        // Audio-list sync (Kilo): the project list is the source of
-        // truth. The mixer list (_audio.tracks) must carry the same
-        // tracks, or the dual-write setters silently no-op for tracks
-        // missing from one list (diverged / old project). The old
-        // loadAudioState() read the FIRST project from the stub repo —
-        // the wrong project when several exist — and is deleted.
-        val mixerIds = _audio.value.tracks.map { it.id }.toSet()
-        val projectIds = updatedP.audioTracks.map { it.id }.toSet()
-        if (mixerIds != projectIds) {
-            Log.w(
-                "EditorViewModel",
-                "Audio track lists diverged on load (mixer=${mixerIds.size}, project=${projectIds.size}) — syncing mixer from project"
-            )
-        }
-        _audio.update {
-            it.copy(tracks = updatedP.audioTracks, isMuted = updatedP.originalVideoMuted)
         }
 
         // Reclaim orphaned project_media copies (Kilo): files in

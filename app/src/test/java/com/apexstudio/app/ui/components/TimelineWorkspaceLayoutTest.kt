@@ -244,17 +244,25 @@ class TimelineWorkspaceLayoutTest {
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertTrue("Fixture must have horizontal overflow", scrollState.maxValue > 0) }
 
-        // Use the clear 10dp gap between the scrub ruler and V1: dragging the
-        // ruler itself must retain its more important seek/scrub behavior.
-        composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
-            .performTouchInput {
-                val y = height / 2f
-                swipe(
-                    start = Offset(width * 0.85f, y),
-                    end = Offset(width * 0.15f, y),
-                    durationMillis = 200
-                )
-            }
+        // The gap child spans the full timeline width, so dispatch the gesture
+        // through the visible pinned viewport while keeping it at the gap's Y.
+        val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val pinnedHeader = composeRule.onNodeWithTag("timeline-pinned-header-scroll-target", useUnmergedTree = true)
+        val pinnedHeaderBounds = pinnedHeader.fetchSemanticsNode().boundsInRoot
+        val gapYInHeader = gapBounds.center.y - pinnedHeaderBounds.top
+        assertTrue(
+            "The header gap should be inside the visible pinned viewport",
+            gapYInHeader in 0f..pinnedHeaderBounds.height
+        )
+        pinnedHeader.performTouchInput {
+            val y = gapYInHeader
+            swipe(
+                start = Offset(width * 0.85f, y),
+                end = Offset(width * 0.15f, y),
+                durationMillis = 200
+            )
+        }
         composeRule.waitForIdle()
         assertTrue("A leftward header swipe advances the shared timeline", scrollState.value > 0)
     }

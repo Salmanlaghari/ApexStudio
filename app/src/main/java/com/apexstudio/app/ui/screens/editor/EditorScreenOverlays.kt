@@ -1446,6 +1446,20 @@ internal fun isPreviewFrameReadyForSource(
 ): Boolean = isTransitionFrameRendered || isImage ||
     (hasPlayer && sourceId != null && renderedSourceId == sourceId && generation > generationAtBind)
 
+internal const val PREVIEW_FIRST_FRAME_STALL_TIMEOUT_MS = 12_000L
+
+internal fun shouldWatchForPreviewFrameStall(
+    clipType: ClipType?,
+    hasPlayer: Boolean,
+    isMainPlayer: Boolean,
+    isPlayerReady: Boolean,
+    isBuffering: Boolean,
+    firstFrameRendered: Boolean,
+    isTransitionPreview: Boolean,
+    playerError: String?,
+): Boolean = clipType == ClipType.VIDEO && hasPlayer && isMainPlayer && isPlayerReady &&
+    !isBuffering && !firstFrameRendered && !isTransitionPreview && playerError == null
+
 @Composable
 fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
     state: EditorState,
@@ -1560,6 +1574,50 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         // onRenderedFirstFrame callback, never from STATE_READY.
         isTransitionFrameRendered = isTransitionPreview,
     )
+    LaunchedEffect(
+        mainPreviewClip?.id,
+        previewPlayer,
+        state.isPlayerReady,
+        state.isBuffering,
+        firstFrameRendered,
+        isTransitionPreview,
+        state.playerError,
+    ) {
+        if (!shouldWatchForPreviewFrameStall(
+                clipType = mainPreviewClip?.type,
+                hasPlayer = previewPlayer != null,
+                isMainPlayer = previewPlayer === exoPlayer,
+                isPlayerReady = state.isPlayerReady,
+                isBuffering = state.isBuffering,
+                firstFrameRendered = firstFrameRendered,
+                isTransitionPreview = isTransitionPreview,
+                playerError = state.playerError,
+            )
+        ) return@LaunchedEffect
+
+        val waitingForSourceId = mainPreviewClip?.id ?: return@LaunchedEffect
+        val generationAtStart = frameGenerationAtBind
+        kotlinx.coroutines.delay(PREVIEW_FIRST_FRAME_STALL_TIMEOUT_MS)
+
+        val latestState = vm.state.value
+        val latestMainClip = timelinePreviewClip(
+            latestState.project?.clips.orEmpty(),
+            vm.playerPositionFlow.value,
+        )
+        val frameReadyNow = isPreviewFrameReadyForSource(
+            sourceId = waitingForSourceId,
+            renderedSourceId = vm.previewFrameSourceId.value,
+            generation = vm.previewFrameGeneration.value,
+            generationAtBind = generationAtStart,
+            isImage = false,
+            hasPlayer = previewPlayer != null,
+        )
+        if (latestMainClip?.id == waitingForSourceId && !frameReadyNow &&
+            latestState.isPlayerReady && !latestState.isBuffering && latestState.playerError == null
+        ) {
+            vm.setPlayerError("No preview frame appeared. Tap Retry video preview.")
+        }
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()

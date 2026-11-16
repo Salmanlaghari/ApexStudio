@@ -54,6 +54,38 @@ class EditorReviewPlaybackRegressionTest {
         assertTrue(isPreviewFrameReadyForSource("still", null, 0L, 0L, isImage = true, hasPlayer = false))
     }
 
+    @Test fun firstFrameWatchdogOnlyTargetsAStalledReadyMainVideo() {
+        fun shouldWatch(
+            clipType: ClipType? = ClipType.VIDEO,
+            hasPlayer: Boolean = true,
+            isMainPlayer: Boolean = true,
+            isPlayerReady: Boolean = true,
+            isBuffering: Boolean = false,
+            firstFrameRendered: Boolean = false,
+            isTransitionPreview: Boolean = false,
+            playerError: String? = null,
+        ) = shouldWatchForPreviewFrameStall(
+            clipType = clipType,
+            hasPlayer = hasPlayer,
+            isMainPlayer = isMainPlayer,
+            isPlayerReady = isPlayerReady,
+            isBuffering = isBuffering,
+            firstFrameRendered = firstFrameRendered,
+            isTransitionPreview = isTransitionPreview,
+            playerError = playerError,
+        )
+
+        assertTrue(shouldWatch())
+        assertFalse(shouldWatch(clipType = ClipType.IMAGE))
+        assertFalse(shouldWatch(hasPlayer = false))
+        assertFalse(shouldWatch(isMainPlayer = false))
+        assertFalse(shouldWatch(isPlayerReady = false))
+        assertFalse(shouldWatch(isBuffering = true))
+        assertFalse(shouldWatch(firstFrameRendered = true))
+        assertFalse(shouldWatch(isTransitionPreview = true))
+        assertFalse(shouldWatch(playerError = "decoder error"))
+    }
+
     @Test fun itemBindingResetsOldCurveRateEvenWhenNextConstantMultiplierMatches() {
         val recorder = RecordingPlayer()
         val next = second.copy(speedMultiplier = 1f)

@@ -599,7 +599,7 @@ fun VideoPreviewArea(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "Reload Sample Video",
+                                text = "Retry video preview",
                                 color = ApexPalette.NeonCyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold

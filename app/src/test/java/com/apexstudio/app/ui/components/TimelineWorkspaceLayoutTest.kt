@@ -493,8 +493,19 @@ class TimelineWorkspaceLayoutTest {
         var scrubbedMs = -1L
         composeRule.setContent { workspace(onScrub = { scrubbedMs = it }) }
         val x = 108f * composeRule.density.density
-        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
-            click(Offset(x, center.y))
+        // The ruler spans the full project width inside a clipped horizontal scroller.
+        // Inject through the visible test root so the tap uses screen-viewport coordinates.
+        val root = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val rulerBounds = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val rulerYInRoot = rulerBounds.center.y - rootBounds.top
+        assertTrue(
+            "The ruler center should be inside the visible timeline viewport; y=$rulerYInRoot, height=${rootBounds.height}",
+            rulerYInRoot in 0f..rootBounds.height
+        )
+        root.performTouchInput {
+            click(Offset(x, rulerYInRoot))
         }
         // The ruler also recognizes double-tap-to-fit, so single-tap seek is
         // delivered after the double-tap timeout has ruled out a second tap.

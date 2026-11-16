@@ -34,7 +34,7 @@ class ProfessionalTimelineToolbarTest {
     fun controlsReflectAndUpdateRealTimelineStateWithinCompactPhoneWidth() {
         compose.setContent {
             var state by remember {
-                mutableStateOf(EditorState(playerPositionMs = 1_234L, magneticSnapping = true, timelineZoom = 0.75f))
+                mutableStateOf(EditorState(playerPositionMs = 1_234L, magneticSnapping = true, rippleEditing = true, timelineZoom = 0.75f))
             }
             var focused by remember { mutableStateOf(false) }
             Box(Modifier.requiredSize(320.dp, 100.dp).testTag("toolbar-test-root")) {
@@ -43,6 +43,7 @@ class ProfessionalTimelineToolbarTest {
                     focused = focused,
                     onToggleFocus = { focused = !focused },
                     onToggleSnapping = { state = state.copy(magneticSnapping = !state.magneticSnapping) },
+                    onToggleRippleEditing = { state = state.copy(rippleEditing = !state.rippleEditing) },
                     onZoomOut = { state = state.copy(timelineZoom = TIMELINE_MIN_ZOOM) },
                     onZoomIn = { state = state.copy(timelineZoom = 1.5f) },
                     modifier = Modifier.fillMaxWidth(),
@@ -55,6 +56,11 @@ class ProfessionalTimelineToolbarTest {
         compose.onNodeWithText("0.8x").assertIsDisplayed()
         compose.onNodeWithContentDescription("Magnetic snapping enabled").performClick()
         compose.onNodeWithContentDescription("Magnetic snapping disabled").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Ripple editing enabled").performClick()
+        compose.onNodeWithContentDescription("Ripple editing disabled").assertIsDisplayed()
+        compose.onNodeWithText("Ripple off").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Ripple editing disabled").performClick()
+        compose.onNodeWithContentDescription("Ripple editing enabled").assertIsDisplayed()
 
         compose.onNodeWithContentDescription("Zoom timeline out").performClick()
         compose.onNodeWithText("0.01x").assertIsDisplayed()
@@ -65,6 +71,10 @@ class ProfessionalTimelineToolbarTest {
 
         val root = compose.onNodeWithTag("toolbar-test-root").fetchSemanticsNode().boundsInRoot
         val toolbar = compose.onNodeWithTag("professional-timeline-toolbar").fetchSemanticsNode().boundsInRoot
+        val ripple = compose.onNodeWithTag("timeline-ripple-toggle").fetchSemanticsNode().boundsInRoot
+        val focus = compose.onNodeWithTag("timeline-focus-toggle").fetchSemanticsNode().boundsInRoot
         assertTrue("Timeline controls must stay within a compact phone width: $toolbar root=$root", toolbar.right <= root.right)
+        assertTrue("Ripple control must stay within a compact phone width: $ripple root=$root", ripple.right <= root.right)
+        assertTrue("Focus control must stay within a compact phone width: $focus root=$root", focus.right <= root.right)
     }
 }

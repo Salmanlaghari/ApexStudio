@@ -71,7 +71,9 @@ fun EditorViewModel.autoCutSelectedClips(): Boolean {
     // A single snapshot covers the whole append, so one Undo restores the exact project.
     pushUndo()
     val appendedDurationMs = generatedClips.sumOf { it.effectiveDurationMs() }
-    val clipsWithRippledOverlays = rippleOverlays(project.clips, sequenceStartMs, appendedDurationMs)
+    val clipsWithRippledOverlays = if (snapshot.rippleEditing) {
+        rippleOverlays(project.clips, sequenceStartMs, appendedDurationMs)
+    } else project.clips
     val updatedClips = clipsWithRippledOverlays + generatedClips
     val duration = computeTimelineDurationMs(updatedClips, project.audioTracks, project.transitions)
     _state.update { current ->

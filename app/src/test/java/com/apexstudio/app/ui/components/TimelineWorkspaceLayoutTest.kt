@@ -248,7 +248,12 @@ class TimelineWorkspaceLayoutTest {
         // ruler itself must retain its more important seek/scrub behavior.
         composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
             .performTouchInput {
-                swipe(start = Offset(300f, 5f), end = Offset(260f, 5f), durationMillis = 200)
+                val y = height / 2f
+                swipe(
+                    start = Offset(width * 0.85f, y),
+                    end = Offset(width * 0.15f, y),
+                    durationMillis = 200
+                )
             }
         composeRule.waitForIdle()
         assertTrue("A leftward header swipe advances the shared timeline", scrollState.value > 0)

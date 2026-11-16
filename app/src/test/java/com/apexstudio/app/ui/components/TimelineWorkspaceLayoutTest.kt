@@ -221,13 +221,37 @@ class TimelineWorkspaceLayoutTest {
         val rulerTick = composeRule.onNodeWithTag("timeline-ruler-label-2", useUnmergedTree = true)
         val rulerTickBefore = rulerTick.fetchSemanticsNode().boundsInRoot.left
 
-        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
-            swipe(start = Offset(300f, 14f), end = Offset(260f, 14f), durationMillis = 200)
-        }
+        // Ruler drags intentionally scrub; drive the shared state directly to
+        // verify that the ruler and in-lane identity chip stay synchronized.
+        composeRule.runOnIdle { scrollState.dispatchRawDelta(40f) }
         composeRule.waitForIdle()
         assertTrue("The shared horizontal scroll state advances", scrollState.value > 0)
         assertTrue("A real lane identity chip scrolls with its lane", laneIdentity.fetchSemanticsNode().boundsInRoot.left < identityBefore)
         assertTrue("Ruler labels move with the same timeline scroll", rulerTick.fetchSemanticsNode().boundsInRoot.left < rulerTickBefore)
+    }
+
+    @Test
+    fun pinnedHeaderSwipeAdvancesTheSameSharedHorizontalScrollState() {
+        val scrollState = ScrollState(0)
+        composeRule.setContent {
+            workspace(
+                widthDp = 360,
+                heightDp = 300,
+                clips = listOf(clip("main", durationMs = 120_000L)),
+                scrollState = scrollState,
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertTrue("Fixture must have horizontal overflow", scrollState.maxValue > 0) }
+
+        // Use the clear 10dp gap between the scrub ruler and V1: dragging the
+        // ruler itself must retain its more important seek/scrub behavior.
+        composeRule.onNodeWithTag("timeline-pinned-header-scroll-target", useUnmergedTree = true)
+            .performTouchInput {
+                swipe(start = Offset(300f, 33f), end = Offset(260f, 33f), durationMillis = 200)
+            }
+        composeRule.waitForIdle()
+        assertTrue("A leftward header swipe advances the shared timeline", scrollState.value > 0)
     }
 
     @Test

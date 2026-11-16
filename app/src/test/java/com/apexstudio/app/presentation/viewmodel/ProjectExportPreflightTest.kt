@@ -117,6 +117,47 @@ class ProjectExportPreflightTest {
         ))
     }
 
+    @Test fun `whole-project export fails closed for multiple typed audio clips in one lane`() {
+        val legacyProjection = AudioTrack(
+            id = "music-1", name = "Music", uri = "file:///music-1.m4a",
+            trimEndMs = 1_000L, sourceDurationMs = 1_000L
+        )
+        val first = com.apexstudio.app.domain.model.timeline.AudioClip(
+            id = "music-1", uri = android.net.Uri.parse("file:///music-1.m4a"),
+            inMs = 0L, outMs = 1_000L, trimStartMs = 0L, trimEndMs = 1_000L, sourceDurationMs = 1_000L
+        )
+        val second = com.apexstudio.app.domain.model.timeline.AudioClip(
+            id = "music-2", uri = android.net.Uri.parse("file:///music-2.m4a"),
+            inMs = 1_500L, outMs = 2_500L, trimStartMs = 250L, trimEndMs = 1_250L, sourceDurationMs = 2_000L
+        )
+        val lane = com.apexstudio.app.domain.model.timeline.AudioTrack(
+            id = "shared-audio-music-1", lane = 10, clips = listOf(first, second)
+        )
+        val project = state.project!!.copy(
+            audioTracks = listOf(legacyProjection),
+            timelineAuthorityVersion = Project.CURRENT_TIMELINE_AUTHORITY_VERSION,
+            timeline = com.apexstudio.app.domain.model.timeline.Timeline(tracks = listOf(lane))
+        )
+        val withMultiClipLane = state.copy(project = project)
+
+        // Demonstrate the lossy legacy export projection: only the first URI is available.
+        assertEquals(listOf("music-1"), buildProjectExportConfig(
+            withMultiClipLane, AudioStudioState(), ExportSettings(), includeSharedVideoClips = false
+        ).musicMixTracks.map { it.id })
+        val reason = wholeProjectExportUnsupportedReason(
+            withMultiClipLane, AudioStudioState(), ExportSettings()
+        )
+        assertTrue(reason, reason!!.contains("multiple clips in audio lane"))
+
+        val singleClipLane = lane.copy(clips = listOf(first))
+        val supportedSingleClip = withMultiClipLane.copy(project = project.copy(
+            timeline = com.apexstudio.app.domain.model.timeline.Timeline(tracks = listOf(singleClipLane))
+        ))
+        assertNull(wholeProjectExportUnsupportedReason(
+            supportedSingleClip, AudioStudioState(), ExportSettings()
+        ))
+    }
+
     @Test fun `whole-project config passes all enabled project music tracks to postmix`() {
         val first = AudioTrack(
             id = "music-1", name = "Music 1", uri = "file:///music-1.m4a",

@@ -1015,14 +1015,15 @@ fun VideoTimeline(
                 // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
                 // tracks scroll vertically. Horizontally synced with the scrolling
                 // content via translationX (no recomposition per scroll frame); clipped
-                // so it never draws over the scrolling rows. Pan handling is restricted
-                // to the empty ruler/V1 gap and V1 surface, leaving ruler taps and clip
-                // gestures to their dedicated handlers.
+                // so it never draws over the scrolling rows. Unclaimed horizontal drags
+                // pan the shared canvas; ruler and clip handlers retain their child priority.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
+                        .timelineHorizontalPan(scrollState)
+                        .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
                         modifier = Modifier
@@ -1064,15 +1065,7 @@ fun VideoTimeline(
                                     .testTag("timeline-ruler")
                             )
 
-                            if (hasMainVideo) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(10.dp)
-                                        .timelineHorizontalPan(scrollState)
-                                        .testTag("timeline-header-scroll-gap")
-                                )
-                            }
+                            if (hasMainVideo) Spacer(Modifier.height(10.dp))
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
                             // layer 0 only). Keep its timing model untouched;
@@ -1152,7 +1145,6 @@ fun VideoTimeline(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(v1Height)
-                                    .timelineHorizontalPan(scrollState)
                                     // This boundary keeps lane bounds separate from the full-height
                                     // timeline deselect target.
                                     .semantics(mergeDescendants = true) {
@@ -1424,6 +1416,19 @@ fun VideoTimeline(
                                 )
                             }
                         }
+                    }
+                    // Keep the pan hit target in viewport coordinates rather than
+                    // inside the horizontally translated content layer above.
+                    if (hasMainVideo) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .offset(y = rulerHeight)
+                                .fillMaxWidth()
+                                .height(10.dp)
+                                .timelineHorizontalPan(scrollState)
+                                .testTag("timeline-header-scroll-gap")
+                        )
                     }
                 }
             }

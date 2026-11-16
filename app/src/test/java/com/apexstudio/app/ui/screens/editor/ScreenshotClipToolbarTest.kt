@@ -236,7 +236,7 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
-    fun selectedAudioRowKeepsDevicePickerWhenGlobalDockIsAbsentInLandscape() {
+    fun selectedAudioModeKeepsDevicePickerInLandscapeMoreMenu() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent {
             testToolbar(
@@ -247,9 +247,10 @@ class ScreenshotClipToolbarTest {
         }
 
         composeRule.onNodeWithText("Audio").assertDoesNotExist()
+        composeRule.onNodeWithText("More").performClick()
         composeRule.onAllNodesWithText("Device Music").assertCountEquals(1)
         composeRule.onNodeWithText("Device Music").performScrollTo().performClick()
-        assertEquals("Device Music remains the landscape device import route", 1, calls["device-audio"] ?: 0)
+        assertEquals("Device Music remains the landscape More-menu import route", 1, calls["device-audio"] ?: 0)
     }
 
     @Test fun selectedActionsAndGlobalDockAreBothVisibleWithoutTabs() {

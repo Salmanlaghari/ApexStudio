@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -10,11 +11,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.click
 import androidx.compose.ui.semantics.SemanticsActions
+import com.apexstudio.app.domain.model.BackgroundReplaceMode
+import com.apexstudio.app.domain.model.BackgroundReplaceSettings
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
-import com.apexstudio.app.presentation.viewmodel.BackgroundPhase
 import com.apexstudio.app.presentation.viewmodel.BackgroundUiState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -22,6 +25,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w375dp-h830dp")
@@ -29,19 +33,20 @@ class BackgroundReplacePanelTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun bundledModelHasNoFakeDownloadAndChromaKeyLinkOpensItsPanel() {
+    fun bundledModelHasNoDownloadStateAndChromaKeyLinkOpensItsPanel() {
         val clip = MediaClip(
             id = "video",
             name = "Video",
             uri = "file:///video.mp4",
             durationMs = 5_000L,
-            trimEndMs = 5_000L
+            trimEndMs = 5_000L,
+            type = ClipType.VIDEO
         )
         val openedChromaKey = AtomicBoolean(false)
         compose.setContent {
             BackgroundReplacePanel(
                 clip = clip,
-                ui = BackgroundUiState(phase = BackgroundPhase.NEED_DOWNLOAD),
+                ui = BackgroundUiState(),
                 onApply = {},
                 onRestoreOriginal = {},
                 onCancel = {},
@@ -54,9 +59,10 @@ class BackgroundReplacePanelTest {
             )
         }
 
-        compose.onNodeWithText(
+        compose.onAllNodesWithText(
             "The model is bundled with the app. Tap Apply to prepare it; no download is needed."
-        ).performScrollTo().assertIsDisplayed()
+        ).assertCountEquals(0)
+        compose.onAllNodesWithText("Background replacement isn't available right now.").assertCountEquals(0)
         compose.onAllNodesWithText("Download model (244 KB)").assertCountEquals(0)
         compose.onNodeWithText("Apply background").performScrollTo().assertIsDisplayed()
 
@@ -81,6 +87,46 @@ class BackgroundReplacePanelTest {
                 "Chroma-key link invokes its callback through OnClick semantics",
                 openedChromaKey.get()
             )
+        }
+    }
+
+    @Test
+    fun colorApplyEmitsSettingsForTheSelectedVideo() {
+        val clip = MediaClip(
+            id = "video",
+            name = "Video",
+            uri = "file:///video.mp4",
+            durationMs = 5_000L,
+            trimEndMs = 5_000L,
+            type = ClipType.VIDEO
+        )
+        val applied = AtomicReference<BackgroundReplaceSettings?>()
+        compose.setContent {
+            BackgroundReplacePanel(
+                clip = clip,
+                ui = BackgroundUiState(),
+                onApply = { applied.set(it) },
+                onRestoreOriginal = {},
+                onCancel = {},
+                onPickImage = {},
+                onOpenChromaKey = {},
+                onClose = {}
+            )
+        }
+
+        compose.onNode(hasText("🎨 Colour") and hasClickAction())
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Colour mode chip exposes an active click action", action())
+            }
+        compose.onNode(hasText("Apply background") and hasClickAction())
+            .performScrollTo()
+            .performSemanticsAction(SemanticsActions.OnClick) { action ->
+                assertTrue("Apply button exposes an active click action", action())
+            }
+        compose.runOnIdle {
+            assertEquals(BackgroundReplaceMode.COLOR, applied.get()?.mode)
+            assertEquals(clip.uri, applied.get()?.sourceUri)
         }
     }
 

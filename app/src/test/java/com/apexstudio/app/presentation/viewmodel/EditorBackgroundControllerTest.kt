@@ -5,7 +5,9 @@ import com.apexstudio.app.domain.model.BackgroundReplaceSettings
 import com.apexstudio.app.domain.model.ChromaKeySettings
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,5 +74,30 @@ class EditorBackgroundControllerTest {
             )
         )
         assertFalse(backgroundApplyCanCommit(applied, original))
+    }
+
+    @Test
+    fun `successful background apply commits the baked uri and clears pending chroma`() {
+        val clip = MediaClip(
+            id = original.clipId,
+            name = "Video",
+            uri = original.uri,
+            durationMs = 10_000L,
+            trimEndMs = 10_000L,
+            type = ClipType.VIDEO,
+            chromaKeySettings = ChromaKeySettings(enabled = true, similarity = 0.7f)
+        )
+        val settings = BackgroundReplaceSettings(
+            mode = BackgroundReplaceMode.COLOR,
+            colorArgb = 0xFF2196F3L,
+            sourceUri = original.uri
+        )
+        val processedUri = "file:///bg_replace/processed.mp4"
+
+        val baked = bakedBackgroundReplacementClip(clip, processedUri, settings)
+
+        assertEquals(processedUri, baked.uri)
+        assertEquals(settings, baked.backgroundReplace)
+        assertNull(baked.chromaKeySettings)
     }
 }

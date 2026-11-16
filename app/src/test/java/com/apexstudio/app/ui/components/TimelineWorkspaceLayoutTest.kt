@@ -244,19 +244,19 @@ class TimelineWorkspaceLayoutTest {
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertTrue("Fixture must have horizontal overflow", scrollState.maxValue > 0) }
 
-        // The gap child spans the full timeline width, so dispatch the gesture
-        // through the visible pinned viewport while keeping it at the gap's Y.
+        // The gap child spans the full timeline width, so inject at visible root
+        // coordinates while keeping the gesture at the gap's Y position.
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
-        val pinnedHeader = composeRule.onNodeWithTag("timeline-pinned-header-scroll-target", useUnmergedTree = true)
-        val pinnedHeaderBounds = pinnedHeader.fetchSemanticsNode().boundsInRoot
-        val gapYInHeader = gapBounds.center.y - pinnedHeaderBounds.top
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val gapYInRoot = gapBounds.center.y - rootBounds.top
         assertTrue(
-            "The header gap should be inside the visible pinned viewport",
-            gapYInHeader in 0f..pinnedHeaderBounds.height
+            "The header gap should be inside the visible timeline viewport",
+            gapYInRoot in 0f..rootBounds.height
         )
-        pinnedHeader.performTouchInput {
-            val y = gapYInHeader
+        timelineRoot.performTouchInput {
+            val y = gapYInRoot
             swipe(
                 start = Offset(width * 0.85f, y),
                 end = Offset(width * 0.15f, y),

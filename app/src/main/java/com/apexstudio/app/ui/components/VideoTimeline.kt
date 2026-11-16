@@ -1803,12 +1803,14 @@ private fun TimelineTimeRuler(
                             }
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!change.pressed) {
+                                // Snapshot ancestor consumption before claiming this release ourselves.
+                                releaseConsumed = change.isConsumed
                                 if (horizontalDrag) {
                                     change.consume()
                                     scrubAt(change.position)
+                                } else if (!releaseConsumed && !tapCancelled && !movedBeyondSlop) {
+                                    change.consume()
                                 }
-                                releaseConsumed = change.isConsumed
-                                if (!releaseConsumed && !tapCancelled && !movedBeyondSlop) change.consume()
                                 releasePosition = change.position
                                 releaseTimeMillis = change.uptimeMillis
                                 break

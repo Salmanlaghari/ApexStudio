@@ -490,6 +490,20 @@ class TimelineWorkspaceLayoutTest {
         composeRule.runOnIdle { assertEquals("music-b", selectedId.value) }
         secondTrack.assertIsSelected()
     }
+
+    @Test
+    fun tappingEmptyViewportStillDeselects() {
+        val deselected = AtomicBoolean(false)
+        composeRule.setContent {
+            workspace(onDeselect = { deselected.set(true) })
+        }
+        composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+            .performTouchInput { click(Offset(320f, 450f)) }
+        composeRule.runOnIdle {
+            assertTrue("A tap on empty timeline space should deselect", deselected.get())
+        }
+    }
+
     @Test
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {
         val scrubbedMs = AtomicLong(-1L)

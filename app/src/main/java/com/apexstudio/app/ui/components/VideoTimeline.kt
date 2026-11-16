@@ -27,7 +27,6 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.scrollable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1002,14 +1001,47 @@ fun VideoTimeline(
                         }
                     )
                 }
-                // Tapping empty timeline space (no clip/track consumed the
-                // tap) clears the selection. Child clickables (clips,
-                // ruler scrub, HUD, multi-select) win over this parent
-                // clickable, so a tap on a clip never deselects.
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onDeselect() }
+                // Deselect only after descendants get a chance to consume an
+                // empty-space tap; the ruler's delayed tap must not compete
+                // with a parent clickable. This observer never consumes input.
+                .pointerInput(onDeselect, rulerHeight) {
+                    val rulerBottomPx = rulerHeight.value * density.density
+                    val touchSlopPx = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Final
+                        )
+                        var movedBeyondSlop = false
+                        var hadMultiplePointers = false
+                        var consumed = down.isConsumed
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            if (event.changes.any { it.id != down.id && it.pressed }) {
+                                hadMultiplePointers = true
+                            }
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if ((change.position - down.position).getDistance() > touchSlopPx) {
+                                movedBeyondSlop = true
+                            }
+                            if (change.isConsumed) consumed = true
+                            if (!change.pressed) {
+                                if (!consumed && !movedBeyondSlop && !hadMultiplePointers &&
+                                    down.position.y >= rulerBottomPx
+                                ) {
+                                    onDeselect()
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+                .semantics {
+                    onClick(label = "Deselect timeline selection") {
+                        onDeselect()
+                        true
+                    }
+                }
         ) {
             Column(modifier = Modifier.fillMaxSize().then(
                 if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier

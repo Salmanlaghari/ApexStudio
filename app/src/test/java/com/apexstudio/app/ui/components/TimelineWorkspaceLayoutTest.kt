@@ -540,18 +540,16 @@ class TimelineWorkspaceLayoutTest {
             click(Offset(tapInRoot.x - rootBounds.left, tapInRoot.y - rootBounds.top))
         }
         // Single-tap seek is delayed to distinguish it from double-tap-to-fit.
-        // Wait for the callback itself; advancing the frame clock does not guarantee
-        // the pointer coroutine's timeout has elapsed.
-        val callbackArrived = runCatching {
-            composeRule.waitUntil(timeoutMillis = 1_500L) { scrubbedMs.get() >= 0L }
-        }.isSuccess
+        // Advance the Compose clock through that timeout for a deterministic callback.
+        composeRule.mainClock.advanceTimeBy(600L)
+        composeRule.waitForIdle()
         composeRule.runOnIdle {
             val actualScrubbedMs = scrubbedMs.get()
             assertTrue(
                 "108dp at 54dp/s must seek 2s without deselecting: scrubbed=$actualScrubbedMs, " +
-                    "callbackArrived=$callbackArrived, deselected=${deselected.get()}, " +
+                    "deselected=${deselected.get()}, " +
                     "ruler=$rulerBounds, gap=$gapBounds",
-                callbackArrived && !deselected.get() && kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
+                !deselected.get() && kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
             )
         }
     }

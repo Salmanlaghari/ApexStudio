@@ -236,7 +236,9 @@ class ScreenshotClipToolbarTest {
     @Test fun MoreExpansionKeepsGlobalDockPresentAndSelectionRowStackedAboveIt() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls) }
+        composeRule.onNodeWithText("Audio").assertIsDisplayed()
         composeRule.onNodeWithText("More").performClick()
+        composeRule.onAllNodesWithText("Device Music").assertCountEquals(0)
         composeRule.onNodeWithText("Music").performScrollTo().assertExists()
         composeRule.onNodeWithText("Split").assertExists()
         composeRule.onNodeWithText("Media").assertIsDisplayed()
@@ -256,6 +258,8 @@ class ScreenshotClipToolbarTest {
         listOf("AI", "Subtitles", "Enhance", "Templates").forEach {
             composeRule.onNodeWithText(it).assertDoesNotExist()
         }
+        composeRule.onNodeWithText("Audio").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Device Music").assertCountEquals(1)
         listOf(
             "AI tools" to "ai",
             "Captions" to "captions",
@@ -266,6 +270,8 @@ class ScreenshotClipToolbarTest {
             composeRule.onNodeWithText(label).performScrollTo().performClick()
             assertEquals("$label callback", 1, calls[action] ?: 0)
         }
+        composeRule.onNodeWithText("Device Music").performScrollTo().performClick()
+        assertEquals("Device Music remains the easy-mode device picker", 1, calls["device-audio"] ?: 0)
     }
 
     @Composable

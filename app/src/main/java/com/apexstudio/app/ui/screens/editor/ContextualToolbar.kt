@@ -515,7 +515,14 @@ fun ContextualBottomToolbar(
         mainItems.filterNot { it.label == "Filters" }
     } else mainItems
     val toolsItems = (if (referenceToolMode) referenceItems else globalItems).map(::routed)
-    val moreItems = secondaryItems.map(::routed)
+    // Audio in the persistent dock and Device Music both open the same phone
+    // audio picker. The landscape easy dock omits Audio, so keep Device Music
+    // there as the only device-import route; Music opens a separate library.
+    val audioPickerInVisibleDock = (!horizontalProjectLayout || referenceToolMode) &&
+        toolsItems.any { it.label == "Audio" }
+    val moreItems = secondaryItems.filterNot {
+        it.label == "Device Music" && audioPickerInVisibleDock
+    }.map(::routed)
     val horizontalEditItems = listOf(
         CtxToolItem("Split", Icons.Default.ContentCut, tint = ApexPalette.NeonCyan, onClick = onSplit),
         CtxToolItem("Trim", Icons.Default.Tune, tint = ApexPalette.NeonCyan, onClick = onTrim),

@@ -1031,7 +1031,9 @@ fun VideoTimeline(
                         .scrollable(
                             state = scrollState,
                             orientation = Orientation.Horizontal,
-                            reverseDirection = false
+                            // A leftward finger drag must advance ScrollState
+                            // just like the lower horizontalScroll lanes.
+                            reverseDirection = true
                         )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {

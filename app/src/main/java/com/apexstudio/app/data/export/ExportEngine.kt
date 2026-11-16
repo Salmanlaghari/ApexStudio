@@ -2166,13 +2166,15 @@ class ExportEngine(private val context: Context) {
         onFrameRateVerificationProgress: (Float) -> Unit = {}
     ): String? {
         var cfrNormalizationRequired = false
+        val validationContext = currentCoroutineContext()
         try {
             val audit = inspectEncodedVideo(
                 context = context,
                 file = outputFile,
                 requestedFps = requestedFps,
                 transformerFrameCount = transformerFrameCount,
-                transformerDurationMs = transformerDurationMs
+                transformerDurationMs = transformerDurationMs,
+                cancellationCheck = { validationContext.ensureActive() }
             )
             if (com.apexstudio.app.domain.model.ExportResolution.canonical(config.resolution) == "8K") {
                 check(config.videoMimeType in setOf(MimeTypes.VIDEO_H264, MimeTypes.VIDEO_H265)) {
@@ -2217,7 +2219,10 @@ class ExportEngine(private val context: Context) {
                         requestedFps = targetFps,
                         // The source transform's frame count is no longer comparable after frame generation.
                         transformerFrameCount = null,
-                        transformerDurationMs = transformerDurationMs
+                        transformerDurationMs = transformerDurationMs,
+                        progressStart = frameRateProgressStart,
+                        onProgress = onFrameRateVerificationProgress,
+                        cancellationCheck = { validationContext.ensureActive() }
                     )
                     diagnostics?.stage("cfr${targetFps}_fallback_audited", candidateAudit.diagnosticSummary())
                     check(candidateAudit.videoMimeType == audit.videoMimeType &&
@@ -2257,29 +2262,17 @@ class ExportEngine(private val context: Context) {
                     if (candidateCadenceError != null) {
                         throw IllegalStateException("The converted video failed its $targetFps fps cadence audit: $candidateCadenceError")
                     }
+                    val verifiedCandidateBytes = candidate.length()
                     currentCoroutineContext().ensureActive()
                     ExportCfrCadenceNormalizer.replaceAtomically(candidate, outputFile, targetFps)
-                    val publishedAudit = inspectEncodedVideo(
-                        context = context,
-                        file = outputFile,
-                        requestedFps = targetFps,
-                        transformerFrameCount = null,
-                        transformerDurationMs = transformerDurationMs
+                    check(outputFile.isFile && outputFile.length() == verifiedCandidateBytes) {
+                        "The verified $targetFps fps video could not be published intact."
+                    }
+                    diagnostics?.stage(
+                        "cfr${targetFps}_fallback_completed",
+                        "${candidateAudit.diagnosticSummary()} publishedOutputBytes=$verifiedCandidateBytes"
                     )
-                    val publishedWarning = publishedAudit.warning
-                    if (publishedWarning != null) {
-                        throw IllegalStateException("The published $targetFps fps video failed its final audit: $publishedWarning")
-                    }
-                    val publishedCadenceError = if (targetFps == 60) {
-                        publishedAudit.strict60FpsCadenceError
-                    } else {
-                        ExportCfrCadenceNormalizer.targetCadenceError(publishedAudit, targetFps)
-                    }
-                    if (publishedCadenceError != null) {
-                        throw IllegalStateException("The published $targetFps fps video failed its final cadence audit: $publishedCadenceError")
-                    }
-                    diagnostics?.stage("cfr${targetFps}_fallback_completed", publishedAudit.diagnosticSummary())
-                    diagnostics?.stage("encoded_output_validated", publishedAudit.diagnosticSummary())
+                    diagnostics?.stage("encoded_output_validated", candidateAudit.diagnosticSummary())
                     return null
                 } finally {
                     if (candidate.exists()) candidate.delete()
@@ -2289,6 +2282,13 @@ class ExportEngine(private val context: Context) {
             val warning = audit.warning
             if (config.fps == 60 && warning != null) throw IllegalStateException(warning)
             diagnostics?.stage("encoded_output_validated", audit.diagnosticSummary())
+            audit.outputDurationMs?.let { durationMs ->
+                frameRateVerificationProgress(
+                    encodedTimeMs = durationMs.toDouble(),
+                    outputDurationMs = durationMs,
+                    startProgress = frameRateProgressStart
+                )?.let(onFrameRateVerificationProgress)
+            }
             return warning
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled

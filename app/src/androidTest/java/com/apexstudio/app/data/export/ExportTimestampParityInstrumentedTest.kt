@@ -1195,6 +1195,8 @@ class ExportTimestampParityInstrumentedTest {
         val source = File(context.cacheDir, "cfr-fallback-source-$id.mp4")
         var candidate: File? = null
         val reportedProgress = mutableListOf<Float>()
+        val auditProgress = mutableListOf<Float>()
+        var auditCancellationChecks = 0
         val progressLock = Any()
         try {
             instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
@@ -1225,8 +1227,18 @@ class ExportTimestampParityInstrumentedTest {
                 context = context,
                 file = normalized,
                 requestedFps = 60,
-                transformerDurationMs = sourceDurationMs
+                transformerDurationMs = sourceDurationMs,
+                onProgress = { progress -> synchronized(progressLock) { auditProgress += progress } },
+                cancellationCheck = { auditCancellationChecks++ }
             )
+            val measuredAuditProgress = synchronized(progressLock) { auditProgress.toList() }
+            assertTrue("The final frame-rate audit must publish progress while scanning samples", measuredAuditProgress.size >= 3)
+            assertTrue("Audit progress must move forward", measuredAuditProgress.zipWithNext().all { (before, after) ->
+                after + 0.0001f >= before
+            })
+            assertEquals("The completed sample audit must reach the verification ceiling", FINALIZATION_PROGRESS_END,
+                measuredAuditProgress.last(), 0.0001f)
+            assertTrue("Long sample scans must regularly check for cancellation", auditCancellationChecks >= 3)
             assertNull("CFR fallback output must pass the strict cadence audit: ${audit.warning}", audit.warning)
             val candidateTrack = readVideoTrack(normalized)
             assertActual60FpsCadence("direct CFR fallback", candidateTrack, sourceDurationMs * 1_000L)

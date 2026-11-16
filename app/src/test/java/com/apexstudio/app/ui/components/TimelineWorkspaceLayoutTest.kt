@@ -493,33 +493,24 @@ class TimelineWorkspaceLayoutTest {
         var scrubbedMs = -1L
         composeRule.setContent { workspace(onScrub = { scrubbedMs = it }) }
         val x = 108f * composeRule.density.density
-        // The ruler spans the full project width inside a clipped horizontal scroller.
-        // Inject through the visible test root so the tap uses screen-viewport coordinates.
-        val root = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
-        val rootBounds = root.fetchSemanticsNode().boundsInRoot
-        val rulerBounds = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
+        // Use the ruler's own visible viewport bounds for the tap target.
+        val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
+        val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         assertTrue(
             "The scroll gap must begin below the ruler; ruler=$rulerBounds, gap=$gapBounds",
             gapBounds.top >= rulerBounds.bottom - 1f
         )
-        val rulerXInRoot = rulerBounds.left + x - rootBounds.left
-        val rulerYInRoot = rulerBounds.center.y - rootBounds.top
-        assertTrue(
-            "The ruler tap should be inside the visible timeline viewport; x=$rulerXInRoot, y=$rulerYInRoot, size=${rootBounds.width}x${rootBounds.height}",
-            rulerXInRoot in 0f..rootBounds.width && rulerYInRoot in 0f..rootBounds.height
-        )
-        root.performTouchInput {
-            click(Offset(rulerXInRoot, rulerYInRoot))
+        ruler.performTouchInput {
+            click(Offset(x, center.y))
         }
         // The ruler also recognizes double-tap-to-fit, so single-tap seek is
         // delivered after the double-tap timeout has ruled out a second tap.
         composeRule.mainClock.advanceTimeBy(400L)
         composeRule.runOnIdle {
             assertTrue(
-                "108dp at 54dp/s must seek 2s: $scrubbedMs; tap=($rulerXInRoot,$rulerYInRoot), ruler=$rulerBounds, root=$rootBounds",
+                "108dp at 54dp/s must seek 2s: $scrubbedMs; ruler=$rulerBounds, gap=$gapBounds",
                 kotlin.math.abs(scrubbedMs - 2_000L) <= 2L
             )
         }

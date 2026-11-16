@@ -43,13 +43,6 @@ class TimelineWorkspaceLayoutTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun identityRailStaysCompactAndGivesMoreWidthToTheTimeline() {
-        assertEquals(44f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
-        assertEquals(48f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
-        assertEquals(64f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
-    }
-
-    @Test
     fun crowdedTransitionBadgesCompactAndUseSeparateRows() {
         val crowded = timelineTransitionBadgeLayouts(
             junctionTimesMs = listOf(1_000L, 1_040L, 1_080L),
@@ -207,19 +200,34 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun fixedIdentityRailStaysVisibleWhenTimeContentScrollsHorizontally() {
-        composeRule.setContent { workspace(widthDp = 360, heightDp = 300, clips = listOf(clip("main", durationMs = 120_000L))) }
+    fun timelineUsesFullWidthAndInLaneIdentityScrollsWithItsContent() {
+        val scrollState = ScrollState(0)
+        composeRule.setContent {
+            workspace(
+                widthDp = 360,
+                heightDp = 300,
+                clips = listOf(clip("main", durationMs = 120_000L)),
+                scrollState = scrollState,
+            )
+        }
         composeRule.waitForIdle()
-        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).assertDoesNotExist()
+        val rulerBounds = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val firstClipBounds = composeRule.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertTrue("the first clip starts after the fixed rail instead of being obscured", firstClipBounds.left >= railBounds.right - 1f)
-        val before = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
-        composeRule.runOnIdle { composeRule.onNodeWithTag("timeline-test-root").fetchSemanticsNode() }
-        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput { swipe(start = Offset(300f, 14f), end = Offset(40f, 14f), durationMillis = 200) }
+        assertEquals("Ruler and first clip share the full-width time origin", rulerBounds.left, firstClipBounds.left, 1f)
+
+        val laneIdentity = composeRule.onNodeWithText("Main video · V1", useUnmergedTree = true)
+        val identityBefore = laneIdentity.fetchSemanticsNode().boundsInRoot.left
+        val rulerTick = composeRule.onNodeWithTag("timeline-ruler-label-2", useUnmergedTree = true)
+        val rulerTickBefore = rulerTick.fetchSemanticsNode().boundsInRoot.left
+
+        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
+            swipe(start = Offset(300f, 14f), end = Offset(260f, 14f), durationMillis = 200)
+        }
         composeRule.waitForIdle()
-        val after = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
-        assertEquals("identity rail remains pinned while time content moves", before, after, 1f)
-        composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).assertExists()
+        assertTrue("The shared horizontal scroll state advances", scrollState.value > 0)
+        assertTrue("A real lane identity chip scrolls with its lane", laneIdentity.fetchSemanticsNode().boundsInRoot.left < identityBefore)
+        assertTrue("Ruler labels move with the same timeline scroll", rulerTick.fetchSemanticsNode().boundsInRoot.left < rulerTickBefore)
     }
 
     @Test
@@ -234,6 +242,7 @@ class TimelineWorkspaceLayoutTest {
         val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
+        composeRule.onNodeWithText("V1 · Audio", useUnmergedTree = true).assertExists()
         assertEquals("V1 remains the fixed-height 52dp filmstrip lane", 52f, main.height, 1f)
         assertEquals("The separate source-audio lane is a readable 36dp waveform", 36f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)

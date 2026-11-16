@@ -1022,11 +1022,6 @@ fun VideoTimeline(
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .scrollable(
-                            state = scrollState,
-                            orientation = Orientation.Horizontal,
-                            reverseDirection = false
-                        )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
@@ -1073,6 +1068,11 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(10.dp)
+                                        .scrollable(
+                                            state = scrollState,
+                                            orientation = Orientation.Horizontal,
+                                            reverseDirection = true
+                                        )
                                         .testTag("timeline-header-scroll-gap")
                                 )
                             }

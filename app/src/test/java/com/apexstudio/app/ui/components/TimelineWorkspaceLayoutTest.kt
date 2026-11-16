@@ -27,6 +27,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -492,7 +493,13 @@ class TimelineWorkspaceLayoutTest {
     @Test
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {
         val scrubbedMs = AtomicLong(-1L)
-        composeRule.setContent { workspace(onScrub = scrubbedMs::set) }
+        val deselected = AtomicBoolean(false)
+        composeRule.setContent {
+            workspace(
+                onScrub = scrubbedMs::set,
+                onDeselect = { deselected.set(true) }
+            )
+        }
         val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
@@ -521,12 +528,16 @@ class TimelineWorkspaceLayoutTest {
         // Single-tap seek is delayed to distinguish it from double-tap-to-fit.
         // Wait for the callback itself; advancing the frame clock does not guarantee
         // the pointer coroutine's timeout has elapsed.
-        composeRule.waitUntil(timeoutMillis = 1_500L) { scrubbedMs.get() >= 0L }
+        val callbackArrived = runCatching {
+            composeRule.waitUntil(timeoutMillis = 1_500L) { scrubbedMs.get() >= 0L }
+        }.isSuccess
         composeRule.runOnIdle {
             val actualScrubbedMs = scrubbedMs.get()
             assertTrue(
-                "108dp at 54dp/s must seek 2s: $actualScrubbedMs; ruler=$rulerBounds, gap=$gapBounds",
-                kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
+                "108dp at 54dp/s must seek 2s without deselecting: scrubbed=$actualScrubbedMs, " +
+                    "callbackArrived=$callbackArrived, deselected=${deselected.get()}, " +
+                    "ruler=$rulerBounds, gap=$gapBounds",
+                callbackArrived && !deselected.get() && kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
             )
         }
     }

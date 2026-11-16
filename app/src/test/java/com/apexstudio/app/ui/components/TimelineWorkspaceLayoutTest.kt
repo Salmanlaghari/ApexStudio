@@ -507,7 +507,8 @@ class TimelineWorkspaceLayoutTest {
         }
         // The ruler also recognizes double-tap-to-fit, so single-tap seek is
         // delivered after the double-tap timeout has ruled out a second tap.
-        composeRule.mainClock.advanceTimeBy(400L)
+        // Leave a frame margin beyond that timeout before asserting the callback.
+        composeRule.mainClock.advanceTimeBy(600L)
         composeRule.runOnIdle {
             assertTrue(
                 "108dp at 54dp/s must seek 2s: $scrubbedMs; ruler=$rulerBounds, gap=$gapBounds",

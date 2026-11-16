@@ -508,7 +508,6 @@ fun ContextualBottomToolbar(
         item.onClick()
     })
     val showClipBar = hasSelection && !isPlaying && !referenceToolMode
-    val clipPageItems = clipItems.map(::routed)
     // A selected video already has a contextual Filters action; avoid showing
     // the same callback again in the persistent dock while that row is visible.
     val globalItems = if (showClipBar && selectionKind == ToolbarSelectionKind.VIDEO) {
@@ -520,6 +519,9 @@ fun ContextualBottomToolbar(
     // there as the only device-import route; Music opens a separate library.
     val audioPickerInVisibleDock = (!horizontalProjectLayout || referenceToolMode) &&
         toolsItems.any { it.label == "Audio" }
+    val clipPageItems = clipItems
+        .filterNot { it.label == "Device Music" && audioPickerInVisibleDock }
+        .map(::routed)
     val moreItems = secondaryItems.filterNot {
         it.label == "Device Music" && audioPickerInVisibleDock
     }.map(::routed)

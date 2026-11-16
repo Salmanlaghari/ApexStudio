@@ -222,6 +222,36 @@ class ScreenshotClipToolbarTest {
         assertEquals(0, calls["track-mute"] ?: 0)
     }
 
+    @Test
+    fun selectedAudioRowDoesNotRepeatDevicePickerWhenGlobalDockIsVisible() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            testToolbar(calls, selectionKind = ToolbarSelectionKind.AUDIO)
+        }
+
+        composeRule.onNodeWithText("Audio").assertIsDisplayed()
+        composeRule.onAllNodesWithText("Device Music").assertCountEquals(0)
+        composeRule.onNodeWithText("Audio").performClick()
+        assertEquals("The dock's Audio action remains wired to device import", 1, calls["device-audio"] ?: 0)
+    }
+
+    @Test
+    fun selectedAudioRowKeepsDevicePickerWhenGlobalDockIsAbsentInLandscape() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            testToolbar(
+                calls,
+                selectionKind = ToolbarSelectionKind.AUDIO,
+                horizontalProjectLayout = true
+            )
+        }
+
+        composeRule.onNodeWithText("Audio").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Device Music").assertCountEquals(1)
+        composeRule.onNodeWithText("Device Music").performScrollTo().performClick()
+        assertEquals("Device Music remains the landscape device import route", 1, calls["device-audio"] ?: 0)
+    }
+
     @Test fun selectedActionsAndGlobalDockAreBothVisibleWithoutTabs() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls, showSelectionToolsInitially = false) }

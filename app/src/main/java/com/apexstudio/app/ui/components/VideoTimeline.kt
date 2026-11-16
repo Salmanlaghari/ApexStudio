@@ -21,11 +21,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1013,24 +1015,29 @@ fun VideoTimeline(
                 if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier
             )) {
                 // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
-                // tracks scroll vertically. It shares the horizontal ScrollState with every lane,
-                // so gestures follow the same direction and motion; clip it above scrolling rows.
+                // tracks scroll vertically. Horizontally synced with the scrolling content via
+                // translationX (no recomposition per scroll frame); clipped above scrolling rows.
                 // Unclaimed horizontal drags pan the shared canvas; ruler and clip handlers win.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .horizontalScroll(scrollState)
+                        .scrollable(
+                            state = scrollState,
+                            orientation = Orientation.Horizontal,
+                            reverseDirection = false
+                        )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
                         modifier = Modifier
-                            // The pinned header itself scrolls horizontally. Release the viewport
-                            // constraint BEFORE measuring the full-duration ruler and V1 row.
+                            // The pinned header is translated, not horizontally scrolled. Release
+                            // the viewport constraint BEFORE measuring the full-duration ruler.
                             .wrapContentWidth(Alignment.Start, unbounded = true)
                             .width(timelineWidthDp)
                             .height(fixedHeaderHeight.dp)
+                            .graphicsLayer { translationX = -scrollState.value.toFloat() }
                     ) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             // TRACK 0: Time Ruler & Beat Markers

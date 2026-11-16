@@ -511,7 +511,12 @@ class TimelineWorkspaceLayoutTest {
         // The ruler also recognizes double-tap-to-fit, so single-tap seek is
         // delivered after the double-tap timeout has ruled out a second tap.
         composeRule.mainClock.advanceTimeBy(400L)
-        composeRule.runOnIdle { assertTrue("108dp at 54dp/s must seek 2s: $scrubbedMs", kotlin.math.abs(scrubbedMs - 2_000L) <= 2L) }
+        composeRule.runOnIdle {
+            assertTrue(
+                "108dp at 54dp/s must seek 2s: $scrubbedMs; tap=($rulerXInRoot,$rulerYInRoot), ruler=$rulerBounds, root=$rootBounds",
+                kotlin.math.abs(scrubbedMs - 2_000L) <= 2L
+            )
+        }
     }
 
     @Test

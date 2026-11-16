@@ -1070,7 +1070,14 @@ fun VideoTimeline(
                                     .testTag("timeline-ruler")
                             )
 
-                            if (hasMainVideo) Spacer(Modifier.height(10.dp))
+                            if (hasMainVideo) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(10.dp)
+                                        .testTag("timeline-header-scroll-gap")
+                                )
+                            }
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
                             // layer 0 only). Keep its timing model untouched;
@@ -1421,18 +1428,6 @@ fun VideoTimeline(
                                 )
                             }
                         }
-                    }
-                    // Keep the pan hit target in viewport coordinates rather than
-                    // inside the horizontally translated content layer above.
-                    if (hasMainVideo) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .offset(y = rulerHeight)
-                                .fillMaxWidth()
-                                .height(10.dp)
-                                .testTag("timeline-header-scroll-gap")
-                        )
                     }
                 }
             }

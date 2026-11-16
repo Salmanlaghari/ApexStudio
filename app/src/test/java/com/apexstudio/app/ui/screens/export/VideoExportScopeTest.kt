@@ -80,6 +80,7 @@ class VideoExportScopeTest {
     @Test fun exportStatusUsesTheCurrentRenderAudioMuxAndFinalizationPhase() {
         listOf(
             ExportProgressStage.VIDEO_RENDER,
+            ExportProgressStage.VIDEO_OUTPUT_VERIFICATION,
             ExportProgressStage.AUDIO_PREPARATION,
             ExportProgressStage.AUDIO_MIX,
             ExportProgressStage.MUX,

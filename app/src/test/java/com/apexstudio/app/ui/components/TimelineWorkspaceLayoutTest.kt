@@ -27,6 +27,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import java.util.concurrent.atomic.AtomicLong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -490,8 +491,8 @@ class TimelineWorkspaceLayoutTest {
     }
     @Test
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {
-        var scrubbedMs = -1L
-        composeRule.setContent { workspace(onScrub = { scrubbedMs = it }) }
+        val scrubbedMs = AtomicLong(-1L)
+        composeRule.setContent { workspace(onScrub = scrubbedMs::set) }
         val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
@@ -517,14 +518,15 @@ class TimelineWorkspaceLayoutTest {
         timelineRoot.performTouchInput {
             click(Offset(tapInRoot.x - rootBounds.left, tapInRoot.y - rootBounds.top))
         }
-        // The ruler also recognizes double-tap-to-fit, so single-tap seek is
-        // delivered after the double-tap timeout has ruled out a second tap.
-        // Leave a frame margin beyond that timeout before asserting the callback.
-        composeRule.mainClock.advanceTimeBy(600L)
+        // Single-tap seek is delayed to distinguish it from double-tap-to-fit.
+        // Wait for the callback itself; advancing the frame clock does not guarantee
+        // the pointer coroutine's timeout has elapsed.
+        composeRule.waitUntil(timeoutMillis = 1_500L) { scrubbedMs.get() >= 0L }
         composeRule.runOnIdle {
+            val actualScrubbedMs = scrubbedMs.get()
             assertTrue(
-                "108dp at 54dp/s must seek 2s: $scrubbedMs; ruler=$rulerBounds, gap=$gapBounds",
-                kotlin.math.abs(scrubbedMs - 2_000L) <= 2L
+                "108dp at 54dp/s must seek 2s: $actualScrubbedMs; ruler=$rulerBounds, gap=$gapBounds",
+                kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
             )
         }
     }

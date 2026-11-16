@@ -264,7 +264,10 @@ class TimelineWorkspaceLayoutTest {
             )
         }
         composeRule.waitForIdle()
-        assertTrue("A leftward header swipe advances the shared timeline", scrollState.value > 0)
+        assertTrue(
+            "A leftward header swipe advances the shared timeline; value=${scrollState.value}, max=${scrollState.maxValue}",
+            scrollState.value > 0
+        )
     }
 
     @Test

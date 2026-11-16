@@ -492,8 +492,6 @@ class TimelineWorkspaceLayoutTest {
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {
         var scrubbedMs = -1L
         composeRule.setContent { workspace(onScrub = { scrubbedMs = it }) }
-        val x = 108f * composeRule.density.density
-        // Use the ruler's own visible viewport bounds for the tap target.
         val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
         val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
@@ -502,8 +500,22 @@ class TimelineWorkspaceLayoutTest {
             "The scroll gap must begin below the ruler; ruler=$rulerBounds, gap=$gapBounds",
             gapBounds.top >= rulerBounds.bottom - 1f
         )
-        ruler.performTouchInput {
-            click(Offset(x, center.y))
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val tapInRoot = Offset(
+            rulerBounds.left + 108f * composeRule.density.density,
+            rulerBounds.center.y
+        )
+        assertTrue(
+            "The 2s ruler tap must be inside the visible ruler and timeline root; " +
+                "point=$tapInRoot, ruler=$rulerBounds, root=$rootBounds",
+            tapInRoot.x in rulerBounds.left..rulerBounds.right &&
+                tapInRoot.y in rulerBounds.top..rulerBounds.bottom &&
+                tapInRoot.x in rootBounds.left..rootBounds.right &&
+                tapInRoot.y in rootBounds.top..rootBounds.bottom
+        )
+        timelineRoot.performTouchInput {
+            click(Offset(tapInRoot.x - rootBounds.left, tapInRoot.y - rootBounds.top))
         }
         // The ruler also recognizes double-tap-to-fit, so single-tap seek is
         // delivered after the double-tap timeout has ruled out a second tap.

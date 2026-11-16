@@ -34,6 +34,20 @@ internal fun projectMainExportClips(state: EditorState): List<MediaClip> =
         it.trackIndex == 0 && (it.type == ClipType.VIDEO || it.type == ClipType.IMAGE)
     }
 
+/**
+ * The legacy project exporter accepts one source/placement per AudioTrack.
+ * A typed lane can contain several AudioClips, so exporting its legacy
+ * projection would silently omit every clip after the first. Stop before
+ * creating output until the composition exporter consumes typed audio lanes.
+ */
+internal fun projectTypedAudioExportUnsupportedReason(state: EditorState): String? {
+    val lane = state.project?.timeline?.tracks
+        ?.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+        ?.firstOrNull { it.clips.size > 1 }
+        ?: return null
+    return "Whole-project export cannot currently include multiple clips in audio lane '${lane.id}'; export was stopped rather than silently omitting audio."
+}
+
 internal fun buildProjectExportConfig(
     state: EditorState,
     audio: AudioStudioState,
@@ -99,6 +113,7 @@ internal fun wholeProjectExportUnsupportedReason(
         OneTapLooks.isValidRenderConfig(state.activeGpuFilterConfig) &&
             state.activeFilterId == state.activeGpuFilterConfig.filterPresetId
     return projectVisualScopeUnsupportedReason(state)
+    ?: projectTypedAudioExportUnsupportedReason(state)
     ?: if (state.activeFilterId != null && !activeFilterMirrorsViralHdr && filterPreset == null) {
         "The selected global LUT is unavailable for export. Re-import the custom LUT or choose another filter."
     } else if (state.activeFxId != null && FxPreset.byId(state.activeFxId) == null &&

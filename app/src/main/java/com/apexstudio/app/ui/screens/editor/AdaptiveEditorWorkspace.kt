@@ -345,6 +345,16 @@ internal fun LandscapeTimelineControls(state: EditorState, vm: EditorViewModel, 
         TextButton(onClick = { vm.setTimelineZoom(state.timelineZoom / 1.5f) }, modifier = Modifier.widthIn(min = 44.dp)) { Text("−", fontSize = 16.sp) }
         TextButton(onClick = { vm.setTimelineZoom(state.timelineZoom * 1.5f) }, modifier = Modifier.widthIn(min = 44.dp)) { Text("+", fontSize = 16.sp) }
         TextButton(onClick = { vm.toggleMagneticSnapping() }) { Text(if (state.magneticSnapping) "Snap on" else "Snap off", fontSize = 11.sp) }
+        TextButton(
+            onClick = { vm.toggleRippleEditing() },
+            modifier = Modifier
+                .semantics {
+                    contentDescription = if (state.rippleEditing) "Ripple editing enabled" else "Ripple editing disabled"
+                }
+                .testTag("landscape-ripple-toggle")
+        ) {
+            Text(if (state.rippleEditing) "Ripple on" else "Ripple off", fontSize = 11.sp)
+        }
     }
 }
 

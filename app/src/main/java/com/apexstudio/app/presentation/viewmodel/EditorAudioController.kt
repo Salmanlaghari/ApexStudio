@@ -43,6 +43,12 @@ fun EditorViewModel.toggleMagneticSnapping() {
     _state.update { it.copy(magneticSnapping = next) }
 }
 
+/** Toggle whether V1 length edits carry downstream overlay and audio placements with them. */
+fun EditorViewModel.toggleRippleEditing() {
+    val next = !_state.value.rippleEditing
+    _state.update { it.copy(rippleEditing = next) }
+}
+
 /**
  * Magnetically snaps [timeMs] to adjacent cut points, keyframes, or beat drop markers
  * if within [snapThresholdMs].

@@ -22,18 +22,22 @@ fun EditorViewModel.deleteSelectedClips(): Boolean {
     var changedAudioTracks: List<com.apexstudio.app.domain.model.AudioTrack>? = null
     _state.update { state ->
         val current = state.project ?: return@update state
-        // Process V1 removals from right to left so each original V1 boundary
-        // remains stable while overlays are rippled left exactly once.
-        val rippled = targets.filter { isMainTrack(it) }
-            .sortedByDescending { v1StartBefore(current.clips, it.id) }
-            .fold(current.clips) { clips, clip ->
-                rippleOverlays(clips, v1StartBefore(clips, clip.id), -clip.effectiveDurationMs())
-            }
-        val audioTracks = targets.filter { isMainTrack(it) }
-            .sortedByDescending { v1StartBefore(current.clips, it.id) }
-            .fold(current.audioTracks) { tracks, clip ->
-                rippleAudioTracks(tracks, v1StartBefore(current.clips, clip.id), -clip.effectiveDurationMs())
-            }
+        // With Ripple on, process V1 removals from right to left so each
+        // original boundary stays stable while overlays move left exactly once.
+        val rippled = if (state.rippleEditing) {
+            targets.filter { isMainTrack(it) }
+                .sortedByDescending { v1StartBefore(current.clips, it.id) }
+                .fold(current.clips) { clips, clip ->
+                    rippleOverlays(clips, v1StartBefore(clips, clip.id), -clip.effectiveDurationMs())
+                }
+        } else current.clips
+        val audioTracks = if (state.rippleEditing) {
+            targets.filter { isMainTrack(it) }
+                .sortedByDescending { v1StartBefore(current.clips, it.id) }
+                .fold(current.audioTracks) { tracks, clip ->
+                    rippleAudioTracks(tracks, v1StartBefore(current.clips, clip.id), -clip.effectiveDurationMs())
+                }
+        } else current.audioTracks
         if (audioTracks != current.audioTracks) changedAudioTracks = audioTracks
         val updated = rippled.filterNot { it.id in ids }
         val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
@@ -76,12 +80,12 @@ fun EditorViewModel.duplicateSelectedClips(): Boolean {
         val mainTargets = targets.filter(::isMainTrack)
         val appendAnchor = current.clips.sumOf { if (isMainTrack(it)) it.effectiveDurationMs() else 0L }
         val extraMainDuration = mainTargets.sumOf { it.effectiveDurationMs() }
-        // V1 copies are appended exactly like duplicateClip(). Ripple visual
-        // layers and audio once at the current V1 end, not per source start.
-        val rippled = if (extraMainDuration > 0L) {
+        // V1 copies are appended exactly like duplicateClip(). With Ripple on,
+        // shift visual layers and audio once at the current V1 end.
+        val rippled = if (state.rippleEditing && extraMainDuration > 0L) {
             rippleOverlays(current.clips, appendAnchor, extraMainDuration)
         } else current.clips
-        val audioTracks = if (extraMainDuration > 0L) {
+        val audioTracks = if (state.rippleEditing && extraMainDuration > 0L) {
             rippleAudioTracks(current.audioTracks, appendAnchor, extraMainDuration)
         } else current.audioTracks
         if (audioTracks != current.audioTracks) changedAudioTracks = audioTracks

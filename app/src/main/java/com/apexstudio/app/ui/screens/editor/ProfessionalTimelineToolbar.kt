@@ -44,6 +44,7 @@ internal fun ProfessionalTimelineToolbar(
     focused: Boolean,
     onToggleFocus: () -> Unit,
     onToggleSnapping: () -> Unit,
+    onToggleRippleEditing: () -> Unit,
     onZoomOut: () -> Unit,
     onZoomIn: () -> Unit,
     modifier: Modifier = Modifier,
@@ -55,20 +56,21 @@ internal fun ProfessionalTimelineToolbar(
         state.timelineZoom
     )
     val snapLabel = if (state.magneticSnapping) "Magnetic snapping enabled" else "Magnetic snapping disabled"
+    val rippleLabel = if (state.rippleEditing) "Ripple editing enabled" else "Ripple editing disabled"
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(EditorLayoutMetrics.TimelineToolbarHeight)
             .background(EditorPalette.BgBase)
-            .padding(horizontal = 7.dp)
+            .padding(horizontal = 4.dp)
             .testTag("professional-timeline-toolbar"),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(1.dp),
     ) {
         Column(
             modifier = Modifier
-                .widthIn(min = 68.dp)
+                .widthIn(min = 54.dp, max = 62.dp)
                 .semantics { contentDescription = "Timeline playhead at $timecode" },
             verticalArrangement = Arrangement.Center,
         ) {
@@ -105,7 +107,7 @@ internal fun ProfessionalTimelineToolbar(
                 )
                 .clickable(onClick = onToggleSnapping)
                 .semantics { contentDescription = snapLabel }
-                .padding(horizontal = 7.dp),
+                .padding(horizontal = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -128,6 +130,38 @@ internal fun ProfessionalTimelineToolbar(
             modifier = Modifier
                 .height(38.dp)
                 .clip(RoundedCornerShape(9.dp))
+                .background(if (state.rippleEditing) EditorPalette.BgElevated else EditorPalette.BgSurface)
+                .border(
+                    1.dp,
+                    if (state.rippleEditing) EditorPalette.TrackBlue.copy(alpha = 0.65f) else EditorPalette.BorderGlass,
+                    RoundedCornerShape(9.dp),
+                )
+                .clickable(onClick = onToggleRippleEditing)
+                .semantics { contentDescription = rippleLabel }
+                .padding(horizontal = 5.dp)
+                .testTag("timeline-ripple-toggle"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (state.rippleEditing) EditorPalette.TrackBlue else EditorPalette.TextMuted),
+            )
+            Text(
+                text = if (state.rippleEditing) "Ripple on" else "Ripple off",
+                color = if (state.rippleEditing) EditorPalette.TextPrimary else EditorPalette.TextSecondary,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .clip(RoundedCornerShape(9.dp))
                 .background(EditorPalette.BgSurface)
                 .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(9.dp)),
             verticalAlignment = Alignment.CenterVertically,
@@ -140,7 +174,7 @@ internal fun ProfessionalTimelineToolbar(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
-                modifier = Modifier.width(31.dp),
+                modifier = Modifier.width(25.dp),
             )
             TimelineToolbarIconButton(Icons.Default.ZoomIn, "Zoom timeline in", onZoomIn)
         }

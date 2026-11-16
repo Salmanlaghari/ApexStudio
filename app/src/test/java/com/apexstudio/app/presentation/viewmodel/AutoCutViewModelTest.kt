@@ -1,6 +1,7 @@
 package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.AudioTrack
+import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
@@ -71,6 +72,50 @@ class AutoCutViewModelTest {
         assertEquals(original, vm.state.value.project)
         assertEquals(original.durationMs, vm.state.value.durationMs)
         assertTrue(vm.state.value.canRedo)
+    }
+
+    @Test
+    fun `autocut leaves downstream overlays in place when ripple editing is disabled`() {
+        val existing = video("existing", 1_000L)
+        val firstSource = video("source-a", 5_000L)
+        val secondSource = video("source-b", 5_000L)
+        val downstreamOverlay = video("overlay", 1_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 2,
+            timelineOffsetMs = 11_000L
+        )
+        val music = AudioTrack(
+            id = "music",
+            name = "Analyzed music",
+            uri = "file:///music.wav",
+            trimStartMs = 0L,
+            trimEndMs = 20_000L,
+            sourceDurationMs = 20_000L
+        )
+        val project = Project(
+            id = "project",
+            name = "Ripple disabled",
+            durationMs = 20_000L,
+            clips = listOf(existing, firstSource, secondSource, downstreamOverlay),
+            audioTracks = listOf(music)
+        )
+        val vm = EditorViewModel()
+        vm._state.update {
+            it.copy(
+                project = project,
+                durationMs = project.durationMs,
+                selectedClipIds = setOf(firstSource.id, secondSource.id),
+                multiSelectMode = true,
+                selectedAudioTrackId = music.id,
+                beatSourceTrackId = music.id,
+                beatMarkersByTrackUri = mapOf(music.uri to listOf(0L, 11_500L, 12_000L, 12_500L, 13_000L)),
+                rippleEditing = false
+            )
+        }
+
+        assertTrue(vm.autoCutSelectedClips())
+
+        assertEquals(11_000L, vm.state.value.project!!.clips.first { it.id == downstreamOverlay.id }.timelineOffsetMs)
     }
 
     @Test

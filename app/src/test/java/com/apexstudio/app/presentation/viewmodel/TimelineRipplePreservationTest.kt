@@ -36,7 +36,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/** Locks the already-merged PR #161 behavior; Phase 0 must not redesign ripple. */
+/** Locks default-on main-track ripple behavior and its explicit opt-out contract. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -372,6 +372,79 @@ class TimelineRipplePreservationTest {
         vm.applyLutToSelectedClips(GpuColorProfiles.CINEMATIC.id, 0.7f)
         assertTrue(vm.state.value.project!!.clips.all { it.gpuFilterConfig.activeProfileId == GpuColorProfiles.CINEMATIC.id })
     }
+    @Test
+    fun `ripple editing defaults on and can be toggled off and on`() {
+        val editor = vm(video("toggle"))
+
+        assertEquals(true, editor.state.value.rippleEditing)
+        editor.toggleRippleEditing()
+        assertEquals(false, editor.state.value.rippleEditing)
+        editor.toggleRippleEditing()
+        assertEquals(true, editor.state.value.rippleEditing)
+    }
+
+    @Test
+    fun `ripple disabled preserves downstream layers for single V1 trim duplicate and delete`() {
+        val trimmed = vm(
+            video("trim"),
+            overlay("trim-later", 12_000L),
+            audioTracks = listOf(audioTrack("trim-audio", 12_000L))
+        )
+        trimmed._state.update { it.copy(rippleEditing = false) }
+        trimmed.trimClip("trim", 0L, 5_000L)
+        assertEquals(12_000L, trimmed.offset("trim-later"))
+        assertEquals(12_000L, trimmed.state.value.project!!.audioTracks.single().startTimeMs)
+
+        val duplicated = vm(
+            video("duplicate"),
+            overlay("duplicate-later", 12_000L),
+            audioTracks = listOf(audioTrack("duplicate-audio", 12_000L))
+        )
+        duplicated._state.update { it.copy(rippleEditing = false) }
+        duplicated.duplicateClip("duplicate")
+        assertEquals(12_000L, duplicated.offset("duplicate-later"))
+        assertEquals(12_000L, duplicated.state.value.project!!.audioTracks.single().startTimeMs)
+
+        val deleted = vm(
+            video("delete"),
+            overlay("delete-later", 12_000L),
+            audioTracks = listOf(audioTrack("delete-audio", 12_000L))
+        )
+        deleted._state.update { it.copy(rippleEditing = false) }
+        deleted.deleteClip("delete")
+        assertEquals(12_000L, deleted.offset("delete-later"))
+        assertEquals(12_000L, deleted.state.value.project!!.audioTracks.single().startTimeMs)
+    }
+
+    @Test
+    fun `ripple disabled preserves downstream layers for multi-select delete and duplicate`() {
+        val deleted = vm(
+            video("first-delete"),
+            video("second-delete"),
+            overlay("delete-later", 25_000L),
+            audioTracks = listOf(audioTrack("delete-audio", 25_000L))
+        )
+        deleted._state.update {
+            it.copy(rippleEditing = false, selectedClipIds = setOf("first-delete"), multiSelectMode = true)
+        }
+        assertTrue(deleted.deleteSelectedClips())
+        assertEquals(25_000L, deleted.offset("delete-later"))
+        assertEquals(25_000L, deleted.state.value.project!!.audioTracks.single().startTimeMs)
+
+        val duplicated = vm(
+            video("first-duplicate"),
+            video("second-duplicate"),
+            overlay("duplicate-later", 20_000L),
+            audioTracks = listOf(audioTrack("duplicate-audio", 20_000L))
+        )
+        duplicated._state.update {
+            it.copy(rippleEditing = false, selectedClipIds = setOf("first-duplicate"), multiSelectMode = true)
+        }
+        assertTrue(duplicated.duplicateSelectedClips())
+        assertEquals(20_000L, duplicated.offset("duplicate-later"))
+        assertEquals(20_000L, duplicated.state.value.project!!.audioTracks.single().startTimeMs)
+    }
+
     @Test
     fun `grouped selection keeps clips together during reorder`() {
         val vm = vm(video("a"), video("b"), video("tail"))

@@ -2184,6 +2184,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
                 focused = isTimelineFocusMode,
                 onToggleFocus = { onTimelineFocusModeChange(!isTimelineFocusMode) },
                 onToggleSnapping = { vm.toggleMagneticSnapping() },
+                onToggleRippleEditing = { vm.toggleRippleEditing() },
                 onZoomOut = { vm.setTimelineZoom(state.timelineZoom / 1.5f) },
                 onZoomIn = { vm.setTimelineZoom(state.timelineZoom * 1.5f) },
             )

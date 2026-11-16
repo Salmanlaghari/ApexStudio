@@ -253,7 +253,11 @@ data class EditorState(
     // Volume / Fade bottom sheets for the contextual toolbar.
     val clipVolumeSheetOpen: Boolean = false,
     val audioFadeSheetOpen: Boolean = false,
-    val signaturePanelOpen: Boolean = false
+    val signaturePanelOpen: Boolean = false,
+    // Timeline insert/delete/trim behavior for V1. Default on to preserve the
+    // existing linked-layer behavior; turning it off keeps overlays and audio
+    // at their current timeline positions when V1 length changes.
+    val rippleEditing: Boolean = true
 ) {
     companion object {
         /** Manifest category id selected when a new editor state is created. */

@@ -21,11 +21,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1022,7 +1023,11 @@ fun VideoTimeline(
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .timelineHorizontalPan(scrollState)
+                        .scrollable(
+                            state = scrollState,
+                            orientation = Orientation.Horizontal,
+                            reverseDirection = true
+                        )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
@@ -1426,7 +1431,6 @@ fun VideoTimeline(
                                 .offset(y = rulerHeight)
                                 .fillMaxWidth()
                                 .height(10.dp)
-                                .timelineHorizontalPan(scrollState)
                                 .testTag("timeline-header-scroll-gap")
                         )
                     }
@@ -1735,15 +1739,6 @@ fun VideoTimeline(
         compactTimeline = compactTimeline
     )
 }
-
-/** Pan the shared timeline from background surfaces without competing with ruler or clip gestures. */
-private fun Modifier.timelineHorizontalPan(scrollState: ScrollState): Modifier =
-    pointerInput(scrollState) {
-        detectHorizontalDragGestures { change, dragAmount ->
-            change.consume()
-            scrollState.dispatchRawDelta(-dragAmount)
-        }
-    }
 
 // ==========================================
 // SUB-COMPONENTS

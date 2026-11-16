@@ -22,7 +22,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -1026,7 +1025,7 @@ fun VideoTimeline(
                         .scrollable(
                             state = scrollState,
                             orientation = Orientation.Horizontal,
-                            reverseDirection = false
+                            reverseDirection = true
                         )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
@@ -1074,12 +1073,6 @@ fun VideoTimeline(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(10.dp)
-                                        .pointerInput(scrollState) {
-                                            detectHorizontalDragGestures { change, dragAmount ->
-                                                change.consume()
-                                                scrollState.dispatchRawDelta(-dragAmount)
-                                            }
-                                        }
                                         .testTag("timeline-header-scroll-gap")
                                 )
                             }

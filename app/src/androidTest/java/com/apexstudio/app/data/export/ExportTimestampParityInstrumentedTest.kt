@@ -693,10 +693,14 @@ class ExportTimestampParityInstrumentedTest {
         val projectBaselineName = "sticker-project-baseline-$id.mp4"
         val projectName = "sticker-project-$id.mp4"
         val outputDir = File(context.getExternalFilesDir(null), "ApexStudio_Exports")
+        // This moving, high-detail fixture is exported independently for each parity pass.
+        // Use added bitrate headroom so sticker complexity is less likely to shift AVC
+        // rate-control decisions across unrelated background macroblocks.
         val baselineConfig = ExportEngine.ExportConfig(
             resolution = "720p",
             fps = 30,
             aspectRatio = "16:9",
+            bitrateMbps = 24,
             trimEndMs = 1_800L
         )
         var baselineOutput: File? = null
@@ -1018,7 +1022,12 @@ class ExportTimestampParityInstrumentedTest {
                 trimEndMs = 1_800L,
                 stickers = emptyList()
             )
-            val projectConfig = ExportEngine.ExportConfig(resolution = "720p", fps = 30, aspectRatio = "16:9")
+            val projectConfig = ExportEngine.ExportConfig(
+                resolution = "720p",
+                fps = 30,
+                aspectRatio = "16:9",
+                bitrateMbps = 24,
+            )
             suspend fun exportProjectPass(
                 clips: List<MediaClip>,
                 outputFileName: String,

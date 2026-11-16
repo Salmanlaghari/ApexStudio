@@ -23,9 +23,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -1028,13 +1027,14 @@ fun VideoTimeline(
                         .fillMaxWidth()
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .scrollable(
-                            state = scrollState,
-                            orientation = Orientation.Horizontal,
-                            // A leftward finger drag must advance ScrollState
-                            // just like the lower horizontalScroll lanes.
-                            reverseDirection = true
-                        )
+                        .pointerInput(scrollState) {
+                            detectHorizontalDragGestures { change, dragAmount ->
+                                // Child clip/ruler handlers run first; only unclaimed header drags
+                                // advance the shared timeline. Leftward movement scrolls forward.
+                                change.consume()
+                                scrollState.dispatchRawDelta(-dragAmount)
+                            }
+                        }
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(

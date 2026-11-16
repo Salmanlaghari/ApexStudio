@@ -1026,7 +1026,7 @@ fun VideoTimeline(
                         .scrollable(
                             state = scrollState,
                             orientation = Orientation.Horizontal,
-                            reverseDirection = false
+                            reverseDirection = true
                         )
                         .testTag("timeline-pinned-header-scroll-target")
                 ) {

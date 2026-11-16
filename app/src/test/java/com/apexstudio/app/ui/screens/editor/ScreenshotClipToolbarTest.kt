@@ -258,8 +258,8 @@ class ScreenshotClipToolbarTest {
         listOf("AI", "Subtitles", "Enhance", "Templates").forEach {
             composeRule.onNodeWithText(it).assertDoesNotExist()
         }
-        composeRule.onAllNodesWithText("Device Music").assertCountEquals(0)
-        composeRule.onNodeWithText("Audio").assertIsDisplayed()
+        composeRule.onNodeWithText("Audio").assertDoesNotExist()
+        composeRule.onAllNodesWithText("Device Music").assertCountEquals(1)
         listOf(
             "AI tools" to "ai",
             "Captions" to "captions",
@@ -270,6 +270,8 @@ class ScreenshotClipToolbarTest {
             composeRule.onNodeWithText(label).performScrollTo().performClick()
             assertEquals("$label callback", 1, calls[action] ?: 0)
         }
+        composeRule.onNodeWithText("Device Music").performScrollTo().performClick()
+        assertEquals("Device Music remains the easy-mode device picker", 1, calls["device-audio"] ?: 0)
     }
 
     @Composable

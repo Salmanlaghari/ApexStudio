@@ -21,6 +21,22 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToLong
 
+internal const val FINALIZATION_PROGRESS_START = 0.90f
+internal const val FINALIZATION_PROGRESS_END = 0.98f
+
+internal fun frameRateVerificationProgress(
+    encodedTimeMs: Double,
+    outputDurationMs: Long,
+    startProgress: Float = FINALIZATION_PROGRESS_START
+): Float? {
+    if (!encodedTimeMs.isFinite() || encodedTimeMs < 0.0 || outputDurationMs <= 0L || !startProgress.isFinite()) {
+        return null
+    }
+    val start = startProgress.coerceIn(0f, FINALIZATION_PROGRESS_END)
+    val fraction = (encodedTimeMs / outputDurationMs.toDouble()).coerceIn(0.0, 1.0).toFloat()
+    return start + (FINALIZATION_PROGRESS_END - start) * fraction
+}
+
 /** Explicit CFR generation after a readable H.264 output misses a cadence contract. */
 internal object ExportCfrCadenceNormalizer {
     private const val MIN_FREE_BYTES = 64L * 1024L * 1024L
@@ -110,11 +126,19 @@ internal object ExportCfrCadenceNormalizer {
     }
 
     /** Encodes to a temporary sibling file; callers audit it before atomically replacing the source. */
-    internal suspend fun transcode(inputFile: File, targetBitrate: Int, targetFps: Int = 60): File =
+    internal suspend fun transcode(
+        inputFile: File,
+        targetBitrate: Int,
+        outputDurationMs: Long,
+        targetFps: Int = 60,
+        finalizationProgressStart: Float = FINALIZATION_PROGRESS_START,
+        onProgress: (Float) -> Unit = {}
+    ): File =
         withContext(Dispatchers.IO) {
             require(inputFile.isFile && inputFile.length() > 0L) {
                 "The rendered video is missing before $targetFps fps normalization."
             }
+            require(outputDurationMs > 0L) { "The rendered video duration is unavailable before $targetFps fps normalization." }
             val parent = inputFile.parentFile
                 ?: throw IllegalStateException("The rendered video has no parent directory.")
             val neededBytes = maxOf(MIN_FREE_BYTES, inputFile.length().coerceAtLeast(1L) * 2L)
@@ -132,7 +156,13 @@ internal object ExportCfrCadenceNormalizer {
                     targetBitrate,
                     targetFps
                 )
-                val session = executeCancellable(command)
+                val session = executeCancellable(command) { encodedTimeMs ->
+                    frameRateVerificationProgress(
+                        encodedTimeMs,
+                        outputDurationMs,
+                        finalizationProgressStart
+                    )?.let(onProgress)
+                }
                 check(ReturnCode.isSuccess(session.returnCode)) {
                     "The available OpenH264 encoder could not create the $targetFps fps copy " +
                         "(FFmpeg code ${session.returnCode?.value ?: "unknown"})."
@@ -256,19 +286,24 @@ internal object ExportCfrCadenceNormalizer {
     private fun MediaFormat.longOrNull(key: String): Long? =
         if (containsKey(key)) runCatching { getLong(key) }.getOrNull() else null
 
-    private suspend fun executeCancellable(command: Array<String>): FFmpegSession =
+    private suspend fun executeCancellable(command: Array<String>, onEncodedTime: (Double) -> Unit): FFmpegSession =
         suspendCancellableCoroutine { continuation ->
             if (!continuation.isActive) return@suspendCancellableCoroutine
             val sessionRef = AtomicReference<FFmpegSession?>()
             continuation.invokeOnCancellation {
                 sessionRef.get()?.let { FFmpegKit.cancel(it.sessionId) }
             }
-            val session = FFmpegKit.executeWithArgumentsAsync(command) { completed ->
-                if (completed != null && continuation.isActive) continuation.resume(completed)
-                else if (completed == null && continuation.isActive) {
-                    continuation.resumeWith(Result.failure(IllegalStateException("FFmpegKit returned no session result.")))
-                }
-            }
+            val session = FFmpegKit.executeWithArgumentsAsync(
+                command,
+                { completed ->
+                    if (completed != null && continuation.isActive) continuation.resume(completed)
+                    else if (completed == null && continuation.isActive) {
+                        continuation.resumeWith(Result.failure(IllegalStateException("FFmpegKit returned no session result.")))
+                    }
+                },
+                null,
+                { statistics -> onEncodedTime(statistics.time) }
+            )
             sessionRef.set(session)
             if (!continuation.isActive) FFmpegKit.cancel(session.sessionId)
         }

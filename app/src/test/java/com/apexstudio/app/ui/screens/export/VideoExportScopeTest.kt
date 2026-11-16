@@ -83,6 +83,7 @@ class VideoExportScopeTest {
             ExportProgressStage.AUDIO_PREPARATION,
             ExportProgressStage.AUDIO_MIX,
             ExportProgressStage.MUX,
+            ExportProgressStage.FRAME_RATE_VERIFICATION,
             ExportProgressStage.FINALIZATION
         ).forEach { stage ->
             assertEquals(stage.label, exportProgressLabel(true, 0.97f, stage))

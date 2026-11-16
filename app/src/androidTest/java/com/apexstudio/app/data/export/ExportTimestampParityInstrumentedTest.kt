@@ -1194,6 +1194,8 @@ class ExportTimestampParityInstrumentedTest {
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "cfr-fallback-source-$id.mp4")
         var candidate: File? = null
+        val reportedProgress = mutableListOf<Float>()
+        val progressLock = Any()
         try {
             instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
@@ -1201,8 +1203,23 @@ class ExportTimestampParityInstrumentedTest {
             val sourceTrack = readVideoTrack(source)
             assertTrue("Fallback fixture must contain AAC audio", hasTrack(source, "audio/"))
             val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
-            val normalized = ExportCfrCadenceNormalizer.transcode(source, targetBitrate = 6_000_000)
+            val normalized = ExportCfrCadenceNormalizer.transcode(
+                inputFile = source,
+                targetBitrate = 6_000_000,
+                outputDurationMs = sourceDurationMs,
+                targetFps = 60,
+                onProgress = { progress -> synchronized(progressLock) { reportedProgress += progress } }
+            )
             candidate = normalized
+            val measuredProgress = synchronized(progressLock) { reportedProgress.toList() }
+            assertTrue("FFmpegKit must report measured CFR fallback progress", measuredProgress.isNotEmpty())
+            assertTrue("Fallback progress stays below completion until output audits pass", measuredProgress.all {
+                it in FINALIZATION_PROGRESS_START..FINALIZATION_PROGRESS_END
+            })
+            assertTrue("Fallback progress must not move backwards", measuredProgress.zipWithNext().all { (before, after) ->
+                after + 0.0001f >= before
+            })
+            assertTrue("Fallback progress must advance from verification start", measuredProgress.last() > FINALIZATION_PROGRESS_START)
 
             val audit = inspectEncodedVideo(
                 context = context,

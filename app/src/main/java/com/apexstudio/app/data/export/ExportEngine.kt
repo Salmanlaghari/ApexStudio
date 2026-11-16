@@ -932,7 +932,7 @@ class ExportEngine(private val context: Context) {
                         }
                         finishedFile = mixed
                     }
-                    publishProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
+                    publishProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, FINALIZATION_PROGRESS_START)
                     currentCoroutineContext().ensureActive()
                     check(!run.cancelled.get()) { "Project export was cancelled" }
                     val durationToleranceMs = 150L
@@ -968,8 +968,19 @@ class ExportEngine(private val context: Context) {
                         finishedFile, config.fps, renderResult.videoFrameCount,
                         renderResult.durationMs, diagnostics, config,
                         normalizeKnownCfrFasterSource =
-                            hasProjectVideoSource && allProjectVideoSourcesVerifiedCfr
+                            hasProjectVideoSource && allProjectVideoSourcesVerifiedCfr,
+                        frameRateProgressStart = FINALIZATION_PROGRESS_START,
+                        onFrameRateVerificationStarted = {
+                            publishProjectStage(
+                                run, ExportProgressStage.FRAME_RATE_VERIFICATION,
+                                diagnostics, FINALIZATION_PROGRESS_START
+                            )
+                        },
+                        onFrameRateVerificationProgress = { progress ->
+                            publishProjectProgress(run, progress)
+                        }
                     )
+                    publishProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                     check(finishedFile.parentFile?.canonicalPath == destination.parentFile?.canonicalPath) {
                         "Project export candidate must be in the destination directory for atomic publication"
                     }
@@ -1070,7 +1081,8 @@ class ExportEngine(private val context: Context) {
         ExportProgressStage.AUDIO_PREPARATION -> 0.92f
         ExportProgressStage.AUDIO_MIX -> 0.94f
         ExportProgressStage.MUX -> 0.97f
-        ExportProgressStage.FINALIZATION -> 0.99f
+        ExportProgressStage.FRAME_RATE_VERIFICATION -> FINALIZATION_PROGRESS_START
+        ExportProgressStage.FINALIZATION -> FINALIZATION_PROGRESS_START
         else -> null
     }
 
@@ -2094,6 +2106,19 @@ class ExportEngine(private val context: Context) {
         }
     }
 
+    private fun publishNonProjectProgress(run: Any, progress: Float) {
+        if (!progress.isFinite()) return
+        mainHandler.post {
+            if (nonProjectRun !== run) return@post
+            val current = _exportState.value
+            _exportState.value = current.copy(
+                isExporting = true,
+                progress = maxOf(current.progress, progress.coerceIn(0f, FINALIZATION_PROGRESS_END)),
+                stage = ExportProgressStage.FRAME_RATE_VERIFICATION
+            )
+        }
+    }
+
     /** Demuxes the completed output on a worker and returns only evidence-backed warnings. */
     private suspend fun validateEncodedOutput(
         outputFile: File,
@@ -2102,7 +2127,10 @@ class ExportEngine(private val context: Context) {
         transformerDurationMs: Long?,
         diagnostics: ExportDiagnosticTrace?,
         config: ExportConfig,
-        normalizeKnownCfrFasterSource: Boolean = false
+        normalizeKnownCfrFasterSource: Boolean = false,
+        frameRateProgressStart: Float = FINALIZATION_PROGRESS_START,
+        onFrameRateVerificationStarted: () -> Unit = {},
+        onFrameRateVerificationProgress: (Float) -> Unit = {}
     ): String? {
         var cfrNormalizationRequired = false
         try {
@@ -2140,10 +2168,14 @@ class ExportEngine(private val context: Context) {
             if (cfrNormalizationRequired) {
                 val targetFps = effectiveExportFrameRate(config.fps)
                 diagnostics?.stage("cfr${targetFps}_fallback_started", audit.diagnosticSummary())
+                onFrameRateVerificationStarted()
                 val candidate = ExportCfrCadenceNormalizer.transcode(
                     inputFile = outputFile,
                     targetBitrate = exportTargetBitrate(config),
-                    targetFps = targetFps
+                    outputDurationMs = checkNotNull(audit.outputDurationMs),
+                    targetFps = targetFps,
+                    finalizationProgressStart = frameRateProgressStart,
+                    onProgress = onFrameRateVerificationProgress
                 )
                 try {
                     val candidateAudit = inspectEncodedVideo(
@@ -2275,6 +2307,11 @@ class ExportEngine(private val context: Context) {
                     "video_transformer_completed",
                     "durationMs=${exportResult.durationMs} frames=${exportResult.videoFrameCount} outputBytes=${outputFile.length()}"
                 )
+                val frameRateProgressStart = if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
+                    FINALIZATION_PROGRESS_START
+                } else {
+                    0.97f
+                }
                 val outputValidation: suspend () -> String? = {
                     val durationCorrection = if (
                         exportResult.durationMs > 0L && outputFile.isFile && outputFile.length() > 0L
@@ -2296,12 +2333,22 @@ class ExportEngine(private val context: Context) {
                     validateEncodedOutput(
                         outputFile, config.fps, exportResult.videoFrameCount,
                         exportResult.durationMs, diagnostics, config,
-                        normalizeKnownCfrFasterSource
+                        normalizeKnownCfrFasterSource = normalizeKnownCfrFasterSource,
+                        frameRateProgressStart = frameRateProgressStart,
+                        onFrameRateVerificationStarted = {
+                            publishNonProjectStage(
+                                run, ExportProgressStage.FRAME_RATE_VERIFICATION,
+                                diagnostics, frameRateProgressStart
+                            )
+                        },
+                        onFrameRateVerificationProgress = { progress ->
+                            publishNonProjectProgress(run, progress)
+                        }
                     )
                 }
                 if (musicMixTracks.isEmpty() && overlayAudioSources.isEmpty()) {
                     val outputUri = Uri.fromFile(outputFile).toString()
-                    publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
+                    publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, FINALIZATION_PROGRESS_START)
                     postMixJob?.cancel()
                     val validationJob = CoroutineScope(Dispatchers.IO).launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
                         val owner = currentCoroutineContext().job
@@ -2320,6 +2367,7 @@ class ExportEngine(private val context: Context) {
                             ))
                             return@launch
                         }
+                        publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                         diagnostics?.phase(null)
                         diagnostics?.stage("export_completed")
                         publishPostMixState(owner, ExportProgressState(
@@ -2433,7 +2481,7 @@ class ExportEngine(private val context: Context) {
                             "music_audio_mix_completed",
                             "mixedTracks=${result.mixedTracks} skippedTracks=${result.skippedTracks} outputBytes=${mixedFile.length()}"
                         )
-                        publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
+                        publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.97f)
                         Log.i(TAG, "Audio mix done: ${result.mixedTracks} mixed, ${result.skippedTracks} skipped")
                         val mixedDurationCorrection = Mp4VideoTailDurationNormalizer.normalize(
                             mixedFile,
@@ -2449,8 +2497,19 @@ class ExportEngine(private val context: Context) {
                         val mixedOutputWarning = validateEncodedOutput(
                             mixedFile, config.fps, exportResult.videoFrameCount,
                             exportResult.durationMs, diagnostics, config,
-                            normalizeKnownCfrFasterSource
+                            normalizeKnownCfrFasterSource = normalizeKnownCfrFasterSource,
+                            frameRateProgressStart = 0.97f,
+                            onFrameRateVerificationStarted = {
+                                publishNonProjectStage(
+                                    run, ExportProgressStage.FRAME_RATE_VERIFICATION,
+                                    diagnostics, 0.97f
+                                )
+                            },
+                            onFrameRateVerificationProgress = { progress ->
+                                publishNonProjectProgress(run, progress)
+                            }
                         )
+                        publishNonProjectStage(run, ExportProgressStage.FINALIZATION, diagnostics, 0.99f)
                         videoValidationWarning = listOfNotNull(videoValidationWarning, mixedOutputWarning)
                             .distinct().joinToString(" ").ifBlank { null }
                         if (!outputFile.delete()) Log.w(TAG, "Could not delete intermediate export file")
@@ -2566,7 +2625,7 @@ class ExportEngine(private val context: Context) {
                 val pState = activeTransformer.getProgress(progressHolder)
                 if (pState == Transformer.PROGRESS_STATE_AVAILABLE) {
                     diagnostics?.progress(progressHolder.progress)
-                    val p = (progressHolder.progress / 100f).coerceIn(0f, 0.99f)
+                    val p = videoRenderProgress(progressHolder.progress / 100f)
                     if (onProgress != null) onProgress(p)
                     else _exportState.value = _exportState.value.copy(progress = p)
                 }

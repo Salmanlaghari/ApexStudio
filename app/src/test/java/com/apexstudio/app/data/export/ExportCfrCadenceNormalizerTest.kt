@@ -3,10 +3,22 @@ package com.apexstudio.app.data.export
 import androidx.media3.common.MimeTypes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExportCfrCadenceNormalizerTest {
+    @Test
+    fun frameRateVerificationProgressIsMeasuredAndCannotClaimCompletion() {
+        assertEquals(FINALIZATION_PROGRESS_START, frameRateVerificationProgress(0.0, 1_000L)!!, 0.0001f)
+        assertEquals(0.94f, frameRateVerificationProgress(500.0, 1_000L)!!, 0.0001f)
+        assertEquals(FINALIZATION_PROGRESS_END, frameRateVerificationProgress(1_500.0, 1_000L)!!, 0.0001f)
+        assertEquals(0.975f, frameRateVerificationProgress(500.0, 1_000L, 0.97f)!!, 0.0001f)
+        assertNull(frameRateVerificationProgress(Double.NaN, 1_000L))
+        assertNull(frameRateVerificationProgress(-1.0, 1_000L))
+        assertNull(frameRateVerificationProgress(1.0, 0L))
+    }
+
     @Test
     fun commandUsesExplicitCfrAndTheBundledOpenH264Encoder() {
         val input = "/storage/emulated/0/clip with spaces.mp4"

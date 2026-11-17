@@ -1,11 +1,17 @@
 package com.apexstudio.app.presentation.viewmodel
 
+import android.net.Uri
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.Keyframe
 import com.apexstudio.app.domain.model.KeyframeTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.SpeedPoint
+import com.apexstudio.app.domain.model.timeline.Keyframe as SharedKeyframe
+import com.apexstudio.app.domain.model.timeline.OverlayItem
+import com.apexstudio.app.domain.model.timeline.OverlayTrack
+import com.apexstudio.app.domain.model.timeline.Timeline
+import com.apexstudio.app.domain.model.timeline.Transform
 import kotlinx.coroutines.flow.update
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -151,6 +157,108 @@ class EditorTimelineSnappingTest {
         vm.toggleMagneticSnapping()
         vm.setClipTimelineOffset("overlay", 4_080L)
         assertEquals(4_080L, vm._state.value.project!!.clips.single { it.id == "overlay" }.timelineOffsetMs)
+    }
+
+    @Test fun movingGroupedKeyframedOverlaysRebasesLegacyAndTypedAnimationTogether() {
+        fun legacyClip(id: String, offsetMs: Long, endMs: Long, groupId: String?) = clip(id, 8_000L).copy(
+            type = ClipType.OVERLAY,
+            trackIndex = 1,
+            timelineOffsetMs = offsetMs,
+            groupId = groupId,
+            keyframes = KeyframeTrack(listOf(
+                Keyframe(
+                    id = "$id-start",
+                    timeMs = offsetMs,
+                    scale = 1f,
+                    opacity = 0f,
+                    bezierCp1X = 0.2f
+                ),
+                Keyframe(id = "$id-end", timeMs = endMs, scale = 3f, opacity = 1f)
+            ))
+        )
+
+        fun typedClip(id: String, startMs: Long, endMs: Long) = OverlayItem.Video(
+            id = id,
+            uri = Uri.parse("file:///$id.mp4"),
+            inMs = startMs,
+            outMs = endMs,
+            transform = Transform(scaleKeyframes = listOf(
+                SharedKeyframe(startMs, 1f), SharedKeyframe(endMs, 3f)
+            )),
+            opacityKeyframes = listOf(
+                SharedKeyframe(startMs, 0f), SharedKeyframe(endMs, 1f)
+            ),
+            lutKeyframes = listOf(SharedKeyframe(startMs + 1_000L, 0.25f))
+        )
+
+        val first = legacyClip("overlay", 6_000L, 10_000L, "group")
+        val second = legacyClip("grouped", 8_000L, 12_000L, "group")
+        val untouched = legacyClip("untouched", 1_000L, 5_000L, null)
+        val vm = editor(first, second, untouched)
+        vm._state.update { state ->
+            state.copy(
+                magneticSnapping = false,
+                project = state.project!!.copy(timeline = Timeline(tracks = listOf(
+                    OverlayTrack(
+                        id = "overlay-lane",
+                        lane = 1,
+                        items = listOf(
+                            typedClip("overlay", 6_000L, 10_000L),
+                            typedClip("grouped", 8_000L, 12_000L),
+                            typedClip("untouched", 1_000L, 5_000L)
+                        )
+                    )
+                )))
+            )
+        }
+
+        val initialValue = vm._state.value.project!!.sharedVideoClip("overlay")!!
+            .transform.scaleAt(8_000L)
+        vm.setClipTimelineOffset("overlay", 12_000L)
+
+        var project = vm._state.value.project!!
+        assertEquals(12_000L, project.clips.single { it.id == "overlay" }.timelineOffsetMs)
+        assertEquals(14_000L, project.clips.single { it.id == "grouped" }.timelineOffsetMs)
+        assertEquals(
+            listOf(12_000L, 16_000L),
+            project.clips.single { it.id == "overlay" }.keyframes.keyframes.map { it.timeMs }
+        )
+        assertEquals(0.2f, project.clips.single { it.id == "overlay" }.keyframes.keyframes.first().bezierCp1X!!)
+        var typed = project.sharedVideoClip("overlay")!!
+        assertEquals(12_000L, typed.inMs)
+        assertEquals(16_000L, typed.outMs)
+        assertEquals(listOf(12_000L, 16_000L), typed.transform.scaleKeyframes.map { it.timeMs })
+        assertEquals(listOf(13_000L), typed.lutKeyframes.map { it.timeMs })
+        assertEquals(initialValue, typed.transform.scaleAt(14_000L), 0.0001f)
+        assertEquals(
+            listOf(14_000L, 18_000L),
+            project.clips.single { it.id == "grouped" }.keyframes.keyframes.map { it.timeMs }
+        )
+        assertEquals(
+            listOf(1_000L, 5_000L),
+            project.clips.single { it.id == "untouched" }.keyframes.keyframes.map { it.timeMs }
+        )
+
+        vm.shiftClipTimelineOffset("overlay", -30_000L)
+        project = vm._state.value.project!!
+        assertEquals(0L, project.clips.single { it.id == "overlay" }.timelineOffsetMs)
+        assertEquals(2_000L, project.clips.single { it.id == "grouped" }.timelineOffsetMs)
+        assertEquals(
+            listOf(0L, 4_000L),
+            project.clips.single { it.id == "overlay" }.keyframes.keyframes.map { it.timeMs }
+        )
+        typed = project.sharedVideoClip("overlay")!!
+        assertEquals(listOf(0L, 4_000L), typed.transform.scaleKeyframes.map { it.timeMs })
+        assertEquals(1_000L, typed.lutKeyframes.single().timeMs)
+        assertEquals(initialValue, typed.transform.scaleAt(2_000L), 0.0001f)
+        assertEquals(
+            listOf(2_000L, 6_000L),
+            project.clips.single { it.id == "grouped" }.keyframes.keyframes.map { it.timeMs }
+        )
+        assertEquals(
+            listOf(1_000L, 5_000L),
+            project.clips.single { it.id == "untouched" }.keyframes.keyframes.map { it.timeMs }
+        )
     }
 
     @Test fun clearKeyframesAlsoClearsMaskAndDrawingKeysWithoutRemovingTheirContent() {

@@ -294,10 +294,23 @@ class StickerGlEffect(
         }
 
         override fun release() {
-            super.release()
-            if (overlayTexId[0] != 0) {
-                GLES20.glDeleteTextures(1, overlayTexId, 0)
-                overlayTexId[0] = 0
+            try {
+                super.release()
+            } finally {
+                // BaseGlShaderProgram owns its texture pool, not our shader or sticker texture.
+                try {
+                    glProgram.delete()
+                } catch (e: GlUtil.GlException) {
+                    throw VideoFrameProcessingException(e)
+                } finally {
+                    if (overlayTexId[0] != 0) {
+                        try {
+                            GLES20.glDeleteTextures(1, overlayTexId, 0)
+                        } finally {
+                            overlayTexId[0] = 0
+                        }
+                    }
+                }
             }
         }
     }

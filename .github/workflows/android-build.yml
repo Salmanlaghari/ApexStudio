@@ -94,7 +94,10 @@ jobs:
           ram-size: 2048M
           emulator-boot-timeout: 600
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
+          script: |
+            set -euo pipefail
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
+            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
 
       - name: Upload instrumentation test results
         if: always()

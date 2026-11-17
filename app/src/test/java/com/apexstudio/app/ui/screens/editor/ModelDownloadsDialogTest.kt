@@ -26,6 +26,12 @@ class ModelDownloadsDialogTest {
         compose.onNodeWithTag("model-download-list")
             .performScrollToNode(hasText("MODNet background removal"))
         compose.onNodeWithText("MODNet background removal").assertIsDisplayed()
+        compose.onNodeWithTag("model-download-list")
+            .performScrollToNode(hasText("Whisper tiny multilingual captions"))
+        compose.onNodeWithText("Whisper tiny multilingual captions").assertIsDisplayed()
+        compose.onNodeWithTag("model-download-list")
+            .performScrollToNode(hasText("English word-timing alignment"))
+        compose.onNodeWithText("English word-timing alignment").assertIsDisplayed()
         compose.onNodeWithText("Done").assertIsDisplayed()
         compose.onNodeWithText("Done").performClick()
         compose.runOnIdle { assertEquals(1, dismissed) }

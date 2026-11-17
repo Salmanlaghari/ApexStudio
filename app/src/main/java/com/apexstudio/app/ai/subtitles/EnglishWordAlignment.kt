@@ -44,7 +44,7 @@ class EnglishWordAlignmentException(
     cause: Throwable? = null,
 ) : IllegalStateException(message, cause)
 
-/** Installs the bundled model to app-private storage only after SHA-256 and size verification. */
+/** Installs a verified local model to app-private storage; standard Release APKs offer its 95 MB weights as an explicit download. */
 object BundledEnglishAlignmentModel {
     const val SHA256 = "1d9a366c27b2966625cd5035ac3db8847c53bba617169912bb251b42975a3a22"
     const val SIZE_BYTES = 95_212_816L

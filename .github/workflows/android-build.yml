@@ -215,6 +215,7 @@ jobs:
           python3 scripts/verify-ai-models.py
           python3 scripts/verify-free-ai-policy.py --report
           python3 -m unittest discover -s scripts/tests -p 'test_ai_model_integrity.py'
+          python3 -m unittest discover -s scripts/tests -p 'test_release_model_availability.py'
           python3 -m unittest discover -s scripts/tests -p 'test_fluent_sticker_integrity.py'
 
       - name: Full JVM regression suite
@@ -383,6 +384,9 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew :app:bundleRelease :app:assembleRelease --stacktrace --no-daemon 2>&1 | tee gradle-release.log
+
+      - name: Verify subtitle model availability in the actual Release APK
+        run: python3 scripts/verify-release-model-availability.py app/build/outputs/apk/release/app-release.apk
 
       - name: Verify MediaPipe R8 keep rules in minified output
         run: python3 scripts/verify-mediapipe-r8-rules.py

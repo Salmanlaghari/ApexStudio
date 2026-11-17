@@ -864,7 +864,12 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
     val duration = snapshot.project.durationMs.coerceAtLeast(0L)
     val position = livePlayheadMs().coerceIn(0L, duration)
     _playerPosition.value = position
-    _audio.update { it.copy(tracks = snapshot.project.audioTracks) }
+    _audio.update {
+        it.copy(
+            tracks = snapshot.project.audioTracks,
+            isMuted = snapshot.project.originalVideoMuted
+        )
+    }
     _state.update { state ->
         val activeClip = snapshot.project.clips.firstOrNull { it.id == state.selectedClipId }
             ?: snapshot.project.clips.firstOrNull {

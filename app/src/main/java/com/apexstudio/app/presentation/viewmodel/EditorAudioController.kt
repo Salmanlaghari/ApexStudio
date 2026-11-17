@@ -648,6 +648,8 @@ fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
 
 
 fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
+    val before = _state.value
+    if (before.project?.let { it.originalVideoMuted != muted } == true) pushUndo(before)
     _audio.update { it.copy(isMuted = muted) }
     var projectChanged = false
     _state.update { state ->
@@ -665,6 +667,7 @@ fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
     val elapsed = atMs - original.startTimeMs
     val span = original.trimEndMs - original.trimStartMs
     if (elapsed < 100L || elapsed > span - 100L) return
+    pushUndo()
     val part2Id = java.util.UUID.randomUUID().toString()
     _state.update { s ->
         val p = s.project ?: return@update s

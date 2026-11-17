@@ -1194,6 +1194,10 @@ class ExportTimestampParityInstrumentedTest {
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "cfr-fallback-source-$id.mp4")
         var candidate: File? = null
+        val reportedProgress = mutableListOf<Float>()
+        val auditProgress = mutableListOf<Float>()
+        var auditCancellationChecks = 0
+        val progressLock = Any()
         try {
             instrumentation.context.assets.open("export/cfr_30fps_audio_fixture.mp4").use { input ->
                 source.outputStream().use { output -> input.copyTo(output) }
@@ -1201,15 +1205,40 @@ class ExportTimestampParityInstrumentedTest {
             val sourceTrack = readVideoTrack(source)
             assertTrue("Fallback fixture must contain AAC audio", hasTrack(source, "audio/"))
             val sourceDurationMs = sourceTrack.videoTrackDurationUs / 1_000L
-            val normalized = ExportCfrCadenceNormalizer.transcode(source, targetBitrate = 6_000_000)
+            val normalized = ExportCfrCadenceNormalizer.transcode(
+                inputFile = source,
+                targetBitrate = 6_000_000,
+                outputDurationMs = sourceDurationMs,
+                targetFps = 60,
+                onProgress = { progress -> synchronized(progressLock) { reportedProgress += progress } }
+            )
             candidate = normalized
+            val measuredProgress = synchronized(progressLock) { reportedProgress.toList() }
+            assertTrue("FFmpegKit must report measured CFR fallback progress", measuredProgress.isNotEmpty())
+            assertTrue("Fallback progress stays below completion until output audits pass", measuredProgress.all {
+                it in FINALIZATION_PROGRESS_START..FINALIZATION_PROGRESS_END
+            })
+            assertTrue("Fallback progress must not move backwards", measuredProgress.zipWithNext().all { (before, after) ->
+                after + 0.0001f >= before
+            })
+            assertTrue("Fallback progress must advance from verification start", measuredProgress.last() > FINALIZATION_PROGRESS_START)
 
             val audit = inspectEncodedVideo(
                 context = context,
                 file = normalized,
                 requestedFps = 60,
-                transformerDurationMs = sourceDurationMs
+                transformerDurationMs = sourceDurationMs,
+                onProgress = { progress -> synchronized(progressLock) { auditProgress += progress } },
+                cancellationCheck = { auditCancellationChecks++ }
             )
+            val measuredAuditProgress = synchronized(progressLock) { auditProgress.toList() }
+            assertTrue("The final frame-rate audit must publish progress while scanning samples", measuredAuditProgress.size >= 3)
+            assertTrue("Audit progress must move forward", measuredAuditProgress.zipWithNext().all { (before, after) ->
+                after + 0.0001f >= before
+            })
+            assertEquals("The completed sample audit must reach the verification ceiling", FINALIZATION_PROGRESS_END,
+                measuredAuditProgress.last(), 0.0001f)
+            assertTrue("Long sample scans must regularly check for cancellation", auditCancellationChecks >= 3)
             assertNull("CFR fallback output must pass the strict cadence audit: ${audit.warning}", audit.warning)
             val candidateTrack = readVideoTrack(normalized)
             assertActual60FpsCadence("direct CFR fallback", candidateTrack, sourceDurationMs * 1_000L)

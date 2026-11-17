@@ -51,6 +51,7 @@ internal data class SourceFrameCadenceAudit(
 }
 
 private const val MAX_SOURCE_CADENCE_SAMPLES = 500_000
+private const val ENCODED_AUDIT_PROGRESS_SAMPLE_INTERVAL = 32
 
 /** Reads sample timestamps only, without decoding frames; oversized/unreadable tracks stay unknown. */
 internal fun inspectSourceFrameCadence(
@@ -264,7 +265,10 @@ internal fun inspectEncodedVideo(
     file: File,
     requestedFps: Int,
     transformerFrameCount: Int? = null,
-    transformerDurationMs: Long? = null
+    transformerDurationMs: Long? = null,
+    progressStart: Float = FINALIZATION_PROGRESS_START,
+    onProgress: (Float) -> Unit = {},
+    cancellationCheck: () -> Unit = {}
 ): EncodedFrameRateAudit {
     require(file.isFile && file.length() > 0L) { "Export output is missing or empty" }
     val extractor = MediaExtractor()
@@ -293,20 +297,36 @@ internal fun inspectEncodedVideo(
         }
         require(videoTrack >= 0) { "Export output has no readable video track" }
         extractor.selectTrack(videoTrack)
+        val durationMs = trackDurationMs
+            ?: transformerDurationMs?.takeIf { it > 0L }
         val timestamps = ArrayList<Long>()
+        var lastReportedProgress = Float.NEGATIVE_INFINITY
+        fun reportProgress(encodedTimeMs: Double) {
+            frameRateVerificationProgress(encodedTimeMs, durationMs ?: 0L, progressStart)
+                ?.takeIf { it > lastReportedProgress }
+                ?.let { progress ->
+                    lastReportedProgress = progress
+                    onProgress(progress)
+                }
+        }
         while (extractor.sampleTrackIndex >= 0) {
+            if (timestamps.size % ENCODED_AUDIT_PROGRESS_SAMPLE_INTERVAL == 0) {
+                cancellationCheck()
+                reportProgress(extractor.sampleTime / 1_000.0)
+            }
             val timeUs = extractor.sampleTime
             timestamps += timeUs
             if (!extractor.advance()) break
         }
-        val durationMs = trackDurationMs
-            ?: transformerDurationMs?.takeIf { it > 0L }
-        return auditEncodedFrameTimestamps(
+        cancellationCheck()
+        val audit = auditEncodedFrameTimestamps(
             timestampsUs = timestamps,
             outputDurationMs = durationMs,
             requestedFps = requestedFps,
             transformerFrameCount = transformerFrameCount
         ).copy(videoMimeType = videoMimeType, videoWidth = videoWidth, videoHeight = videoHeight)
+        durationMs?.let { reportProgress(it.toDouble()) }
+        return audit
     } finally {
         extractor.release()
     }

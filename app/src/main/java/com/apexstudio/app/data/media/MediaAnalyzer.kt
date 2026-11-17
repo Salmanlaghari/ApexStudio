@@ -122,11 +122,12 @@ class MediaAnalyzer {
                     idleStreak = 0
                     val codecConfig = (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
                     val isEos = (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
-                    if (!codecConfig && info.size > 0 && info.presentationTimeUs >= startUs) {
+                    if (!codecConfig && info.size > 0 && info.presentationTimeUs < clampEnd) {
                         val outBuf = decoder.getOutputBuffer(outIndex)
                         if (outBuf != null) {
                             accumulatePcm(
-                                outBuf, info, startUs, sampleRate, channelCount,
+                                outBuf, info.offset, info.size, info.presentationTimeUs,
+                                startUs, sampleRate, channelCount,
                                 totalFrames, sums, counts
                             )
                         }
@@ -172,15 +173,19 @@ class MediaAnalyzer {
     }
 
     /**
-     * Fold a decoded PCM buffer into the [sampleCount] amplitude buckets.
-     * [totalFrames] is the number of per-channel sample frames in the
-     * trim window, so bucket = frameIndex * sampleCount / totalFrames.
+     * Fold a decoded PCM buffer into the amplitude buckets.
+     * A buffer can start before [startUs]; its leading frames are clipped so
+     * an overlapping buffer still contributes only samples inside the trim window.
+     * [totalFrames] is the number of per-channel sample frames in that window,
+     * so bucket = frameIndex * bucket count / totalFrames.
      * Every 16-bit sample contributes its absolute amplitude (stereo
      * interleaves both channels — fine for an envelope display).
      */
-    private fun accumulatePcm(
+    internal fun accumulatePcm(
         buffer: java.nio.ByteBuffer,
-        info: MediaCodec.BufferInfo,
+        offset: Int,
+        size: Int,
+        presentationTimeUs: Long,
         startUs: Long,
         sampleRate: Int,
         channelCount: Int,
@@ -188,30 +193,71 @@ class MediaAnalyzer {
         sums: DoubleArray,
         counts: LongArray
     ) {
-        val sampleCount = sums.size
-        buffer.position(info.offset)
-        val limit = info.offset + info.size
-        if (limit > buffer.capacity()) return
-        // PCM frame (per-channel sample) at the start of this buffer.
-        var startFrame = ((info.presentationTimeUs - startUs) * sampleRate) / 1_000_000L
-        if (startFrame < 0L) startFrame = 0L
-        val shortsPerFrame = channelCount.coerceAtLeast(1)
-        var s = info.offset
+        val bucketCount = sums.size
+        if (bucketCount == 0 || counts.size != bucketCount || sampleRate <= 0 ||
+            channelCount <= 0 || channelCount > Int.MAX_VALUE / 2 || totalFrames <= 0L ||
+            offset < 0 || size <= 0 || offset > buffer.limit() - size
+        ) return
+        val bytesPerFrame = channelCount * 2
+        val decodedFrameCount = size / bytesPerFrame
+        if (decodedFrameCount <= 0) return
+
+        val framesToSkip = if (presentationTimeUs < startUs) {
+            val deltaUs = try {
+                Math.subtractExact(startUs, presentationTimeUs)
+            } catch (_: ArithmeticException) {
+                Long.MAX_VALUE
+            }
+            framesForDuration(deltaUs, sampleRate, roundUp = true)
+        } else 0L
+        if (framesToSkip >= decodedFrameCount.toLong()) return
+
+        val frameBase = if (presentationTimeUs < startUs) {
+            0L
+        } else {
+            framesForDuration(presentationTimeUs - startUs, sampleRate, roundUp = false)
+        }
+        if (frameBase >= totalFrames) return
+
+        val limit = offset + size
+        var s = offset + framesToSkip.toInt() * bytesPerFrame
         var shortIndex = 0
         while (s + 1 < limit) {
             val low = (buffer.get(s).toInt() and 0xFF)
             val high = (buffer.get(s + 1).toInt() shl 8)
             val amp = kotlin.math.abs((low or high).toShort().toFloat()) / 32768f
-            val frame = startFrame + shortIndex / shortsPerFrame
+            val frame = frameBase + shortIndex / channelCount
             if (frame < totalFrames) {
-                val bucket = ((frame * sampleCount) / totalFrames).toInt()
-                if (bucket in 0 until sampleCount) {
+                val bucket = ((frame * bucketCount) / totalFrames).toInt()
+                if (bucket in 0 until bucketCount) {
                     sums[bucket] += amp
                     counts[bucket]++
                 }
             }
             shortIndex++
             s += 2
+        }
+    }
+
+    private fun framesForDuration(durationUs: Long, sampleRate: Int, roundUp: Boolean): Long {
+        if (durationUs <= 0L || sampleRate <= 0) return 0L
+        val wholeSeconds = durationUs / 1_000_000L
+        val remainderUs = durationUs % 1_000_000L
+        val wholeFrames = try {
+            Math.multiplyExact(wholeSeconds, sampleRate.toLong())
+        } catch (_: ArithmeticException) {
+            return Long.MAX_VALUE
+        }
+        val fractionalProduct = remainderUs * sampleRate.toLong()
+        val fractionalFrames = if (roundUp) {
+            (fractionalProduct + 999_999L) / 1_000_000L
+        } else {
+            fractionalProduct / 1_000_000L
+        }
+        return if (wholeFrames > Long.MAX_VALUE - fractionalFrames) {
+            Long.MAX_VALUE
+        } else {
+            wholeFrames + fractionalFrames
         }
     }
 

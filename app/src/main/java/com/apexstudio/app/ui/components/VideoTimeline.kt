@@ -21,13 +21,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -176,6 +175,7 @@ internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
 private const val SOURCE_WAVEFORM_SPACING_DP = 10
+private const val TIMELINE_HEADER_PAN_GAP_HEIGHT_DP = 10
 private const val SOURCE_WAVEFORM_HEIGHT_DP = 36
 private const val COMPACT_SOURCE_WAVEFORM_SPACING_DP = 6
 private const val COMPACT_SOURCE_WAVEFORM_HEIGHT_DP = 20
@@ -292,10 +292,6 @@ internal fun partitionAudioTracksForTimeline(tracks: List<AudioTrack>): Timeline
         voiceAndSfx = tracks.filter { it.kind == AudioTrack.Kind.SFX },
     )
 
-/** Fixed lane identity gutter; the time canvas starts after this rail. */
-private val TIMELINE_IDENTITY_RAIL_MAX_WIDTH = 64.dp
-private val TIMELINE_IDENTITY_RAIL_MIN_WIDTH = 44.dp
-
 /** Reference-aligned timeline surfaces: dark canvas, bright timecode, cyan playhead. */
 internal val TIMELINE_RULER_BACKGROUND = Color(0xFF111A2C)
 internal val TIMELINE_RULER_LABEL_COLOR = Color(0xFFD7E6F3)
@@ -306,86 +302,6 @@ internal val TIMELINE_CANVAS_BACKGROUND = Color(0xFF0B1220)
 internal val TIMELINE_TEXT_LANE_BACKGROUND = Color(0xFF17152A)
 internal val TIMELINE_AUDIO_LANE_BACKGROUND = Color(0xFF0D1727)
 internal val TIMELINE_SELECTED_TRIM_COLOR = Color(0xFF43E6DC)
-
-internal fun timelineIdentityRailWidthForViewport(maxWidth: Dp): Dp =
-    minOf(TIMELINE_IDENTITY_RAIL_MAX_WIDTH, (maxWidth * 0.24f).coerceAtLeast(TIMELINE_IDENTITY_RAIL_MIN_WIDTH))
-
-@Composable
-private fun FixedTimelineIdentityRail(
-    hasMainVideo: Boolean,
-    showWaveformStrip: Boolean,
-    waveformStripHeight: Int,
-    waveformStripSpacing: Int,
-    overlayLayers: List<Int>,
-    hasText: Boolean,
-    hasStickers: Boolean,
-    hasFx: Boolean,
-    textLaneHeight: Int,
-    stickerLaneHeight: Int,
-    originalAudioRows: Int,
-    musicRows: Int,
-    voiceRows: Int,
-    railWidth: Dp,
-    railScrollState: ScrollState,
-    modifier: Modifier = Modifier,
-) {
-    val railSurface = Color(0xF2172230)
-    Column(
-        modifier = modifier
-            .width(railWidth)
-            .fillMaxHeight()
-            .background(railSurface)
-            .border(1.dp, Color(0xFF33445D))
-            .testTag("timeline-identity-rail")
-            .zIndex(25f),
-    ) {
-        Box(Modifier.fillMaxWidth().height(TIMELINE_RULER_HEIGHT_DP.dp).background(Color(0xFF111A2C)), contentAlignment = Alignment.CenterStart) {
-            Text("TIME", color = Color(0xFF8FA4C1), fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
-        }
-        if (hasMainVideo) {
-            Box(Modifier.fillMaxWidth().height((10 + MAIN_VIDEO_LANE_HEIGHT_DP).dp).padding(top = 10.dp), contentAlignment = Alignment.TopStart) {
-                TimelineLaneIdentity("V1 · Main", EditorPalette.NeonCyan)
-            }
-        }
-        if (showWaveformStrip) {
-            Box(
-                Modifier.fillMaxWidth()
-                    .height((waveformStripSpacing + waveformStripHeight).dp)
-                    .padding(top = waveformStripSpacing.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                TimelineLaneIdentity("V1 · Audio", Color(0xFF765BDB))
-            }
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .verticalScroll(railScrollState)
-                .padding(top = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            overlayLayers.forEach { layer ->
-                Box(Modifier.fillMaxWidth().height(OVERLAY_LAYER_HEIGHT_DP.dp), contentAlignment = Alignment.CenterStart) {
-                    TimelineLaneIdentity("V${layer + 1} · Overlay", EditorPalette.NeonCyan)
-                }
-            }
-            if (hasText) RailLabel("TEXT", Color(0xFFAE8BFF), textLaneHeight = textLaneHeight)
-            if (hasStickers) RailLabel("STICKER", Color(0xFFA88CFF), textLaneHeight = stickerLaneHeight)
-            if (hasFx) RailLabel("FX", Color(0xFF42B9FF), textLaneHeight = 40)
-            repeat(originalAudioRows) { RailLabel("A0 · Source", Color(0xFF765BDB), AUDIO_LANE_ROW_HEIGHT_DP) }
-            repeat(musicRows) { RailLabel("A1 · Music", Color(0xFF47D7B2), AUDIO_LANE_ROW_HEIGHT_DP) }
-            repeat(voiceRows) { RailLabel("A2 · Voice/SFX", Color(0xFFFFB454), AUDIO_LANE_ROW_HEIGHT_DP) }
-        }
-    }
-}
-
-@Composable
-private fun RailLabel(label: String, accent: Color, textLaneHeight: Int) {
-    Box(Modifier.fillMaxWidth().height(textLaneHeight.dp), contentAlignment = Alignment.CenterStart) {
-        TimelineLaneIdentity(label, accent)
-    }
-}
 
 @Composable
 private fun TimelineLaneIdentity(label: String, accent: Color) {
@@ -1021,7 +937,7 @@ fun VideoTimeline(
     // Keep the ruler, breathing room, and dominant filmstrip together. The actual source waveform is
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
-        (if (hasMainVideo) 10 + v1Height.value.toInt() else 0) +
+        (if (hasMainVideo) TIMELINE_HEADER_PAN_GAP_HEIGHT_DP + v1Height.value.toInt() else 0) +
         (if (showWaveformStrip) waveformStripSpacing + waveformStripHeight else 0)
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
         fxLaneTotal + a0Total + a1Total + a2Total
@@ -1030,9 +946,9 @@ fun VideoTimeline(
         supportRowsTotal
     val scrollableTotalDp = timelineTotalDp - fixedHeaderHeight
 
-    // The fixed identity rail remains visible while the time canvas uses
-    // the remaining width. It contracts on narrow screens to keep clip
-    // thumbnails and trim grips within the interactive viewport.
+    // Timeline lanes use the complete viewport width. Their identity chips
+    // are rendered inside populated rows, so the ruler and clip time origin
+    // stay aligned and no fixed gutter steals phone editing space.
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
             .background(EditorPalette.BgBase)
@@ -1040,8 +956,28 @@ fun VideoTimeline(
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
-        val identityRailWidth = timelineIdentityRailWidthForViewport(maxWidth)
-        val viewportWidthDp = (maxWidth - identityRailWidth).coerceAtLeast(1.dp)
+        val viewportWidthDp = maxWidth.coerceAtLeast(1.dp)
+        val rulerScrubAction = rememberUpdatedState<(Long) -> Unit>(
+            newValue = { requestedMs ->
+                onScrub(snapToBeatTime(requestedMs, beatMarkersMs, snapToBeat, snapThresholdMs))
+            }
+        )
+        val rulerDoubleTapAction = rememberUpdatedState<() -> Unit>(
+            newValue = {
+                val projectWidthDp = safeDurationMs.coerceAtLeast(1L).toFloat() / 1000f * 54f
+                val fitZoom = (viewportWidthDp.value / projectWidthDp)
+                    .coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
+                activeZoomDisplay = fitZoom
+                onZoomChange(fitZoom)
+                showZoomHud = true
+                hudDismissJob?.cancel()
+                hudDismissJob = coroutineScope.launch {
+                    delay(1200)
+                    showZoomHud = false
+                }
+                coroutineScope.launch { scrollState.scrollTo(0) }
+            }
+        )
         val compactHeight = maxHeight < 240.dp
         Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -1086,45 +1022,190 @@ fun VideoTimeline(
                         }
                     )
                 }
-                // Tapping empty timeline space (no clip/track consumed the
-                // tap) clears the selection. Child clickables (clips,
-                // ruler scrub, HUD, multi-select) win over this parent
-                // clickable, so a tap on a clip never deselects.
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onDeselect() }
+                // Deselect only after descendants get a chance to consume an
+                // empty-space tap; the ruler's delayed tap must not compete
+                // with a parent clickable. This observer never consumes input.
+                .pointerInput(onDeselect, rulerHeight) {
+                    val rulerBottomPx = rulerHeight.value * density.density
+                    val touchSlopPx = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val down = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Final
+                        )
+                        var movedBeyondSlop = false
+                        var hadMultiplePointers = false
+                        var consumed = down.isConsumed
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Final)
+                            if (event.changes.any { it.id != down.id && it.pressed }) {
+                                hadMultiplePointers = true
+                            }
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if ((change.position - down.position).getDistance() > touchSlopPx) {
+                                movedBeyondSlop = true
+                            }
+                            if (change.isConsumed) consumed = true
+                            if (!change.pressed) {
+                                if (!consumed && !movedBeyondSlop && !hadMultiplePointers &&
+                                    down.position.y >= rulerBottomPx
+                                ) {
+                                    onDeselect()
+                                }
+                                break
+                            }
+                        }
+                    }
+                }
+                .semantics {
+                    onClick(label = "Deselect timeline selection") {
+                        onDeselect()
+                        true
+                    }
+                }
         ) {
             Column(modifier = Modifier.fillMaxSize().then(
                 if (compactHeight) Modifier.verticalScroll(vScrollState) else Modifier
             )) {
                 // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
-                // tracks scroll vertically. Horizontally synced with the
-                // scrolling content via translationX (no recomposition
-                // per scroll frame); clipped so it never draws over the
-                // scrolling rows. The header also accepts horizontal
-                // swipes (scrollable on the shared scrollState, same
-                // direction as horizontalScroll) — without it a swipe
-                // starting on the ruler/V1 would do nothing, since only
-                // the lower box scrolls. Child gestures (ruler scrub,
-                // clip drag) consume first, so they still win.
+                // tracks scroll vertically. Horizontally synced with the scrolling content via
+                // translationX (no recomposition per scroll frame); clipped above scrolling rows.
+                // Keep the visible gap compact; native scrollables on the gap and V1 pan the canvas.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = identityRailWidth)
                         .height(fixedHeaderHeight.dp)
                         .clipToBounds()
-                        .scrollable(
-                            state = scrollState,
-                            orientation = Orientation.Horizontal,
-                            reverseDirection = true
-                        )
+                        .pointerInput(safeDurationMs, msToDp, scrollState, rulerHeight) {
+                            val pointerScope = this
+                            // The ruler is a translated, unbounded child; receive taps in viewport coordinates.
+                            val rulerBottomPx = rulerHeight.value * pointerScope.density
+                            val touchSlopPx = pointerScope.viewConfiguration.touchSlop
+                            var pendingTapContentPosition: Offset? = null
+                            var pendingTapViewportPosition: Offset? = null
+                            var pendingTapUpTimeMillis = 0L
+                            var pendingTapToken = 0L
+                            var pendingTapJob: Job? = null
+
+                            fun contentPosition(position: Offset) = Offset(
+                                position.x + scrollState.value,
+                                position.y
+                            )
+
+                            fun scrubAt(contentPosition: Offset) {
+                                val scrubMs = ((contentPosition.x / pointerScope.density) / msToDp)
+                                    .toLong().coerceIn(0L, safeDurationMs)
+                                rulerScrubAction.value(scrubMs)
+                            }
+
+                            fun flushPendingTap() {
+                                val position = pendingTapContentPosition ?: return
+                                pendingTapJob?.cancel()
+                                pendingTapJob = null
+                                pendingTapContentPosition = null
+                                pendingTapViewportPosition = null
+                                pendingTapToken++
+                                scrubAt(position)
+                            }
+
+                            try {
+                                pointerScope.awaitEachGesture {
+                                    val down = awaitFirstDown(
+                                        requireUnconsumed = false,
+                                        pass = PointerEventPass.Initial
+                                    )
+                                    if (down.position.y >= rulerBottomPx) {
+                                        return@awaitEachGesture
+                                    }
+                                    val downContentPosition = contentPosition(down.position)
+                                    var movedBeyondSlop = false
+                                    var horizontalDrag = false
+                                    var tapCancelled = false
+                                    var releasePosition: Offset? = null
+                                    var releaseTimeMillis = 0L
+                                    var releaseConsumed = false
+
+                                    while (true) {
+                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                        if (event.changes.any { it.id != down.id && it.pressed }) {
+                                            tapCancelled = true
+                                        }
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            releaseConsumed = change.isConsumed
+                                            if (horizontalDrag) {
+                                                change.consume()
+                                                scrubAt(contentPosition(change.position))
+                                            }
+                                            releasePosition = change.position
+                                            releaseTimeMillis = change.uptimeMillis
+                                            break
+                                        }
+                                        if (tapCancelled) continue
+
+                                        val deltaX = change.position.x - down.position.x
+                                        val deltaY = change.position.y - down.position.y
+                                        if (!movedBeyondSlop && hypot(deltaX, deltaY) > touchSlopPx) {
+                                            movedBeyondSlop = true
+                                            flushPendingTap()
+                                            horizontalDrag = abs(deltaX) > abs(deltaY)
+                                            if (horizontalDrag) {
+                                                change.consume()
+                                                scrubAt(contentPosition(change.position))
+                                            }
+                                        } else if (horizontalDrag) {
+                                            change.consume()
+                                            scrubAt(contentPosition(change.position))
+                                        }
+                                    }
+
+                                    if (releasePosition == null || tapCancelled || movedBeyondSlop || releaseConsumed) {
+                                        flushPendingTap()
+                                    } else {
+                                        val previousViewportPosition = pendingTapViewportPosition
+                                        val sincePreviousTap = down.uptimeMillis - pendingTapUpTimeMillis
+                                        val isDoubleTap = pendingTapContentPosition != null &&
+                                            previousViewportPosition != null &&
+                                            sincePreviousTap in 0L..pointerScope.viewConfiguration.doubleTapTimeoutMillis &&
+                                            (down.position - previousViewportPosition).getDistance() <= touchSlopPx
+
+                                        if (isDoubleTap) {
+                                            pendingTapJob?.cancel()
+                                            pendingTapJob = null
+                                            pendingTapContentPosition = null
+                                            pendingTapViewportPosition = null
+                                            pendingTapToken++
+                                            rulerDoubleTapAction.value()
+                                        } else {
+                                            flushPendingTap()
+                                            pendingTapContentPosition = downContentPosition
+                                            pendingTapViewportPosition = down.position
+                                            pendingTapUpTimeMillis = releaseTimeMillis
+                                            pendingTapToken++
+                                            val token = pendingTapToken
+                                            pendingTapJob = coroutineScope.launch {
+                                                delay(pointerScope.viewConfiguration.doubleTapTimeoutMillis)
+                                                if (pendingTapToken == token) {
+                                                    val position = pendingTapContentPosition
+                                                    pendingTapContentPosition = null
+                                                    pendingTapViewportPosition = null
+                                                    pendingTapJob = null
+                                                    if (position != null) scrubAt(position)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } finally {
+                                pendingTapJob?.cancel()
+                            }
+                        }
+                        .testTag("timeline-pinned-header-scroll-target")
                 ) {
                     Box(
                         modifier = Modifier
-                            // The pinned header is translated, not horizontally
-                            // scrolled. Release its viewport constraint BEFORE
-                            // measuring the full-duration ruler and V1 row.
+                            // The pinned header is translated, not horizontally scrolled. Release
+                            // the viewport constraint BEFORE measuring the full-duration ruler.
                             .wrapContentWidth(Alignment.Start, unbounded = true)
                             .width(timelineWidthDp)
                             .height(fixedHeaderHeight.dp)
@@ -1138,29 +1219,25 @@ fun VideoTimeline(
                                 msToDp = msToDp,
                                 beatMarkersMs = beatMarkersMs,
                                 snapToBeat = snapToBeat,
-                                onScrub = { requestedMs ->
-                                    onScrub(snapToBeatTime(requestedMs, beatMarkersMs, snapToBeat, snapThresholdMs))
-                                },
-                                onDoubleTap = {
-                                    val projectWidthDp = safeDurationMs.coerceAtLeast(1L).toFloat() / 1000f * 54f
-                                    val fitZoom = (viewportWidthDp.value / projectWidthDp).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
-                                    activeZoomDisplay = fitZoom
-                                    onZoomChange(fitZoom)
-                                    showZoomHud = true
-                                    hudDismissJob?.cancel()
-                                    hudDismissJob = coroutineScope.launch {
-                                        delay(1200)
-                                        showZoomHud = false
-                                    }
-                                    coroutineScope.launch { scrollState.scrollTo(0) }
-                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(rulerHeight)
                                     .testTag("timeline-ruler")
                             )
 
-                            if (hasMainVideo) Spacer(Modifier.height(10.dp))
+                            if (hasMainVideo) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(TIMELINE_HEADER_PAN_GAP_HEIGHT_DP.dp)
+                                        .scrollable(
+                                            state = scrollState,
+                                            orientation = Orientation.Horizontal,
+                                            reverseDirection = true
+                                        )
+                                        .testTag("timeline-header-scroll-gap")
+                                )
+                            }
 
                             // TRACK 1: V1 (Main Video + Photo Filmstrip Track,
                             // layer 0 only). Keep its timing model untouched;
@@ -1240,6 +1317,14 @@ fun VideoTimeline(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(v1Height)
+                                    // Use the existing row as the larger native pan target; this
+                                    // preserves the visible gap and lets child clip gestures win.
+                                    .scrollable(
+                                        state = scrollState,
+                                        orientation = Orientation.Horizontal,
+                                        reverseDirection = true
+                                    )
+                                    .testTag("timeline-header-pan-target")
                                     // This boundary keeps lane bounds separate from the full-height
                                     // timeline deselect target.
                                     .semantics(mergeDescendants = true) {
@@ -1272,6 +1357,11 @@ fun VideoTimeline(
                                         isMuted = isAudioMuted,
                                         modifier = Modifier.fillMaxSize()
                                     )
+                                    Box(
+                                        Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)
+                                    ) {
+                                        TimelineLaneIdentity("V1 · Audio", Color(0xFF765BDB))
+                                    }
                                 }
                             }
                         }
@@ -1285,7 +1375,6 @@ fun VideoTimeline(
                     modifier = Modifier
                         .then(if (compactHeight) Modifier.height(scrollableTotalDp.dp) else Modifier.weight(1f))
                         .fillMaxWidth()
-                        .padding(start = identityRailWidth)
                         .background(EditorPalette.BgSurface)
                         .horizontalScroll(scrollState)
                         .then(if (compactHeight) Modifier else Modifier.verticalScroll(vScrollState))
@@ -1511,30 +1600,12 @@ fun VideoTimeline(
                 }
             }
 
-            FixedTimelineIdentityRail(
-                hasMainVideo = hasMainVideo,
-                showWaveformStrip = showWaveformStrip,
-                waveformStripHeight = waveformStripHeight,
-                waveformStripSpacing = waveformStripSpacing,
-                overlayLayers = videoLayers.filter { it in 1..9 },
-                hasText = textOverlays.isNotEmpty(),
-                hasStickers = timelineStickerLayers.isNotEmpty(),
-                hasFx = hasFx,
-                textLaneHeight = textLaneHeight,
-                stickerLaneHeight = stickerLaneHeight,
-                originalAudioRows = originalVideoAudioTracks.size,
-                musicRows = musicTracks.size,
-                voiceRows = voiceTracks.size,
-                railWidth = identityRailWidth,
-                railScrollState = vScrollState,
-                modifier = Modifier.align(Alignment.TopStart),
-            )
             // --- 3. UNIFIED VERTICAL PLAYHEAD LINE & TIMESTAMP BADGE ---
             // At canvas-root level (not inside the scrolled content) so it
             // spans the full visible height — pinned header included — and
             // its handle never scrolls off-screen. The horizontal scroll
             // offset is subtracted inside the overlay. Clipped so a
-            // left-scrolled playhead never draws over the sidebar.
+            // left-scrolled playhead never draws outside the timeline viewport.
             Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                 TimelinePlayheadOverlay(
                     playerPositionFlow = playerPositionFlow,
@@ -1546,7 +1617,7 @@ fun VideoTimeline(
                     // scrollState.value here would recompose the whole
                     // timeline on every scroll frame.
                     scrollOffsetPx = { scrollState.value.toFloat() },
-                    modifier = Modifier.offset(x = identityRailWidth)
+                    modifier = Modifier
                 )
             }
             // NOTE: the canvas Box stays open — the Zoom HUD + multi-select
@@ -1846,8 +1917,6 @@ private fun TimelineTimeRuler(
     msToDp: Float,
     beatMarkersMs: List<Long>,
     snapToBeat: Boolean,
-    onScrub: (Long) -> Unit,
-    onDoubleTap: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val theme = ApexThemeTokens.current
@@ -1856,22 +1925,6 @@ private fun TimelineTimeRuler(
             .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
             .background(TIMELINE_RULER_BACKGROUND)
             .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
-            .pointerInput(durationMs, msToDp) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        val scrubMs = ((offset.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
-                        onScrub(scrubMs)
-                    },
-                    onDoubleTap = { onDoubleTap() }
-                )
-            }
-            .pointerInput(durationMs, msToDp) {
-                detectDragGestures { change, _ ->
-                    change.consume()
-                    val scrubMs = ((change.position.x / density) / msToDp).toLong().coerceIn(0L, durationMs)
-                    onScrub(scrubMs)
-                }
-            }
     ) {
         val totalSec = (durationMs / 1000L).toInt().coerceAtLeast(1)
         val labelStyle = remember {

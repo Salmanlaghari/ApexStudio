@@ -27,6 +27,8 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -41,13 +43,6 @@ import org.robolectric.annotation.Config
 class TimelineWorkspaceLayoutTest {
     @get:Rule
     val composeRule = createComposeRule()
-
-    @Test
-    fun identityRailStaysCompactAndGivesMoreWidthToTheTimeline() {
-        assertEquals(44f, timelineIdentityRailWidthForViewport(160.dp).value, 0.01f)
-        assertEquals(48f, timelineIdentityRailWidthForViewport(200.dp).value, 0.01f)
-        assertEquals(64f, timelineIdentityRailWidthForViewport(360.dp).value, 0.01f)
-    }
 
     @Test
     fun crowdedTransitionBadgesCompactAndUseSeparateRows() {
@@ -207,19 +202,81 @@ class TimelineWorkspaceLayoutTest {
     }
 
     @Test
-    fun fixedIdentityRailStaysVisibleWhenTimeContentScrollsHorizontally() {
-        composeRule.setContent { workspace(widthDp = 360, heightDp = 300, clips = listOf(clip("main", durationMs = 120_000L))) }
+    fun timelineUsesFullWidthAndInLaneIdentityScrollsWithItsContent() {
+        val scrollState = ScrollState(0)
+        composeRule.setContent {
+            workspace(
+                widthDp = 360,
+                heightDp = 300,
+                clips = listOf(clip("main", durationMs = 120_000L)),
+                scrollState = scrollState,
+            )
+        }
         composeRule.waitForIdle()
-        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).assertDoesNotExist()
+        val rulerBounds = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val firstClipBounds = composeRule.onNodeWithTag("timeline-clip-main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        assertTrue("the first clip starts after the fixed rail instead of being obscured", firstClipBounds.left >= railBounds.right - 1f)
-        val before = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
-        composeRule.runOnIdle { composeRule.onNodeWithTag("timeline-test-root").fetchSemanticsNode() }
-        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput { swipe(start = Offset(300f, 14f), end = Offset(40f, 14f), durationMillis = 200) }
+        assertEquals("Ruler and first clip share the full-width time origin", rulerBounds.left, firstClipBounds.left, 1f)
+
+        val laneIdentity = composeRule.onNodeWithText("Main video · V1", useUnmergedTree = true)
+        val identityBefore = laneIdentity.fetchSemanticsNode().boundsInRoot.left
+        val rulerTick = composeRule.onNodeWithTag("timeline-ruler-label-2", useUnmergedTree = true)
+        val rulerTickBefore = rulerTick.fetchSemanticsNode().boundsInRoot.left
+
+        // Ruler drags intentionally scrub; drive the shared state directly to
+        // verify that the ruler and in-lane identity chip stay synchronized.
+        composeRule.runOnIdle { scrollState.dispatchRawDelta(40f) }
         composeRule.waitForIdle()
-        val after = composeRule.onNodeWithText("V1 · Main", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.left
-        assertEquals("identity rail remains pinned while time content moves", before, after, 1f)
-        composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true).assertExists()
+        assertTrue("The shared horizontal scroll state advances", scrollState.value > 0)
+        assertTrue("A real lane identity chip scrolls with its lane", laneIdentity.fetchSemanticsNode().boundsInRoot.left < identityBefore)
+        assertTrue("Ruler labels move with the same timeline scroll", rulerTick.fetchSemanticsNode().boundsInRoot.left < rulerTickBefore)
+    }
+
+    @Test
+    fun pinnedHeaderSwipeAdvancesTheSameSharedHorizontalScrollState() {
+        val scrollState = ScrollState(0)
+        composeRule.setContent {
+            workspace(
+                widthDp = 360,
+                heightDp = 300,
+                clips = listOf(clip("main", durationMs = 120_000L)),
+                scrollState = scrollState,
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.runOnIdle { assertTrue("Fixture must have horizontal overflow", scrollState.maxValue > 0) }
+
+        val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val expectedGapHeightPx = with(composeRule.density) { 10.dp.toPx() }
+        assertEquals("The visual gap stays compact", expectedGapHeightPx, gapBounds.height, 1f)
+        val panTargetBounds = composeRule.onNodeWithTag("timeline-header-pan-target", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val minimumPanTargetHeightPx = with(composeRule.density) { 48.dp.toPx() }
+        assertTrue(
+            "The existing V1 row should provide a larger native pan target: $panTargetBounds",
+            panTargetBounds.height >= minimumPanTargetHeightPx
+        )
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val panYInRoot = panTargetBounds.center.y - rootBounds.top
+        assertTrue(
+            "The V1 pan target should be inside the visible timeline viewport",
+            panYInRoot in 0f..rootBounds.height
+        )
+        timelineRoot.performTouchInput {
+            val y = panYInRoot
+            swipe(
+                start = Offset(width * 0.85f, y),
+                end = Offset(width * 0.15f, y),
+                durationMillis = 200
+            )
+        }
+        composeRule.waitForIdle()
+        assertTrue(
+            "A leftward header swipe advances the shared timeline; value=${scrollState.value}, max=${scrollState.maxValue}",
+            scrollState.value > 0
+        )
     }
 
     @Test
@@ -234,6 +291,7 @@ class TimelineWorkspaceLayoutTest {
         val waveform = composeRule.onNodeWithContentDescription("Source audio waveform").fetchSemanticsNode().boundsInRoot
 
         assertTrue("The source waveform should remain visible: $waveform", waveform.height > 0f)
+        composeRule.onNodeWithText("V1 · Audio", useUnmergedTree = true).assertExists()
         assertEquals("V1 remains the fixed-height 52dp filmstrip lane", 52f, main.height, 1f)
         assertEquals("The separate source-audio lane is a readable 36dp waveform", 36f, waveform.height, 1f)
         assertTrue("The compact timeline leaves unused viewport space below its lanes", root.bottom - waveform.bottom > 150f)
@@ -439,18 +497,71 @@ class TimelineWorkspaceLayoutTest {
         composeRule.runOnIdle { assertEquals("music-b", selectedId.value) }
         secondTrack.assertIsSelected()
     }
+
+    @Test
+    fun tappingEmptyViewportStillDeselects() {
+        val deselected = AtomicBoolean(false)
+        composeRule.setContent {
+            workspace(onDeselect = { deselected.set(true) })
+        }
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val insetPx = with(composeRule.density) { 8.dp.toPx() }
+        val emptyViewportPoint = Offset(rootBounds.width - insetPx, rootBounds.height - insetPx)
+        timelineRoot.performTouchInput { click(emptyViewportPoint) }
+        composeRule.runOnIdle {
+            assertTrue("A tap on empty timeline space should deselect", deselected.get())
+        }
+    }
+
     @Test
     fun rulerSeekUsesTimeCanvasOriginNotPinnedRailWidth() {
-        var scrubbedMs = -1L
-        composeRule.setContent { workspace(onScrub = { scrubbedMs = it }) }
-        val x = 108f * composeRule.density.density
-        composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true).performTouchInput {
-            click(Offset(x, center.y))
+        val scrubbedMs = AtomicLong(-1L)
+        val deselected = AtomicBoolean(false)
+        composeRule.setContent {
+            workspace(
+                onScrub = scrubbedMs::set,
+                onDeselect = { deselected.set(true) }
+            )
         }
-        // The ruler also recognizes double-tap-to-fit, so single-tap seek is
-        // delivered after the double-tap timeout has ruled out a second tap.
-        composeRule.mainClock.advanceTimeBy(400L)
-        composeRule.runOnIdle { assertTrue("108dp at 54dp/s must seek 2s: $scrubbedMs", kotlin.math.abs(scrubbedMs - 2_000L) <= 2L) }
+        val ruler = composeRule.onNodeWithTag("timeline-ruler", useUnmergedTree = true)
+        val rulerBounds = ruler.fetchSemanticsNode().boundsInRoot
+        val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "The scroll gap must begin below the ruler; ruler=$rulerBounds, gap=$gapBounds",
+            gapBounds.top >= rulerBounds.bottom - 1f
+        )
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val tapInRoot = Offset(
+            rulerBounds.left + 108f * composeRule.density.density,
+            rulerBounds.center.y
+        )
+        assertTrue(
+            "The 2s ruler tap must be inside the visible ruler and timeline root; " +
+                "point=$tapInRoot, ruler=$rulerBounds, root=$rootBounds",
+            tapInRoot.x in rulerBounds.left..rulerBounds.right &&
+                tapInRoot.y in rulerBounds.top..rulerBounds.bottom &&
+                tapInRoot.x in rootBounds.left..rootBounds.right &&
+                tapInRoot.y in rootBounds.top..rootBounds.bottom
+        )
+        timelineRoot.performTouchInput {
+            click(Offset(tapInRoot.x - rootBounds.left, tapInRoot.y - rootBounds.top))
+        }
+        // Single-tap seek is delayed to distinguish it from double-tap-to-fit.
+        // Advance the Compose clock through that timeout for a deterministic callback.
+        composeRule.mainClock.advanceTimeBy(600L)
+        composeRule.waitForIdle()
+        composeRule.runOnIdle {
+            val actualScrubbedMs = scrubbedMs.get()
+            assertTrue(
+                "108dp at 54dp/s must seek 2s without deselecting: scrubbed=$actualScrubbedMs, " +
+                    "deselected=${deselected.get()}, " +
+                    "ruler=$rulerBounds, gap=$gapBounds",
+                !deselected.get() && kotlin.math.abs(actualScrubbedMs - 2_000L) <= 2L
+            )
+        }
     }
 
     @Test

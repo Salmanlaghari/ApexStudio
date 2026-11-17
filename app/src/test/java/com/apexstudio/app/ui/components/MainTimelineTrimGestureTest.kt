@@ -49,9 +49,7 @@ class MainTimelineTrimGestureTest {
         val tag = "timeline-trim-${if (head) "start" else "end"}-main"
         val grip = composeRule.onNodeWithTag(tag, true).fetchSemanticsNode()
         val rootBounds = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
-        val railBounds = composeRule.onNodeWithTag("timeline-identity-rail", useUnmergedTree = true)
-            .fetchSemanticsNode().boundsInRoot
-        return "$tag bounds=${grip.boundsInRoot} size=${grip.size} root=$rootBounds rail=$railBounds"
+        return "$tag bounds=${grip.boundsInRoot} size=${grip.size} root=$rootBounds"
     }
 
     @Test fun headGripUsesPhysicalDensity() = checkDensity(head = true)

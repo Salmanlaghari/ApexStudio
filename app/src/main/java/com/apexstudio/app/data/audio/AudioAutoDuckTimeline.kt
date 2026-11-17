@@ -8,6 +8,7 @@ import com.apexstudio.app.domain.model.AudioTrack
 internal object AudioAutoDuckTimeline {
     private const val PRE_ROLL_MS = 400L
     private const val RELEASE_MS = 320L
+    private const val BLOCK_MS = 20L
 
     fun plan(
         musicTrack: AudioTrack,

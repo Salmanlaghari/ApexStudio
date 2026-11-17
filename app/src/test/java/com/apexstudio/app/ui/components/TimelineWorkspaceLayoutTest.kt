@@ -250,6 +250,11 @@ class TimelineWorkspaceLayoutTest {
         // coordinates while keeping the gesture at the gap's Y position.
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
+        val minimumPanTargetHeightPx = with(composeRule.density) { 48.dp.toPx() }
+        assertTrue(
+            "The dedicated pan target should be large enough to swipe reliably: $gapBounds",
+            gapBounds.height >= minimumPanTargetHeightPx
+        )
         val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
         val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
         val gapYInRoot = gapBounds.center.y - rootBounds.top
@@ -497,8 +502,11 @@ class TimelineWorkspaceLayoutTest {
         composeRule.setContent {
             workspace(onDeselect = { deselected.set(true) })
         }
-        composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
-            .performTouchInput { click(Offset(320f, 450f)) }
+        val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
+        val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
+        val insetPx = with(composeRule.density) { 8.dp.toPx() }
+        val emptyViewportPoint = Offset(rootBounds.width - insetPx, rootBounds.height - insetPx)
+        timelineRoot.performTouchInput { click(emptyViewportPoint) }
         composeRule.runOnIdle {
             assertTrue("A tap on empty timeline space should deselect", deselected.get())
         }

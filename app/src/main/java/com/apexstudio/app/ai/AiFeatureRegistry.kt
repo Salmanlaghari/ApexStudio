@@ -148,7 +148,7 @@ object AiFeatureRegistry {
             throw cancelled
         } catch (_: Exception) {
             AiFeatureAvailability(id, AiAvailability.MODEL_MISSING,
-                "Bundled English CTC model is missing or failed integrity verification; word timing stays unavailable. No network fallback.", requirements)
+                "English word-timing model is missing or failed verification. Open Optional AI models to download it explicitly; no network request was made.", requirements)
         }
         if (id == AiFeatureId.ONNX_UPSCALING) return try {
             com.apexstudio.app.ai.onnx.EspcnSuperResolutionAdapter.fromBundledAssets(context)
@@ -208,6 +208,8 @@ object AiFeatureRegistry {
                         if (protectedAction != null) {
                             "Local model bytes are available. ${GlobalModerationEnforcement.statusMessage(protectedAction)}"
                         } else "Local model bytes available. Backend readiness does not itself enable a video editor tool."
+                    } else if (id == AiFeatureId.SUBTITLES) {
+                        "Whisper captions model is missing or failed verification. Open Optional AI models to download it explicitly; no network request was made."
                     } else "Bundled/local model is missing or could not be materialized; no network request was made. No model-backed action can run without its required local artifact.",
                     requirements, if (available) requirements.map { it.id } else emptyList())
             } catch (cancelled: CancellationException) {

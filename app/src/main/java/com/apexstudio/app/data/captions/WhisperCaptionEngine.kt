@@ -19,14 +19,14 @@ import kotlin.coroutines.coroutineContext
 /**
  * AI auto-captions: on-device Whisper (tiny, multilingual, int8).
  *
- * Pipeline: bundled model (or existing PackManager pack) -> PCM extract
+ * Pipeline: verified local model pack (or a bundled regression-build asset) -> PCM extract
  * (16 kHz mono) -> 30 s chunks -> log-mel -> Whisper encode/decode -> timestamp tokens ->
  * timed caption segments.
  *
- * The pinned multilingual tiny-int8 weights and tokens are bundled in the APK.
- * On first use they are copied, SHA-256-verified, and atomically installed to
- * app-private storage on an IO worker. No runtime network is required. Legacy
- * PackManager installs remain a fallback.
+ * Standard Release APKs omit the large Whisper weights. Users explicitly install
+ * the checksum-pinned pack from Optional AI models; bytes are stored app-private.
+ * Regression builds may opt into bundled weights with -PincludeBundledAiModels=true.
+ * Legacy PackManager installs remain a compatibility fallback.
  */
 object WhisperCaptionEngine {
 

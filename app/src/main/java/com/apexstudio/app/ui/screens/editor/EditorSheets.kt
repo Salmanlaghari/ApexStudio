@@ -271,38 +271,7 @@ fun VideoDrawingControlsSheet(
                 DrawingModeChip(Modifier.weight(1f), "Eraser", tool == VideoDrawingTool.ERASER, ApexPalette.NeonPink) { onToolChange(VideoDrawingTool.ERASER) }
             }
             Text("COLOR", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Row(
-                Modifier.fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .semantics { selectableGroup() },
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                drawingColorSwatches.forEach { swatch ->
-                    val color = Color(swatch.argb.toInt())
-                    Box(
-                        Modifier.size(48.dp)
-                            .semantics {
-                                contentDescription = "Brush color ${swatch.name}"
-                                selected = colorArgb == swatch.argb
-                            }
-                            .clickable(
-                                enabled = tool == VideoDrawingTool.BRUSH,
-                                onClickLabel = "Select ${swatch.name} brush color",
-                                role = Role.RadioButton
-                            ) { onColorChange(swatch.argb) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Box(
-                            Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(color)
-                                .border(
-                                    if (colorArgb == swatch.argb) 3.dp else 1.dp,
-                                    if (colorArgb == swatch.argb) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.35f),
-                                    RoundedCornerShape(50)
-                                )
-                        )
-                    }
-                }
-            }
+            DrawingColorPalette(tool = tool, colorArgb = colorArgb, onColorChange = onColorChange)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Stroke width", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Text("${(brushWidth * 1000).toInt()}‰", color = ApexPalette.NeonCyan, fontSize = 12.sp)
@@ -318,6 +287,46 @@ fun VideoDrawingControlsSheet(
                 DrawingModeChip(Modifier.weight(1f), "Clear all", false, ApexPalette.Danger, enabled = strokeCount > 0, onClick = onClear)
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+internal fun DrawingColorPalette(
+    tool: VideoDrawingTool,
+    colorArgb: Long,
+    onColorChange: (Long) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .semantics { selectableGroup() },
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        drawingColorSwatches.forEach { swatch ->
+            val color = Color(swatch.argb.toInt())
+            Box(
+                Modifier.size(48.dp)
+                    .semantics {
+                        contentDescription = "Brush color ${swatch.name}"
+                        selected = colorArgb == swatch.argb
+                    }
+                    .clickable(
+                        enabled = tool == VideoDrawingTool.BRUSH,
+                        onClickLabel = "Select ${swatch.name} brush color",
+                        role = Role.RadioButton
+                    ) { onColorChange(swatch.argb) },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(color)
+                        .border(
+                            if (colorArgb == swatch.argb) 3.dp else 1.dp,
+                            if (colorArgb == swatch.argb) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.35f),
+                            RoundedCornerShape(50)
+                        )
+                )
+            }
         }
     }
 }

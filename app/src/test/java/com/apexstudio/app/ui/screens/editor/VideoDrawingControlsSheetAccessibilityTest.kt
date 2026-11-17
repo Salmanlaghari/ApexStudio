@@ -36,22 +36,15 @@ class VideoDrawingControlsSheetAccessibilityTest {
             "White" to 0xFFFFFFFFL,
             "Violet" to 0xFF8C6CFFL
         )
-        val selectedColor = mutableStateOf(colors.first().second)
+        val selectedColor = mutableStateOf(0L)
 
         compose.setContent {
             MaterialTheme {
-                Box(Modifier.requiredSize(360.dp, 800.dp)) {
-                    VideoDrawingControlsSheet(
+                Box(Modifier.requiredSize(360.dp, 80.dp)) {
+                    DrawingColorPalette(
                         tool = VideoDrawingTool.BRUSH,
                         colorArgb = selectedColor.value,
-                        brushWidth = 0.01f,
-                        strokeCount = 0,
-                        onToolChange = {},
-                        onColorChange = { selectedColor.value = it },
-                        onBrushWidthChange = {},
-                        onUndo = {},
-                        onClear = {},
-                        onClose = {}
+                        onColorChange = { selectedColor.value = it }
                     )
                 }
             }

@@ -95,7 +95,7 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            set -euo pipefail
+            set -eu
             ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
             ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
 

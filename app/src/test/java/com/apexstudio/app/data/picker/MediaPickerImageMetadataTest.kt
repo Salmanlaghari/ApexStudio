@@ -9,9 +9,12 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
+import com.apexstudio.app.data.media.MediaUriResolver
 import com.apexstudio.app.domain.model.ClipType
 import java.io.File
 import java.io.FileNotFoundException
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -125,6 +128,60 @@ class MediaPickerImageMetadataTest {
         assertEquals(9f / 16f, result.sourceDisplayAspectRatio!!, 0.001f)
         assertEquals("dimensions and EXIF are read through separate provider streams", 2,
             StrictImageProvider.streamOpens)
+    }
+
+    @Test
+    fun `picked content media is persisted before editor playback resolution`() = runBlocking {
+        val context = RuntimeEnvironment.getApplication()
+        val sourceFile = File(context.cacheDir, "picked-uri-source.png")
+        val sourceBytes = byteArrayOf(13, 37, 42, 99)
+        sourceFile.writeBytes(sourceBytes)
+        StrictImageProvider.imageFile = sourceFile
+        StrictImageProvider.imageMimeType = "image/png"
+        val provider = Robolectric.buildContentProvider(StrictImageProvider::class.java)
+            .create(ProviderInfo().apply {
+                authority = AUTHORITY
+                exported = false
+                grantUriPermissions = true
+            })
+            .get()
+        ShadowContentResolver.registerProviderInternal(AUTHORITY, provider)
+        val sourceUri = Uri.parse("content://$AUTHORITY/document/durable-photo")
+        val sourceMetadata = MediaMetadata(
+            uri = sourceUri.toString(),
+            name = "durable-photo.png",
+            durationMs = MediaPickerHelper.DEFAULT_IMAGE_DURATION_MS,
+            width = 41,
+            height = 23,
+            fps = 30,
+            type = ClipType.IMAGE
+        )
+        var createdCopy: File? = null
+        try {
+            val imported = persistPickedMediaMetadata(context, sourceMetadata)
+            val importedUri = Uri.parse(imported.uri)
+            assertEquals("picked content media must be promoted to a file URI", "file", importedUri.scheme)
+            val importedPath = checkNotNull(importedUri.path)
+            val projectMediaDir = File(context.filesDir, "project_media").canonicalPath
+            val persistedFile = File(importedPath)
+            if (persistedFile.canonicalPath.startsWith(projectMediaDir + File.separator)) {
+                createdCopy = persistedFile
+            }
+
+            assertTrue(
+                "picked media must live in the cleanup-managed project_media directory",
+                persistedFile.canonicalPath.startsWith(projectMediaDir + File.separator)
+            )
+            assertTrue(persistedFile.isFile)
+            assertTrue("source fixture should be removable after the import copy is made", sourceFile.delete())
+            assertArrayEquals(sourceBytes, persistedFile.readBytes())
+            assertEquals(sourceMetadata.copy(uri = imported.uri), imported)
+            assertEquals(importedUri, MediaUriResolver.resolvePlayableUri(context, imported.uri))
+        } finally {
+            createdCopy?.delete()
+            sourceFile.delete()
+            StrictImageProvider.imageMimeType = "image/png"
+        }
     }
 
     @Test

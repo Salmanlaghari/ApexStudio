@@ -234,6 +234,16 @@ internal object ExportCfrCadenceNormalizer {
         return sourceTracks.size
     }
 
+    /** Re-check audio-track presence after the audited candidate is atomically published. */
+    internal fun verifyAudioTrackCount(file: File, expectedTrackCount: Int, targetFps: Int = 60) {
+        require(expectedTrackCount >= 0) { "The expected audio-track count cannot be negative." }
+        val publishedTrackCount = audioTracks(file).size
+        check(publishedTrackCount == expectedTrackCount) {
+            "The published $targetFps fps video changed the number of audio tracks " +
+                "($expectedTrackCount to $publishedTrackCount)."
+        }
+    }
+
     /** A candidate is not publishable unless both source and candidate durations prove audio sync. */
     internal fun verifyAudioTrackTiming(
         sourceDurationUs: Long?,

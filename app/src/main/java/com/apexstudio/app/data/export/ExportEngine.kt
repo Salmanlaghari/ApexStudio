@@ -2263,10 +2263,56 @@ class ExportEngine(private val context: Context) {
                         throw IllegalStateException("The converted video failed its $targetFps fps cadence audit: $candidateCadenceError")
                     }
                     val verifiedCandidateBytes = candidate.length()
-                    currentCoroutineContext().ensureActive()
+                    validationContext.ensureActive()
                     ExportCfrCadenceNormalizer.replaceAtomically(candidate, outputFile, targetFps)
                     check(outputFile.isFile && outputFile.length() == verifiedCandidateBytes) {
                         "The verified $targetFps fps video could not be published intact."
+                    }
+                    ExportCfrCadenceNormalizer.verifyAudioTrackCount(
+                        file = outputFile,
+                        expectedTrackCount = audioTrackCount,
+                        targetFps = targetFps
+                    )
+                    val publishedAudit = inspectEncodedVideo(
+                        context = context,
+                        file = outputFile,
+                        requestedFps = targetFps,
+                        transformerFrameCount = null,
+                        transformerDurationMs = transformerDurationMs,
+                        progressStart = frameRateProgressStart,
+                        cancellationCheck = { validationContext.ensureActive() }
+                    )
+                    diagnostics?.stage(
+                        "cfr${targetFps}_fallback_published_audited",
+                        publishedAudit.diagnosticSummary()
+                    )
+                    check(publishedAudit.videoMimeType == candidateAudit.videoMimeType &&
+                        publishedAudit.videoWidth == candidateAudit.videoWidth &&
+                        publishedAudit.videoHeight == candidateAudit.videoHeight &&
+                        publishedAudit.sampleCount == candidateAudit.sampleCount
+                    ) {
+                        "The published $targetFps fps video changed format, dimensions, or frame count."
+                    }
+                    val publishedDurationMs = publishedAudit.outputDurationMs
+                        ?: throw IllegalStateException("The published $targetFps fps video duration could not be verified.")
+                    check(kotlin.math.abs(publishedDurationMs - verifiedCandidateDurationMs) <= 150L) {
+                        "The published $targetFps fps video duration changed after replacement."
+                    }
+                    publishedAudit.warning?.let { warning ->
+                        throw IllegalStateException("The published video failed its $targetFps fps audit: $warning")
+                    }
+                    val publishedCadenceError = if (targetFps == 60) {
+                        publishedAudit.strict60FpsCadenceError
+                    } else {
+                        ExportCfrCadenceNormalizer.targetCadenceError(publishedAudit, targetFps)
+                    }
+                    if (publishedCadenceError != null) {
+                        throw IllegalStateException(
+                            "The published video failed its $targetFps fps cadence audit: $publishedCadenceError"
+                        )
+                    }
+                    check(outputFile.isFile && outputFile.length() == verifiedCandidateBytes) {
+                        "The published $targetFps fps video changed while it was being audited."
                     }
                     diagnostics?.stage(
                         "cfr${targetFps}_fallback_completed",

@@ -296,9 +296,9 @@ internal fun inspectEncodedVideo(
             }
         }
         require(videoTrack >= 0) { "Export output has no readable video track" }
+        extractor.selectTrack(videoTrack)
         val durationMs = trackDurationMs
             ?: transformerDurationMs?.takeIf { it > 0L }
-        extractor.selectTrack(videoTrack)
         val timestamps = ArrayList<Long>()
         var lastReportedProgress = Float.NEGATIVE_INFINITY
         fun reportProgress(encodedTimeMs: Double) {

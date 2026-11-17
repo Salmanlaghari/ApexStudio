@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
-@OptIn(UnstableApi::class)
+@UnstableApi
 class TransitionAudioSpeedProviderTest {
     private fun video(id: String, speedPoints: List<SpeedPoint> = emptyList()) = MediaClip(
         id = id,

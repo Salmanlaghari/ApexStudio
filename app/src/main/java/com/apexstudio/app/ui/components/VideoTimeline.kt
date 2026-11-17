@@ -1108,92 +1108,96 @@ fun VideoTimeline(
                                 scrubAt(position)
                             }
 
-                            pointerScope.awaitEachGesture {
-                                val down = awaitFirstDown(
-                                    requireUnconsumed = false,
-                                    pass = PointerEventPass.Initial
-                                )
-                                if (down.position.y >= rulerBottomPx) {
-                                    return@awaitEachGesture
-                                }
-                                val downContentPosition = contentPosition(down.position)
-                                var movedBeyondSlop = false
-                                var horizontalDrag = false
-                                var tapCancelled = false
-                                var releasePosition: Offset? = null
-                                var releaseTimeMillis = 0L
-                                var releaseConsumed = false
-
-                                while (true) {
-                                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                    if (event.changes.any { it.id != down.id && it.pressed }) {
-                                        tapCancelled = true
+                            try {
+                                pointerScope.awaitEachGesture {
+                                    val down = awaitFirstDown(
+                                        requireUnconsumed = false,
+                                        pass = PointerEventPass.Initial
+                                    )
+                                    if (down.position.y >= rulerBottomPx) {
+                                        return@awaitEachGesture
                                     }
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) {
-                                        releaseConsumed = change.isConsumed
-                                        if (horizontalDrag) {
+                                    val downContentPosition = contentPosition(down.position)
+                                    var movedBeyondSlop = false
+                                    var horizontalDrag = false
+                                    var tapCancelled = false
+                                    var releasePosition: Offset? = null
+                                    var releaseTimeMillis = 0L
+                                    var releaseConsumed = false
+
+                                    while (true) {
+                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                        if (event.changes.any { it.id != down.id && it.pressed }) {
+                                            tapCancelled = true
+                                        }
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            releaseConsumed = change.isConsumed
+                                            if (horizontalDrag) {
+                                                change.consume()
+                                                scrubAt(contentPosition(change.position))
+                                            }
+                                            releasePosition = change.position
+                                            releaseTimeMillis = change.uptimeMillis
+                                            break
+                                        }
+                                        if (tapCancelled) continue
+
+                                        val deltaX = change.position.x - down.position.x
+                                        val deltaY = change.position.y - down.position.y
+                                        if (!movedBeyondSlop && hypot(deltaX, deltaY) > touchSlopPx) {
+                                            movedBeyondSlop = true
+                                            flushPendingTap()
+                                            horizontalDrag = abs(deltaX) > abs(deltaY)
+                                            if (horizontalDrag) {
+                                                change.consume()
+                                                scrubAt(contentPosition(change.position))
+                                            }
+                                        } else if (horizontalDrag) {
                                             change.consume()
                                             scrubAt(contentPosition(change.position))
                                         }
-                                        releasePosition = change.position
-                                        releaseTimeMillis = change.uptimeMillis
-                                        break
                                     }
-                                    if (tapCancelled) continue
 
-                                    val deltaX = change.position.x - down.position.x
-                                    val deltaY = change.position.y - down.position.y
-                                    if (!movedBeyondSlop && hypot(deltaX, deltaY) > touchSlopPx) {
-                                        movedBeyondSlop = true
+                                    if (releasePosition == null || tapCancelled || movedBeyondSlop || releaseConsumed) {
                                         flushPendingTap()
-                                        horizontalDrag = abs(deltaX) > abs(deltaY)
-                                        if (horizontalDrag) {
-                                            change.consume()
-                                            scrubAt(contentPosition(change.position))
-                                        }
-                                    } else if (horizontalDrag) {
-                                        change.consume()
-                                        scrubAt(contentPosition(change.position))
-                                    }
-                                }
-
-                                if (releasePosition == null || tapCancelled || movedBeyondSlop || releaseConsumed) {
-                                    flushPendingTap()
-                                } else {
-                                    val previousViewportPosition = pendingTapViewportPosition
-                                    val sincePreviousTap = down.uptimeMillis - pendingTapUpTimeMillis
-                                    val isDoubleTap = pendingTapContentPosition != null &&
-                                        previousViewportPosition != null &&
-                                        sincePreviousTap in 0L..pointerScope.viewConfiguration.doubleTapTimeoutMillis &&
-                                        (down.position - previousViewportPosition).getDistance() <= touchSlopPx
-
-                                    if (isDoubleTap) {
-                                        pendingTapJob?.cancel()
-                                        pendingTapJob = null
-                                        pendingTapContentPosition = null
-                                        pendingTapViewportPosition = null
-                                        pendingTapToken++
-                                        rulerDoubleTapAction.value()
                                     } else {
-                                        flushPendingTap()
-                                        pendingTapContentPosition = downContentPosition
-                                        pendingTapViewportPosition = down.position
-                                        pendingTapUpTimeMillis = releaseTimeMillis
-                                        pendingTapToken++
-                                        val token = pendingTapToken
-                                        pendingTapJob = launch {
-                                            delay(pointerScope.viewConfiguration.doubleTapTimeoutMillis)
-                                            if (pendingTapToken == token) {
-                                                val position = pendingTapContentPosition
-                                                pendingTapContentPosition = null
-                                                pendingTapViewportPosition = null
-                                                pendingTapJob = null
-                                                if (position != null) scrubAt(position)
+                                        val previousViewportPosition = pendingTapViewportPosition
+                                        val sincePreviousTap = down.uptimeMillis - pendingTapUpTimeMillis
+                                        val isDoubleTap = pendingTapContentPosition != null &&
+                                            previousViewportPosition != null &&
+                                            sincePreviousTap in 0L..pointerScope.viewConfiguration.doubleTapTimeoutMillis &&
+                                            (down.position - previousViewportPosition).getDistance() <= touchSlopPx
+
+                                        if (isDoubleTap) {
+                                            pendingTapJob?.cancel()
+                                            pendingTapJob = null
+                                            pendingTapContentPosition = null
+                                            pendingTapViewportPosition = null
+                                            pendingTapToken++
+                                            rulerDoubleTapAction.value()
+                                        } else {
+                                            flushPendingTap()
+                                            pendingTapContentPosition = downContentPosition
+                                            pendingTapViewportPosition = down.position
+                                            pendingTapUpTimeMillis = releaseTimeMillis
+                                            pendingTapToken++
+                                            val token = pendingTapToken
+                                            pendingTapJob = coroutineScope.launch {
+                                                delay(pointerScope.viewConfiguration.doubleTapTimeoutMillis)
+                                                if (pendingTapToken == token) {
+                                                    val position = pendingTapContentPosition
+                                                    pendingTapContentPosition = null
+                                                    pendingTapViewportPosition = null
+                                                    pendingTapJob = null
+                                                    if (position != null) scrubAt(position)
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            } finally {
+                                pendingTapJob?.cancel()
                             }
                         }
                         .testTag("timeline-pinned-header-scroll-target")

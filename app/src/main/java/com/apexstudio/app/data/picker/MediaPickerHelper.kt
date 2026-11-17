@@ -84,6 +84,16 @@ data class MediaImportProgress(
     }
 }
 
+/**
+ * Keep selected provider media project-owned before the editor turns content URIs
+ * into playback URIs. The existing size cap and non-destructive fallback remain
+ * in [persistPickedMediaToAppStorage].
+ */
+internal suspend fun persistPickedMediaMetadata(context: Context, metadata: MediaMetadata): MediaMetadata {
+    val durableUri = persistPickedMediaToAppStorage(context, metadata.uri, metadata.name)
+    return if (durableUri == metadata.uri) metadata else metadata.copy(uri = durableUri)
+}
+
 /** Runs metadata extraction in input order while allowing at most two jobs at once. */
 internal suspend fun <T> extractMetadataBatch(
     uris: List<Uri>,
@@ -223,10 +233,14 @@ class MediaPickerHelper(private val context: Context) {
                     onCompleted = { completed, elapsed ->
                         _importProgress.value = MediaImportProgress(true, completed, uris.size, elapsed)
                     },
-                    extractor = { uri -> extractMetadata(uri) }
+                    extractor = { uri ->
+                        extractMetadata(uri)
+                            ?.takeIf(include)
+                            ?.let { persistPickedMediaMetadata(context, it) }
+                    }
                 )
                 _pickedMedia.emit(
-                    extracted.filter(include).map {
+                    extracted.map {
                         it.copy(selectionResultElapsedRealtimeMs = selectionResultElapsedRealtimeMs)
                     }
                 )

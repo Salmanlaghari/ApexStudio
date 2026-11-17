@@ -38,6 +38,8 @@ internal data class EditorUndoSnapshot(
     val lockedVideoLayers: Set<Int>,
     val extraVideoLayers: Set<Int>,
     val lutCompareMode: Boolean = false,
+    /** Captured only for original-video mute edits; transient engine mute stays outside other undo operations. */
+    val audioMuteState: Boolean? = null,
 ) : List<MediaClip> by project.clips
 
 

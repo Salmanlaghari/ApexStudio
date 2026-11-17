@@ -851,11 +851,12 @@ fun EditorViewModel.applyAnimationPreset(preset: com.apexstudio.app.data.animati
 }
 
 
-private fun EditorViewModel.undoSnapshot(): EditorUndoSnapshot? = _state.value.let { s ->
+private fun EditorViewModel.undoSnapshot(captureAudioMute: Boolean = false): EditorUndoSnapshot? = _state.value.let { s ->
     s.project?.let {
         EditorUndoSnapshot(
             it, s.hiddenVideoLayers, s.lockedVideoLayers, s.extraVideoLayers,
-            s.lutCompareMode
+            s.lutCompareMode,
+            audioMuteState = if (captureAudioMute) _audio.value.isMuted else null
         )
     }
 }
@@ -864,7 +865,12 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
     val duration = snapshot.project.durationMs.coerceAtLeast(0L)
     val position = livePlayheadMs().coerceIn(0L, duration)
     _playerPosition.value = position
-    _audio.update { it.copy(tracks = snapshot.project.audioTracks) }
+    _audio.update { audio ->
+        audio.copy(
+            tracks = snapshot.project.audioTracks,
+            isMuted = snapshot.audioMuteState ?: audio.isMuted
+        )
+    }
     _state.update { state ->
         val activeClip = snapshot.project.clips.firstOrNull { it.id == state.selectedClipId }
             ?: snapshot.project.clips.firstOrNull {
@@ -926,8 +932,8 @@ private fun EditorViewModel.restoreUndoSnapshot(snapshot: EditorUndoSnapshot) {
 }
 
 fun EditorViewModel.undo() = viewModelScope.launch {
-    val current = undoSnapshot() ?: return@launch
-    if (undoStack.isEmpty()) return@launch
+    val previous = undoStack.lastOrNull() ?: return@launch
+    val current = undoSnapshot(captureAudioMute = previous.audioMuteState != null) ?: return@launch
     activeFxSelectionRequest++
     redoStack.addLast(current)
     val prev = undoStack.removeLast()
@@ -936,12 +942,11 @@ fun EditorViewModel.undo() = viewModelScope.launch {
 
 
 fun EditorViewModel.redo() = viewModelScope.launch {
-    val current = undoSnapshot() ?: return@launch
-    if (redoStack.isEmpty()) return@launch
+    val next = redoStack.lastOrNull() ?: return@launch
+    val current = undoSnapshot(captureAudioMute = next.audioMuteState != null) ?: return@launch
     activeFxSelectionRequest++
     undoStack.addLast(current)
-    val next = redoStack.removeLast()
-    restoreUndoSnapshot(next)
+    restoreUndoSnapshot(redoStack.removeLast())
 }
 
 
@@ -1537,11 +1542,15 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
     }
     persistProject(refreshLegacyClipFields = true)
 }
-internal fun EditorViewModel.pushUndo(state: EditorState = _state.value) {
+internal fun EditorViewModel.pushUndo(
+    state: EditorState = _state.value,
+    captureAudioMute: Boolean = false
+) {
     val project = state.project ?: return
     val current = EditorUndoSnapshot(
         project, state.hiddenVideoLayers, state.lockedVideoLayers, state.extraVideoLayers,
-        state.lutCompareMode
+        state.lutCompareMode,
+        audioMuteState = if (captureAudioMute) _audio.value.isMuted else null
     )
     undoStack.addLast(current)
     if (undoStack.size > 50) undoStack.removeFirst()

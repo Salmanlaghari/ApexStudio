@@ -2,9 +2,12 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.timeline.AudioTrack as SharedAudioTrack
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -231,5 +234,100 @@ class AudioTrackPlacementTest {
         assertTrue(vm.state.value.project!!.audioTracks.isEmpty())
         assertNull(vm.state.value.selectedAudioTrackId)
         assertTrue(vm.undoStack.isEmpty())
+    }
+
+    @Test
+    fun `audio track split is undoable and redoable with mixer lanes in sync`() {
+        val original = AudioTrack(
+            id = "music-1",
+            name = "Music",
+            uri = "file:///music.wav",
+            trimStartMs = 200L,
+            trimEndMs = 6_200L,
+            sourceDurationMs = 8_000L,
+            startTimeMs = 1_000L
+        )
+        val initialProject = Project(
+            id = "p", name = "p", durationMs = 7_000L, audioTracks = listOf(original)
+        ).syncSharedTimeline()
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(project = initialProject)
+            }
+            viewModel._audio.update { it.copy(tracks = listOf(original)) }
+        }
+
+        vm.splitAudioTrack(original.id, atMs = 4_000L)
+        val split = vm.state.value.project!!.audioTracks
+        assertEquals(2, split.size)
+        assertEquals(1, vm.undoStack.size)
+        assertEquals(split, vm.audio.value.tracks)
+        val typedSplit = vm.state.value.project!!.timeline.tracks.filterIsInstance<SharedAudioTrack>()
+        assertEquals(setOf("shared-audio-${original.id}", "shared-audio-${split[1].id}"), typedSplit.map { it.id }.toSet())
+        assertEquals(listOf(split[0].id), typedSplit.single { it.id == "shared-audio-${original.id}" }.clips.map { it.id })
+        assertEquals(listOf(split[1].id), typedSplit.single { it.id == "shared-audio-${split[1].id}" }.clips.map { it.id })
+
+        runBlocking { vm.undo().join() }
+        assertEquals(listOf(original), vm.state.value.project!!.audioTracks)
+        assertEquals(listOf(original), vm.audio.value.tracks)
+        assertEquals(listOf("shared-audio-${original.id}"), vm.state.value.project!!.timeline.tracks
+            .filterIsInstance<SharedAudioTrack>().map { it.id })
+        assertTrue(vm.redoStack.isNotEmpty())
+
+        runBlocking { vm.redo().join() }
+        assertEquals(split, vm.state.value.project!!.audioTracks)
+        assertEquals(split, vm.audio.value.tracks)
+        assertEquals(2, vm.state.value.project!!.timeline.tracks.filterIsInstance<SharedAudioTrack>().size)
+    }
+
+    @Test
+    fun `original video mute is undoable and redo keeps audio panel indicator in sync`() {
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(project = Project(id = "p", name = "p", durationMs = 1_000L))
+            }
+        }
+
+        vm.setMuteOriginalVideo(false)
+        assertTrue(vm.undoStack.isEmpty())
+
+        vm.setMuteOriginalVideo(true)
+        assertTrue(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+        assertEquals(1, vm.undoStack.size)
+
+        runBlocking { vm.undo().join() }
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertFalse(vm.audio.value.isMuted)
+
+        runBlocking { vm.redo().join() }
+        assertTrue(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+    }
+
+    @Test
+    fun `mute undo preserves audio state when project mute flag was unchanged`() {
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(project = Project(id = "p", name = "p", durationMs = 1_000L))
+            }
+        }
+
+        vm.toggleMuteEngine()
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+
+        vm.setMuteOriginalVideo(false)
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertFalse(vm.audio.value.isMuted)
+        assertEquals(1, vm.undoStack.size)
+
+        runBlocking { vm.undo().join() }
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+
+        runBlocking { vm.redo().join() }
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertFalse(vm.audio.value.isMuted)
     }
 }

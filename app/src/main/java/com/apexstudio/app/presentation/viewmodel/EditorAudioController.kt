@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import com.apexstudio.app.ai.audio.AudioIntelligence
 import com.apexstudio.app.data.audio.AudioBeatDetector
 import com.apexstudio.app.data.audio.PcmAudioExtractor
+import com.apexstudio.app.data.audio.AudioAutoDuckTimeline
 import com.apexstudio.app.data.export.AudioExportSourceProbe
 
 
@@ -843,10 +844,10 @@ fun EditorViewModel.normalizeTrackLoudness(trackId: String) {
 /**
  * Writes a volume-keyframe envelope on the music track that dips under speech.
  *
- * The envelope is [AudioIntelligence.autoDuckPlan] scaled by the track's own
- * fader, so a track sat at 0.5 ducks to a quarter of *its* level rather than
- * jumping to an absolute value. Existing keyframes are replaced — this is a
- * generated envelope, not a hand-edited one, and it is one undo step.
+ * The envelope is aligned to the retained voice source window and both tracks'
+ * project placements, then scaled by the music track's own fader. Existing
+ * keyframes are replaced — this is a generated envelope, not a hand-edited one,
+ * and it is one undo step.
  */
 fun EditorViewModel.autoDuckMusicUnderVoice(musicTrackId: String, voiceTrackId: String) {
     if (musicTrackId == voiceTrackId) return
@@ -857,7 +858,7 @@ fun EditorViewModel.autoDuckMusicUnderVoice(musicTrackId: String, voiceTrackId: 
         val musicPcm = decodeTrackPcm(ctx, music.uri) ?: return@launch
         val voicePcm = decodeTrackPcm(ctx, voice.uri) ?: return@launch
         val points = withContext(Dispatchers.Default) {
-            AudioIntelligence.autoDuckPlan(musicPcm, voicePcm, AUDIO_INTELLIGENCE_RATE_HZ)
+            AudioAutoDuckTimeline.plan(music, voice, musicPcm, voicePcm, AUDIO_INTELLIGENCE_RATE_HZ)
         }
         if (points.isEmpty()) return@launch
         pushUndo()

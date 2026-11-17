@@ -309,12 +309,42 @@ class EditorViewModelTest {
         assertEquals(editedKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
         assertEquals(originalKeyframe, vm.undoStack.single().project.clips.single().keyframes.keyframes.last())
         val movedKeyframe = editedKeyframe.copy(timeMs = 1_200L)
-        vm.updateKeyframe("clip", editedKeyframe.id) { movedKeyframe }
+        vm.moveKeyframe("clip", editedKeyframe.id, movedKeyframe.timeMs)
         assertEquals(movedKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
         assertEquals(movedKeyframe, vm.state.value.project!!.syncSharedTimeline().clips.single().keyframes.keyframes.last())
+        assertEquals(2, vm.undoStack.size)
+        vm.undo()
+        assertEquals(editedKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
         assertEquals(1, vm.undoStack.size)
         vm.undo()
         assertEquals(originalKeyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.last())
+    }
+
+    @Test
+    fun `moving a video keyframe is undoable once and an unchanged move adds no history`() {
+        val keyframe = com.apexstudio.app.domain.model.Keyframe(id = "end", timeMs = 1_000L, scale = 1f)
+        val clip = MediaClip(
+            "clip", "Clip", "file:///clip.mp4", 2_000L, trimEndMs = 2_000L,
+            keyframes = com.apexstudio.app.domain.model.KeyframeTrack(listOf(keyframe))
+        )
+        val vm = viewModel().also {
+            it._state.value = it.state.value.copy(
+                project = Project("project", "Project", 2_000L, clips = listOf(clip)),
+                durationMs = 2_000L
+            )
+        }
+
+        vm.moveKeyframe("clip", keyframe.id, keyframe.timeMs)
+        assertTrue(vm.undoStack.isEmpty())
+
+        vm.moveKeyframe("clip", keyframe.id, 1_200L)
+        assertEquals(1, vm.undoStack.size)
+        assertTrue(vm.state.value.canUndo)
+        assertEquals(1_200L, vm.state.value.project!!.clips.single().keyframes.keyframes.single().timeMs)
+
+        vm.undo()
+        assertEquals(keyframe, vm.state.value.project!!.clips.single().keyframes.keyframes.single())
+        assertTrue(vm.undoStack.isEmpty())
     }
 
     @Test

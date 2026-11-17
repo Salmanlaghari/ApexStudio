@@ -1580,7 +1580,16 @@ fun EditorViewModel.toggleKeyframeAtPlayheadFor(clipId: String) {
  * Moves a clip keyframe to a new timeline position (from diamond drag on the timeline).
  */
 fun EditorViewModel.moveKeyframe(clipId: String, keyframeId: String, newTimeMs: Long) {
-    updateKeyframe(clipId, keyframeId) { it.copy(timeMs = newTimeMs.coerceAtLeast(0L)) }
+    val project = _state.value.project?.syncSharedTimeline() ?: return
+    val clip = project.clips.firstOrNull { it.id == clipId } ?: return
+    val prior = project.sharedKeyframeTrackFor(clipId, clip.keyframes).keyframes
+        .firstOrNull { it.id == keyframeId } ?: return
+    val targetTime = newTimeMs.coerceIn(0L, project.durationMs.coerceAtLeast(0L))
+    if (targetTime == prior.timeMs) return
+
+    // The timeline commits one time-move callback on drag release; make that edit undoable once.
+    pushUndo()
+    updateKeyframe(clipId, keyframeId) { it.copy(timeMs = targetTime) }
 }
 
 

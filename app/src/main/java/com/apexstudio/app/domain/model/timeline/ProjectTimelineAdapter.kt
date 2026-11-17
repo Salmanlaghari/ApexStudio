@@ -570,6 +570,70 @@ internal fun Project.updateSharedVideoClip(clipId: String, transform: (VideoClip
     return copy(clips = updatedClips, videoDrawings = updatedDrawings, timeline = Timeline(tracks))
 }
 
+/**
+ * Move project-clock animation keys with their clips while keeping both the
+ * legacy project model and its typed timeline projection in the same phase.
+ * The legacy keys are shifted directly so custom Bezier metadata is preserved.
+ */
+internal fun Project.moveVideoClipsWithKeyframes(clipIds: Set<String>, deltaMs: Long): Project {
+    if (deltaMs == 0L || clipIds.isEmpty()) return this
+
+    val shiftedClips = clips.map { clip ->
+        if (clip.id !in clipIds) clip else clip.copy(
+            timelineOffsetMs = shiftProjectTimelineTime(clip.timelineOffsetMs, deltaMs),
+            keyframes = clip.keyframes.copy(keyframes = clip.keyframes.keyframes
+                .map { it.copy(timeMs = shiftProjectTimelineTime(it.timeMs, deltaMs)) }
+                .sortedBy { it.timeMs })
+        )
+    }
+    val shiftedTracks = timeline.tracks.map { track ->
+        when (track) {
+            is VideoTrack -> track.copy(clips = track.clips.map { clip ->
+                if (clip.id in clipIds) clip.moveAnimationKeyframes(deltaMs) else clip
+            })
+            is OverlayTrack -> track.copy(items = track.items.map { item ->
+                if (item.id !in clipIds) item else when (item) {
+                    is OverlayItem.Video -> item.toSharedVideoClip()
+                        .moveAnimationKeyframes(deltaMs).toOverlayVideo(item)
+                    is OverlayItem.Image -> item.toSharedVideoClip()
+                        .moveAnimationKeyframes(deltaMs).toOverlayImage(item)
+                }
+            })
+            else -> track
+        }
+    }
+    return copy(clips = shiftedClips, timeline = timeline.copy(tracks = shiftedTracks))
+}
+
+private fun VideoClip.moveAnimationKeyframes(deltaMs: Long): VideoClip = copy(
+    inMs = shiftProjectTimelineTime(inMs, deltaMs),
+    outMs = shiftProjectTimelineTime(outMs, deltaMs),
+    transform = transform.copy(
+        positionKeyframes = transform.positionKeyframes.shiftedByProjectTime(deltaMs),
+        scaleKeyframes = transform.scaleKeyframes.shiftedByProjectTime(deltaMs),
+        rotationKeyframes = transform.rotationKeyframes.shiftedByProjectTime(deltaMs)
+    ),
+    opacityKeyframes = opacityKeyframes.shiftedByProjectTime(deltaMs),
+    filterKeyframes = filterKeyframes.shiftedByProjectTime(deltaMs),
+    effectIntensityKeyframes = effectIntensityKeyframes.shiftedByProjectTime(deltaMs),
+    lutKeyframes = lutKeyframes.shiftedByProjectTime(deltaMs),
+    saturationKeyframes = saturationKeyframes.shiftedByProjectTime(deltaMs),
+    volumeKeyframes = volumeKeyframes.shiftedByProjectTime(deltaMs),
+    panKeyframes = panKeyframes.shiftedByProjectTime(deltaMs)
+)
+
+private fun <T> List<SharedKeyframe<T>>.shiftedByProjectTime(deltaMs: Long): List<SharedKeyframe<T>> =
+    map { it.copy(timeMs = shiftProjectTimelineTime(it.timeMs, deltaMs)) }
+        .sortedBy { it.timeMs }
+
+private fun shiftProjectTimelineTime(timeMs: Long, deltaMs: Long): Long {
+    val start = timeMs.coerceAtLeast(0L)
+    if (deltaMs == Long.MIN_VALUE) return 0L
+    if (deltaMs < 0L && start < -deltaMs) return 0L
+    if (deltaMs > 0L && start > Long.MAX_VALUE - deltaMs) return Long.MAX_VALUE
+    return (start + deltaMs).coerceAtLeast(0L)
+}
+
 internal fun Project.sharedTextItem(ownerClipId: String, overlayId: String): TextItem? {
     val overlay = clips.firstOrNull { it.id == ownerClipId }?.textOverlays
         ?.firstOrNull { it.id == overlayId } ?: return null

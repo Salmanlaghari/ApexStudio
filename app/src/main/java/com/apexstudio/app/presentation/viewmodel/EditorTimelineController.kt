@@ -21,6 +21,7 @@ import com.apexstudio.app.domain.model.timeline.replaceLegacyKeyframeAt
 import com.apexstudio.app.domain.model.timeline.sharedKeyframeTrackFor
 import com.apexstudio.app.domain.model.timeline.sharedTextItem
 import com.apexstudio.app.domain.model.timeline.sharedVideoClip
+import com.apexstudio.app.domain.model.timeline.moveVideoClipsWithKeyframes
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import com.apexstudio.app.domain.model.timeline.updateSharedKeyframeTrack
 import com.apexstudio.app.domain.model.timeline.updateSharedTextItem
@@ -1507,17 +1508,13 @@ fun EditorViewModel.setClipTimelineOffset(clipId: String, offsetMs: Long) {
     val delta = snappedOffset - source.timelineOffsetMs
     val groupId = source.groupId
     val members = before.project?.clips.orEmpty().filter { groupId != null && it.groupId == groupId }
+    val movedClipIds = (setOf(clipId) + members.map { it.id }).toSet()
     val effectiveDelta = if (members.isEmpty()) delta else delta.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
     if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
-        val updated = p.clips.map {
-            if (it.id == clipId || (groupId != null && it.groupId == groupId))
-                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
-            else it
-        }
-        s.copy(project = p.copy(clips = updated))
+        s.copy(project = p.moveVideoClipsWithKeyframes(movedClipIds, effectiveDelta))
     }
     persistProject(refreshLegacyClipFields = true)
 }
@@ -1528,17 +1525,13 @@ fun EditorViewModel.shiftClipTimelineOffset(clipId: String, deltaMs: Long) {
     val before = _state.value.project ?: return
     val source = before.clips.firstOrNull { it.id == clipId } ?: return
     val members = before.clips.filter { source.groupId != null && it.groupId == source.groupId }
+    val movedClipIds = (setOf(clipId) + members.map { it.id }).toSet()
     val effectiveDelta = if (members.isEmpty()) deltaMs else deltaMs.coerceAtLeast(-members.minOf { it.timelineOffsetMs })
     if (effectiveDelta == 0L) return
     pushUndo()
     _state.update { s ->
         val p = s.project ?: return@update s
-        val updated = p.clips.map {
-            if (it.id == clipId || (source.groupId != null && it.groupId == source.groupId))
-                it.copy(timelineOffsetMs = (it.timelineOffsetMs + effectiveDelta).coerceAtLeast(0L))
-            else it
-        }
-        s.copy(project = p.copy(clips = updated))
+        s.copy(project = p.moveVideoClipsWithKeyframes(movedClipIds, effectiveDelta))
     }
     persistProject(refreshLegacyClipFields = true)
 }

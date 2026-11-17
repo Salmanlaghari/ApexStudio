@@ -246,24 +246,26 @@ class TimelineWorkspaceLayoutTest {
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertTrue("Fixture must have horizontal overflow", scrollState.maxValue > 0) }
 
-        // The gap child spans the full timeline width, so inject at visible root
-        // coordinates while keeping the gesture at the gap's Y position.
         val gapBounds = composeRule.onNodeWithTag("timeline-header-scroll-gap", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val expectedGapHeightPx = with(composeRule.density) { 10.dp.toPx() }
+        assertEquals("The visual gap stays compact", expectedGapHeightPx, gapBounds.height, 1f)
+        val panTargetBounds = composeRule.onNodeWithTag("timeline-header-pan-target", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot
         val minimumPanTargetHeightPx = with(composeRule.density) { 48.dp.toPx() }
         assertTrue(
-            "The dedicated pan target should be large enough to swipe reliably: $gapBounds",
-            gapBounds.height >= minimumPanTargetHeightPx
+            "The existing V1 row should provide a larger native pan target: $panTargetBounds",
+            panTargetBounds.height >= minimumPanTargetHeightPx
         )
         val timelineRoot = composeRule.onNodeWithTag("timeline-test-root", useUnmergedTree = true)
         val rootBounds = timelineRoot.fetchSemanticsNode().boundsInRoot
-        val gapYInRoot = gapBounds.center.y - rootBounds.top
+        val panYInRoot = panTargetBounds.center.y - rootBounds.top
         assertTrue(
-            "The header gap should be inside the visible timeline viewport",
-            gapYInRoot in 0f..rootBounds.height
+            "The V1 pan target should be inside the visible timeline viewport",
+            panYInRoot in 0f..rootBounds.height
         )
         timelineRoot.performTouchInput {
-            val y = gapYInRoot
+            val y = panYInRoot
             swipe(
                 start = Offset(width * 0.85f, y),
                 end = Offset(width * 0.15f, y),

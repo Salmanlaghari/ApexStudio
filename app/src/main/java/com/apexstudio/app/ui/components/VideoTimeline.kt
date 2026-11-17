@@ -175,7 +175,7 @@ internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
 private const val SOURCE_WAVEFORM_SPACING_DP = 10
-private const val TIMELINE_HEADER_PAN_TARGET_HEIGHT_DP = 48
+private const val TIMELINE_HEADER_PAN_GAP_HEIGHT_DP = 10
 private const val SOURCE_WAVEFORM_HEIGHT_DP = 36
 private const val COMPACT_SOURCE_WAVEFORM_SPACING_DP = 6
 private const val COMPACT_SOURCE_WAVEFORM_HEIGHT_DP = 20
@@ -937,7 +937,7 @@ fun VideoTimeline(
     // Keep the ruler, breathing room, and dominant filmstrip together. The actual source waveform is
     // separated slightly below V1; supporting rows scroll beneath this band.
     val fixedHeaderHeight = rulerHeight.value.toInt() +
-        (if (hasMainVideo) TIMELINE_HEADER_PAN_TARGET_HEIGHT_DP + v1Height.value.toInt() else 0) +
+        (if (hasMainVideo) TIMELINE_HEADER_PAN_GAP_HEIGHT_DP + v1Height.value.toInt() else 0) +
         (if (showWaveformStrip) waveformStripSpacing + waveformStripHeight else 0)
     val supportRowsTotal = overlayRowsTotal + textLaneTotal + stickerLaneTotal +
         fxLaneTotal + a0Total + a1Total + a2Total
@@ -1070,7 +1070,7 @@ fun VideoTimeline(
                 // PINNED HEADER: ruler + (when populated) V1 stay fixed while the other
                 // tracks scroll vertically. Horizontally synced with the scrolling content via
                 // translationX (no recomposition per scroll frame); clipped above scrolling rows.
-                // The empty gap pans the shared canvas without intercepting ruler or clip input.
+                // Keep the visible gap compact; native scrollables on the gap and V1 pan the canvas.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1229,7 +1229,7 @@ fun VideoTimeline(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(TIMELINE_HEADER_PAN_TARGET_HEIGHT_DP.dp)
+                                        .height(TIMELINE_HEADER_PAN_GAP_HEIGHT_DP.dp)
                                         .scrollable(
                                             state = scrollState,
                                             orientation = Orientation.Horizontal,
@@ -1317,6 +1317,14 @@ fun VideoTimeline(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(v1Height)
+                                    // Use the existing row as the larger native pan target; this
+                                    // preserves the visible gap and lets child clip gestures win.
+                                    .scrollable(
+                                        state = scrollState,
+                                        orientation = Orientation.Horizontal,
+                                        reverseDirection = true
+                                    )
+                                    .testTag("timeline-header-pan-target")
                                     // This boundary keeps lane bounds separate from the full-height
                                     // timeline deselect target.
                                     .semantics(mergeDescendants = true) {

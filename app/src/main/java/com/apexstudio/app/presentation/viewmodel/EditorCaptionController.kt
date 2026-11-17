@@ -143,6 +143,7 @@ internal fun karaokeCaptionOverlaysFor(
         val group = assigned[phraseIndex]
         require(group.size == tokens.size) { "Acoustic words do not map one-to-one to the original phrase" }
         val fingerprint = TextOverlayKaraoke.fingerprint(phrase.text)
+        val karaokePhraseGroupId = UUID.randomUUID().toString()
         fun emit(sourceStart: Long, sourceEnd: Long, token: MatchResult? = null) {
             if (sourceEnd <= sourceStart) return
             val start = ClipTimeMapping.outputOffsetAtSourceTime(clip, clip.trimStartMs + sourceStart)
@@ -157,7 +158,8 @@ internal fun karaokeCaptionOverlaysFor(
             ).copy(
                 startMs = start, endMs = exclusiveEnd - 1L,
                 highlightStartUtf16 = token?.range?.first, highlightEndUtf16 = token?.range?.last?.plus(1),
-                highlightSourceFingerprint = fingerprint, highlightColorArgb = 0xFFFFFF00L,
+                highlightSourceFingerprint = fingerprint, karaokePhraseGroupId = karaokePhraseGroupId,
+                highlightColorArgb = 0xFFFFFF00L,
             )
         }
         var cursor = phrase.startMs

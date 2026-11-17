@@ -252,7 +252,9 @@ data class TextItem(
     val startMs: Long = 0L,
     val endMs: Long = Long.MAX_VALUE,
     /** True when this item is a compatibility projection of a legacy TextOverlay. */
-    val legacyBacked: Boolean = false
+    val legacyBacked: Boolean = false,
+    /** Explicit identity shared by the timed slices of one generated karaoke phrase. */
+    val karaokePhraseGroupId: String? = null
 ) {
     fun positionAt(timeMs: Long): XY = sample(positionKeyframes, position, timeMs, XYType)
     fun scaleAt(timeMs: Long): Float = sample(scaleKeyframes, scale, timeMs, FloatType)

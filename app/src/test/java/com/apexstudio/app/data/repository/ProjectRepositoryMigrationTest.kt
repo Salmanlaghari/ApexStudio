@@ -2,9 +2,11 @@ package com.apexstudio.app.data.repository
 
 import android.content.Context
 import android.graphics.RectF
-import androidx.test.core.app.ApplicationProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.test.core.app.ApplicationProvider
 import com.apexstudio.app.domain.model.AudioTrack as LegacyAudioTrack
 import com.apexstudio.app.domain.model.ColorStudioGrade
 import com.apexstudio.app.domain.model.ColorWheelVector
@@ -35,6 +37,7 @@ import com.apexstudio.app.domain.model.timeline.Timeline
 import com.apexstudio.app.domain.model.timeline.Tool
 import com.apexstudio.app.domain.model.timeline.XY
 import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
@@ -330,6 +333,76 @@ class ProjectRepositoryMigrationTest {
             assertEquals(Project.CURRENT_TIMELINE_AUTHORITY_VERSION, reopened.timelineAuthorityVersion)
         } finally {
             repository.deleteProject(id)
+        }
+    }
+
+    @Test
+    fun `save refuses malformed project store and preserves original bytes`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val raw = "{not-valid-project-json"
+        withProjectsJson(context, raw) {
+            val failure = runCatching {
+                ProjectRepository(context).saveProject(legacyProject("must-not-replace-corrupt-store"))
+            }.exceptionOrNull()
+
+            assertTrue(failure is CorruptProjectStoreException)
+            assertEquals(raw, context.projectDataStore.data.first()[stringPreferencesKey("projects_json")])
+        }
+    }
+
+    @Test
+    fun `save refuses an empty-string project blob and preserves it`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val raw = ""
+        withProjectsJson(context, raw) {
+            val failure = runCatching {
+                ProjectRepository(context).saveProject(legacyProject("must-not-replace-empty-blob"))
+            }.exceptionOrNull()
+
+            assertTrue(failure is CorruptProjectStoreException)
+            assertEquals(raw, context.projectDataStore.data.first()[stringPreferencesKey("projects_json")])
+        }
+    }
+
+    @Test
+    fun `delete refuses malformed project store and preserves original bytes`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val raw = "[broken"
+        withProjectsJson(context, raw) {
+            val failure = runCatching {
+                ProjectRepository(context).deleteProject("existing-project")
+            }.exceptionOrNull()
+
+            assertTrue(failure is CorruptProjectStoreException)
+            assertEquals(raw, context.projectDataStore.data.first()[stringPreferencesKey("projects_json")])
+        }
+    }
+
+    @Test
+    fun `save still inserts into a genuinely empty project store`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        withProjectsJson(context, null) {
+            val repository = ProjectRepository(context)
+            val project = legacyProject("empty-store-${UUID.randomUUID()}")
+
+            repository.saveProject(project)
+
+            assertEquals(project.id, repository.findById(project.id)?.id)
+        }
+    }
+
+    private suspend fun withProjectsJson(context: Context, raw: String?, action: suspend () -> Unit) {
+        val key = stringPreferencesKey("projects_json")
+        val before = context.projectDataStore.data.first()[key]
+        context.projectDataStore.edit { prefs ->
+            if (raw == null) prefs.remove(key) else prefs[key] = raw
+        }
+        try {
+            action()
+        } finally {
+            context.projectDataStore.edit { prefs ->
+                if (before == null) prefs.remove(key) else prefs[key] = before
+            }
         }
     }
 

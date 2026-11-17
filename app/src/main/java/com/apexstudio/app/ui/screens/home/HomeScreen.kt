@@ -45,6 +45,7 @@ import com.apexstudio.app.data.picker.MediaPickerHelper
 import com.apexstudio.app.data.picker.projectAspectRatioFromMedia
 import com.apexstudio.app.data.picker.PreviewStartupLatency
 import com.apexstudio.app.data.picker.persistPickedMediaToAppStorage
+import com.apexstudio.app.data.repository.CorruptProjectStoreException
 import com.apexstudio.app.data.repository.MediaRepository
 import com.apexstudio.app.data.repository.ProjectRepository
 import com.apexstudio.app.data.template.ShortsMusicDownloadResult
@@ -102,6 +103,7 @@ fun HomeScreen(
     var shortsDownloadProgress by remember { mutableStateOf<ShortsMusicProgress?>(null) }
     var shortsApplyError by remember { mutableStateOf<String?>(null) }
     var shortsApplyCanRetry by remember { mutableStateOf(false) }
+    var projectStoreError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         // DataStore read/JSON decoding must not block the first mobile frame.
@@ -187,6 +189,10 @@ fun HomeScreen(
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
+            } catch (error: CorruptProjectStoreException) {
+                projectStoreError = error.message ?: "Saved projects could not be updated; existing data was preserved."
+                pendingShortsTemplateId = null
+                pendingShortsVideo = null
             } catch (error: Exception) {
                 shortsApplyError = error.localizedMessage ?: "Music could not be verified."
                 shortsApplyCanRetry = true
@@ -260,7 +266,14 @@ fun HomeScreen(
                     videoAspectRatio = sourceAspect
                 )
 
-                projectRepo.saveProject(newProject)
+                try {
+                    projectRepo.saveProject(newProject)
+                } catch (error: CorruptProjectStoreException) {
+                    projectStoreError = error.message ?: "Saved projects could not be updated; existing data was preserved."
+                    openAiToolsAfterCreate = false
+                    openTextStylesAfterCreate = false
+                    return@collect
+                }
                 val selectionTimeMs = firstSelectedVideo?.first?.selectionResultElapsedRealtimeMs
                 val firstVideoClip = firstSelectedVideo?.second
                 if (selectionTimeMs != null && firstVideoClip != null) {
@@ -365,6 +378,17 @@ fun HomeScreen(
         )
     }
 
+    projectStoreError?.let { errorMessage ->
+        AlertDialog(
+            onDismissRequest = { projectStoreError = null },
+            title = { Text("Saved projects were not changed") },
+            text = { Text(errorMessage) },
+            confirmButton = {
+                TextButton(onClick = { projectStoreError = null }) { Text("OK") }
+            }
+        )
+    }
+
     shortsApplyError?.let { errorMessage ->
         val retryTemplateId = pendingShortsTemplateId
         val retryVideo = pendingShortsVideo
@@ -403,12 +427,17 @@ fun HomeScreen(
                 val newName = renameHomeProject(project, enteredName)?.name
                 if (newName != null) {
                     scope.launch {
-                        withContext(Dispatchers.IO) {
-                            projectRepo.findById(project.id)?.let { stored ->
-                                projectRepo.saveProject(stored.copy(name = newName))
+                        try {
+                            withContext(Dispatchers.IO) {
+                                projectRepo.findById(project.id)?.let { stored ->
+                                    projectRepo.saveProject(stored.copy(name = newName))
+                                }
                             }
+                            projectToRename = null
+                        } catch (error: CorruptProjectStoreException) {
+                            projectToRename = null
+                            projectStoreError = error.message ?: "Saved projects could not be updated; existing data was preserved."
                         }
-                        projectToRename = null
                     }
                 }
             }
@@ -420,8 +449,13 @@ fun HomeScreen(
             onDismiss = { projectToDelete = null },
             onConfirm = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { projectRepo.deleteProject(project.id) }
-                    projectToDelete = null
+                    try {
+                        withContext(Dispatchers.IO) { projectRepo.deleteProject(project.id) }
+                        projectToDelete = null
+                    } catch (error: CorruptProjectStoreException) {
+                        projectToDelete = null
+                        projectStoreError = error.message ?: "Saved projects could not be updated; existing data was preserved."
+                    }
                 }
             }
         )

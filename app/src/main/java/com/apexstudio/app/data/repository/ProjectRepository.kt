@@ -15,7 +15,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-private val Context.projectDataStore: DataStore<Preferences> by preferencesDataStore(name = "apex_projects")
+internal val Context.projectDataStore: DataStore<Preferences> by preferencesDataStore(name = "apex_projects")
+
+internal class CorruptProjectStoreException(cause: Exception) : IllegalStateException(
+    "Saved project data is unreadable; the existing data was preserved and the change was not saved.",
+    cause
+)
 
 /**
  * Persists [Project]s to DataStore using kotlinx-serialization JSON.
@@ -58,7 +63,7 @@ class ProjectRepository(private val context: Context) {
     suspend fun saveProject(project: Project) {
         val normalizedProject = project.withCurrentTimelineAuthority()
         context.projectDataStore.edit { prefs ->
-            val current = decode(prefs[key]).toMutableList()
+            val current = decodeForMutation(prefs[key]).toMutableList()
             val idx = current.indexOfFirst { it.id == normalizedProject.id }
             if (idx >= 0) {
                 // The typed-timeline schema migrates independently from legacy
@@ -74,9 +79,25 @@ class ProjectRepository(private val context: Context) {
     /** Remove a project. No-op if not found. */
     suspend fun deleteProject(projectId: String) {
         context.projectDataStore.edit { prefs ->
-            val current = decode(prefs[key]).toMutableList()
+            val current = decodeForMutation(prefs[key]).toMutableList()
             current.removeAll { it.id == projectId }
             prefs[key] = json.encodeToString(serializer, current)
+        }
+    }
+
+    private fun decodeForMutation(raw: String?): List<Project> {
+        if (raw == null) return emptyList()
+        return try {
+            decodeStrict(raw)
+        } catch (e: Exception) {
+            throw CorruptProjectStoreException(e)
+        }
+    }
+
+    private fun decodeStrict(raw: String?): List<Project> {
+        if (raw == null) return emptyList()
+        return json.decodeFromString(serializer, raw).map { project ->
+            runCatching { project.withCurrentTimelineAuthority() }.getOrDefault(project)
         }
     }
 
@@ -88,9 +109,8 @@ class ProjectRepository(private val context: Context) {
                 runCatching { project.withCurrentTimelineAuthority() }.getOrDefault(project)
             }
         } catch (e: Exception) {
-            // Treat a corrupt blob as empty — a single bad write
-            // shouldn't brick the whole project list. The next save
-            // will overwrite it.
+            // Keep best-effort reads for existing callers; write paths use
+            // decodeForMutation() and refuse to overwrite malformed data.
             emptyList()
         }
     }

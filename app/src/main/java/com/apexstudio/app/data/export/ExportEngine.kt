@@ -857,7 +857,7 @@ class ExportEngine(private val context: Context) {
                                     denoiseEnabled = config.denoiseEnabled || clip.denoiseEnabled,
                                     denoiseStrength = if (clip.denoiseEnabled) clip.denoiseStrength else config.denoiseStrength
                                 )
-                                val speedPair = buildSpeedProvider(itemConfig)?.let {
+                                val speedPair = buildTransitionAudioSpeedProvider(itemConfig, segment)?.let {
                                     Effects.createExperimentalSpeedChangingEffect(it)
                                 }
                                 val audioProcessors = buildVideoExportAudioProcessors(itemConfig, speedPair?.first)
@@ -1763,20 +1763,33 @@ class ExportEngine(private val context: Context) {
             speedPoints = config.speedPoints
         )
 
+    /** Builds the audio speed provider for one hard-cut segment in a transition overlap. */
+    internal fun buildTransitionAudioSpeedProvider(
+        config: ExportConfig,
+        segment: ProjectTransitionTimeline.AudioSegment
+    ): androidx.media3.common.audio.SpeedProvider? = buildSpeedProvider(
+        config = config,
+        speedCurveTrimStartMs = segment.entry.sourceStartMs,
+        speedCurveTrimEndMs = segment.entry.sourceEndMs,
+        speedCurveOffsetMs = segment.sourceStartMs - segment.entry.sourceStartMs
+    )
+
     /**
      * Builds the Media3 [SpeedProvider] for an export, or null when no
-     * speed change applies (constant 1x, no curve).
+     * speed change applies (constant 1x, no curve). By default, curve time
+     * spans the configured trim and starts at zero; transition-audio segments
+     * pass their original clip trim and source offset instead.
      *
-     * Timestamp base: the effect receives presentation times relative
-     * to the clipped item start (0-based), so the fraction is
-     * timeUs / trimmed-span. KeyframeAnimationEffect runs before this
-     * speed stage and explicitly maps the same source-relative timestamp
-     * into project time. [getNextSpeedChangeTimeUs] re-queries
-     * every 10 ms of source time so the effect tracks the curve
-     * instead of caching one rate for the whole clip.
+     * The effect receives presentation times relative to the clipped item
+     * start (0-based). Each item time is offset into the original speed-curve
+     * source clock before the fraction is calculated. KeyframeAnimationEffect
+     * separately maps the same source-relative timestamp into project time.
      */
     private fun buildSpeedProvider(
-        config: ExportConfig
+        config: ExportConfig,
+        speedCurveTrimStartMs: Long = config.trimStartMs,
+        speedCurveTrimEndMs: Long = config.trimEndMs,
+        speedCurveOffsetMs: Long = 0L
     ): androidx.media3.common.audio.SpeedProvider? {
         val points = com.apexstudio.app.domain.model.SpeedCurveMath.sanitize(config.speedPoints)
         val hasCurve = points.size >= 2
@@ -1786,8 +1799,9 @@ class ExportEngine(private val context: Context) {
         // Normalize the source clock and saturate instead of wrapping the
         // speed-curve span into a negative/short interval.
         val spanUs = ExportAudioTimelineMapping.sourceSpanUs(
-            config.trimStartMs, config.trimEndMs
+            speedCurveTrimStartMs, speedCurveTrimEndMs
         ) ?: -1L
+        val curveOffsetUs = ExportAudioTimelineMapping.millisToMicros(speedCurveOffsetMs)
         if (hasCurve && spanUs <= 0L) {
             // Curve without a usable trim span (e.g. the photo path
             // passes 0..0): fall back to the constant rate rather
@@ -1803,16 +1817,17 @@ class ExportEngine(private val context: Context) {
         return object : androidx.media3.common.audio.SpeedProvider {
             override fun getSpeed(timeUs: Long): Float {
                 if (!hasCurve) return constant
-                val fraction = (timeUs.coerceIn(0L, spanUs).toDouble() / spanUs.toDouble())
-                    .toFloat()
+                val fraction = ExportAudioTimelineMapping.speedCurveFractionAtSegmentTime(
+                    timeUs, curveOffsetUs, spanUs
+                )
                 return com.apexstudio.app.domain.model.SpeedCurveMath.speedAt(points, fraction)
             }
 
             override fun getNextSpeedChangeTimeUs(timeUs: Long): Long {
                 if (!hasCurve) return androidx.media3.common.C.TIME_UNSET
-                // Next 10 ms boundary (source time); stop querying once the
-                // clipped item reaches the end of its curve span.
-                return ExportAudioTimelineMapping.nextSpeedChangeTimeUs(timeUs, spanUs)
+                // Query on the original curve clock, then translate the next
+                // boundary back to this clipped item's local time.
+                return ExportAudioTimelineMapping.nextSpeedChangeTimeUs(timeUs, spanUs, curveOffsetUs)
                     ?: androidx.media3.common.C.TIME_UNSET
             }
         }

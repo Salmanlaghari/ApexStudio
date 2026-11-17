@@ -48,24 +48,53 @@ internal object ExportAudioTimelineMapping {
         com.apexstudio.app.data.audio.AudioTimelineMath.endFrame(startFrame, frameCount)
 
     /**
-     * Next 10 ms source-time boundary for a variable-speed audio processor,
-     * or null when the curve has reached its end. Media3 providers must not
-     * return the current/past timestamp: doing so at the clip endpoint can
-     * leave the processor repeatedly querying a speed change that cannot occur.
+     * Fraction in the original clip's speed curve for a segment-local source time.
+     * [curveOffsetUs] is the segment's source offset from the clip's original trim start.
      */
-    fun nextSpeedChangeTimeUs(timeUs: Long, spanUs: Long): Long? {
-        if (spanUs <= 0L) return null
-        val currentUs = timeUs.coerceAtLeast(0L)
-        if (currentUs >= spanUs) return null
+    fun speedCurveFractionAtSegmentTime(
+        timeUs: Long,
+        curveOffsetUs: Long,
+        curveSpanUs: Long
+    ): Float {
+        if (curveSpanUs <= 0L) return 0f
+        val curveTimeUs = curveTimeUsAtSegmentOffset(timeUs, curveOffsetUs, curveSpanUs)
+        return (curveTimeUs.toDouble() / curveSpanUs.toDouble()).toFloat()
+    }
 
-        val remainderUs = currentUs % SPEED_CHANGE_INTERVAL_US
+    /**
+     * Next 10 ms source-time boundary for a variable-speed audio processor,
+     * or null when the original curve has reached its end. With an offset, the
+     * returned timestamp is translated back to the segment-local source clock.
+     * Media3 providers must not return the current/past timestamp.
+     */
+    fun nextSpeedChangeTimeUs(timeUs: Long, spanUs: Long, curveOffsetUs: Long = 0L): Long? {
+        if (spanUs <= 0L) return null
+        val itemTimeUs = timeUs.coerceAtLeast(0L)
+        val normalizedOffsetUs = curveOffsetUs.coerceIn(0L, spanUs)
+        val curveTimeUs = curveTimeUsAtSegmentOffset(itemTimeUs, normalizedOffsetUs, spanUs)
+        if (curveTimeUs >= spanUs) return null
+
+        val remainderUs = curveTimeUs % SPEED_CHANGE_INTERVAL_US
         val deltaUs = SPEED_CHANGE_INTERVAL_US - remainderUs
-        val nextUs = if (currentUs > Long.MAX_VALUE - deltaUs) {
+        val nextCurveTimeUs = (if (curveTimeUs > Long.MAX_VALUE - deltaUs) {
             Long.MAX_VALUE
         } else {
-            currentUs + deltaUs
+            curveTimeUs + deltaUs
+        }).coerceAtMost(spanUs)
+        val nextItemTimeUs = nextCurveTimeUs - normalizedOffsetUs
+        return nextItemTimeUs.takeIf { it > itemTimeUs }
+    }
+
+    private fun curveTimeUsAtSegmentOffset(timeUs: Long, curveOffsetUs: Long, curveSpanUs: Long): Long {
+        if (curveSpanUs <= 0L) return 0L
+        val offsetUs = curveOffsetUs.coerceIn(0L, curveSpanUs)
+        val localTimeUs = timeUs.coerceAtLeast(0L)
+        val absoluteUs = if (localTimeUs > Long.MAX_VALUE - offsetUs) {
+            Long.MAX_VALUE
+        } else {
+            localTimeUs + offsetUs
         }
-        return minOf(nextUs, spanUs)
+        return absoluteUs.coerceAtMost(curveSpanUs)
     }
 
     data class SourceTrim(val startMs: Long, val frameCount: Long)

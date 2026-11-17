@@ -622,7 +622,7 @@ private fun VideoClip.moveAnimationKeyframes(deltaMs: Long): VideoClip = copy(
     panKeyframes = panKeyframes.shiftedByProjectTime(deltaMs)
 )
 
-private fun <T> List<Keyframe<T>>.shiftedByProjectTime(deltaMs: Long): List<Keyframe<T>> =
+private fun <T> List<SharedKeyframe<T>>.shiftedByProjectTime(deltaMs: Long): List<SharedKeyframe<T>> =
     map { it.copy(timeMs = shiftProjectTimelineTime(it.timeMs, deltaMs)) }
         .sortedBy { it.timeMs }
 

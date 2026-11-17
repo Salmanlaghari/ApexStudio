@@ -2,6 +2,8 @@ package com.apexstudio.app.presentation.viewmodel
 
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.Project
+import com.apexstudio.app.domain.model.timeline.AudioTrack as SharedAudioTrack
+import com.apexstudio.app.domain.model.timeline.syncSharedTimeline
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -245,9 +247,12 @@ class AudioTrackPlacementTest {
             sourceDurationMs = 8_000L,
             startTimeMs = 1_000L
         )
+        val initialProject = Project(
+            id = "p", name = "p", durationMs = 7_000L, audioTracks = listOf(original)
+        ).syncSharedTimeline()
         val vm = EditorViewModel().also { viewModel ->
             viewModel._state.update {
-                it.copy(project = Project(id = "p", name = "p", durationMs = 7_000L, audioTracks = listOf(original)))
+                it.copy(project = initialProject)
             }
             viewModel._audio.update { it.copy(tracks = listOf(original)) }
         }
@@ -257,15 +262,22 @@ class AudioTrackPlacementTest {
         assertEquals(2, split.size)
         assertEquals(1, vm.undoStack.size)
         assertEquals(split, vm.audio.value.tracks)
+        val typedSplit = vm.state.value.project!!.timeline.tracks.filterIsInstance<SharedAudioTrack>()
+        assertEquals(setOf("shared-audio-${original.id}", "shared-audio-${split[1].id}"), typedSplit.map { it.id }.toSet())
+        assertEquals(listOf(split[0].id), typedSplit.single { it.id == "shared-audio-${original.id}" }.clips.map { it.id })
+        assertEquals(listOf(split[1].id), typedSplit.single { it.id == "shared-audio-${split[1].id}" }.clips.map { it.id })
 
         runBlocking { vm.undo().join() }
         assertEquals(listOf(original), vm.state.value.project!!.audioTracks)
         assertEquals(listOf(original), vm.audio.value.tracks)
+        assertEquals(listOf("shared-audio-${original.id}"), vm.state.value.project!!.timeline.tracks
+            .filterIsInstance<SharedAudioTrack>().map { it.id })
         assertTrue(vm.redoStack.isNotEmpty())
 
         runBlocking { vm.redo().join() }
         assertEquals(split, vm.state.value.project!!.audioTracks)
         assertEquals(split, vm.audio.value.tracks)
+        assertEquals(2, vm.state.value.project!!.timeline.tracks.filterIsInstance<SharedAudioTrack>().size)
     }
 
     @Test
@@ -291,5 +303,31 @@ class AudioTrackPlacementTest {
         runBlocking { vm.redo().join() }
         assertTrue(vm.state.value.project!!.originalVideoMuted)
         assertTrue(vm.audio.value.isMuted)
+    }
+
+    @Test
+    fun `mute undo preserves audio state when project mute flag was unchanged`() {
+        val vm = EditorViewModel().also { viewModel ->
+            viewModel._state.update {
+                it.copy(project = Project(id = "p", name = "p", durationMs = 1_000L))
+            }
+        }
+
+        vm.toggleMuteEngine()
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+
+        vm.setMuteOriginalVideo(false)
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertFalse(vm.audio.value.isMuted)
+        assertEquals(1, vm.undoStack.size)
+
+        runBlocking { vm.undo().join() }
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertTrue(vm.audio.value.isMuted)
+
+        runBlocking { vm.redo().join() }
+        assertFalse(vm.state.value.project!!.originalVideoMuted)
+        assertFalse(vm.audio.value.isMuted)
     }
 }

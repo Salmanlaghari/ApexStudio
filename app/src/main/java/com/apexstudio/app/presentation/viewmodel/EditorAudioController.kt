@@ -649,7 +649,12 @@ fun EditorViewModel.setAudioTrackFadeOut(trackId: String, ms: Long) {
 
 fun EditorViewModel.setMuteOriginalVideo(muted: Boolean) {
     val before = _state.value
-    if (before.project?.let { it.originalVideoMuted != muted } == true) pushUndo(before)
+    val currentProject = before.project
+    if (currentProject != null &&
+        (currentProject.originalVideoMuted != muted || _audio.value.isMuted != muted)
+    ) {
+        pushUndo(before, captureAudioMute = true)
+    }
     _audio.update { it.copy(isMuted = muted) }
     var projectChanged = false
     _state.update { state ->
@@ -682,14 +687,14 @@ fun EditorViewModel.splitAudioTrack(trackId: String, atMs: Long) {
         val updated = p.audioTracks.flatMap {
             if (it.id == trackId) listOf(part1, part2) else listOf(it)
         }
-        val typed = p.timeline.tracks.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
-            .firstOrNull { it.id == "shared-audio-$trackId" }
-        val updatedTyped = typed?.let { applyLegacyAudioTrackChanges(track, part1, it) }
-        val timeline = if (updatedTyped == null) p.timeline else p.timeline.copy(
-            tracks = p.timeline.tracks.map { if (it.id == updatedTyped.id) updatedTyped else it }
+        val ducking = p.timeline.tracks.filterIsInstance<com.apexstudio.app.domain.model.timeline.AudioTrack>()
+            .firstOrNull { it.id == "shared-audio-$trackId" }?.ducking
+        val updatedProject = p.copy(audioTracks = updated).syncSharedTimeline(
+            refreshLegacyAudioTrackIds = setOf(trackId, part2Id),
+            preservedAudioDucking = mapOf(trackId to ducking, part2Id to ducking)
         )
         s.copy(
-            project = p.copy(audioTracks = updated, timeline = timeline),
+            project = updatedProject,
             beatMarkersMs = projectBeatMarkers(updated, s.beatMarkersByTrackUri)
         )
     }

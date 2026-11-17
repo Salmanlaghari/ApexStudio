@@ -3,8 +3,10 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
@@ -17,6 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selectableGroup
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +31,17 @@ import com.apexstudio.app.domain.model.VideoDrawingStroke
 import com.apexstudio.app.domain.model.VideoDrawingTool
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 import kotlinx.coroutines.isActive
+
+private data class DrawingColorSwatch(val name: String, val argb: Long)
+
+private val drawingColorSwatches = listOf(
+    DrawingColorSwatch("Pink", 0xFFFF3B82L),
+    DrawingColorSwatch("Cyan", 0xFF19D3F3L),
+    DrawingColorSwatch("Yellow", 0xFFFFD54FL),
+    DrawingColorSwatch("Mint", 0xFF73E6A6L),
+    DrawingColorSwatch("White", 0xFFFFFFFFL),
+    DrawingColorSwatch("Violet", 0xFF8C6CFFL)
+)
 
 @Composable
 fun SpeedControlSheet(
@@ -253,16 +271,7 @@ fun VideoDrawingControlsSheet(
                 DrawingModeChip(Modifier.weight(1f), "Eraser", tool == VideoDrawingTool.ERASER, ApexPalette.NeonPink) { onToolChange(VideoDrawingTool.ERASER) }
             }
             Text("COLOR", color = ApexPalette.TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                listOf(0xFFFF3B82L, 0xFF19D3F3L, 0xFFFFD54FL, 0xFF73E6A6L, 0xFFFFFFFFL, 0xFF8C6CFFL).forEach { argb ->
-                    val color = Color(argb.toInt())
-                    Box(
-                        Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(color)
-                            .border(if (colorArgb == argb) 3.dp else 1.dp, if (colorArgb == argb) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.35f), RoundedCornerShape(50))
-                            .clickable(enabled = tool == VideoDrawingTool.BRUSH) { onColorChange(argb) }
-                    )
-                }
-            }
+            DrawingColorPalette(tool = tool, colorArgb = colorArgb, onColorChange = onColorChange)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Stroke width", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Text("${(brushWidth * 1000).toInt()}‰", color = ApexPalette.NeonCyan, fontSize = 12.sp)
@@ -278,6 +287,46 @@ fun VideoDrawingControlsSheet(
                 DrawingModeChip(Modifier.weight(1f), "Clear all", false, ApexPalette.Danger, enabled = strokeCount > 0, onClick = onClear)
             }
             Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+internal fun DrawingColorPalette(
+    tool: VideoDrawingTool,
+    colorArgb: Long,
+    onColorChange: (Long) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .semantics { selectableGroup() },
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        drawingColorSwatches.forEach { swatch ->
+            val color = Color(swatch.argb.toInt())
+            Box(
+                Modifier.size(48.dp)
+                    .semantics {
+                        contentDescription = "Brush color ${swatch.name}"
+                        selected = colorArgb == swatch.argb
+                    }
+                    .clickable(
+                        enabled = tool == VideoDrawingTool.BRUSH,
+                        onClickLabel = "Select ${swatch.name} brush color",
+                        role = Role.RadioButton
+                    ) { onColorChange(swatch.argb) },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier.size(34.dp).clip(RoundedCornerShape(50)).background(color)
+                        .border(
+                            if (colorArgb == swatch.argb) 3.dp else 1.dp,
+                            if (colorArgb == swatch.argb) Color.White else ApexPalette.TextPrimary.copy(alpha = 0.35f),
+                            RoundedCornerShape(50)
+                        )
+                )
+            }
         }
     }
 }

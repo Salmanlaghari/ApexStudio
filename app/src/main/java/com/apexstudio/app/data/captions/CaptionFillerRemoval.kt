@@ -161,9 +161,11 @@ object CaptionFillerWordStream {
             clusterEnd = maxOf(clusterEnd, overlayEndExclusive(overlay))
         }
         flush()
-        return (explicitGroups + legacyGroups).sortedBy { group ->
-            group.overlays.minOfOrNull(TextOverlay::startMs) ?: Long.MAX_VALUE
-        }
+        return (explicitGroups + legacyGroups).sortedWith(
+            compareBy<CaptionPhraseGroup> { group ->
+                group.overlays.minOfOrNull(TextOverlay::startMs) ?: Long.MAX_VALUE
+            }.thenBy { it.id }
+        )
     }
 
     fun overlayEndExclusive(overlay: TextOverlay): Long = if (overlay.rangeEndExclusive) {

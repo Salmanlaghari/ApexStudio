@@ -307,6 +307,9 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
             }.map { overlay ->
                 overlay.copy(id = newId, projectTextLayerId = newGroupId,
                     karaokePhraseGroupId = null,
+                    highlightStartUtf16 = null,
+                    highlightEndUtf16 = null,
+                    highlightSourceFingerprint = null,
                     x = placedX, y = placedY)
             }
             owner.copy(textOverlays = owner.textOverlays + copies)

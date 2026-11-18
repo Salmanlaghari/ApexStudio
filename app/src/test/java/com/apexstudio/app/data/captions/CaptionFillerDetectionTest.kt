@@ -109,6 +109,25 @@ class CaptionFillerDetectionTest {
     }
 
     @Test
+    fun `phrase groups with equal starts use stable group IDs as a tiebreaker`() {
+        val fingerprint = TextOverlayKaraoke.fingerprint("um")
+        fun slice(overlayId: String, groupId: String) = TextOverlay.of(id = overlayId, text = "um").copy(
+            presetId = "caption_auto",
+            startMs = 100L,
+            endMs = 199L,
+            highlightStartUtf16 = 0,
+            highlightEndUtf16 = 2,
+            highlightSourceFingerprint = fingerprint,
+            karaokePhraseGroupId = groupId
+        )
+        val overlays = listOf(slice("a-overlay", "z-group"), slice("z-overlay", "a-group"))
+        val expectedIds = listOf("clip:karaoke:a-group", "clip:karaoke:z-group")
+
+        assertEquals(expectedIds, CaptionFillerWordStream.phraseGroups("clip", overlays).map { it.id })
+        assertEquals(expectedIds, CaptionFillerWordStream.phraseGroups("clip", overlays.reversed()).map { it.id })
+    }
+
+    @Test
     fun `explicit phrase IDs keep adjacent identical phrases separate during filler removal`() {
         val phrase = "um now"
         val fingerprint = TextOverlayKaraoke.fingerprint(phrase)

@@ -40,8 +40,12 @@ class KaraokePhraseGroupEditingTest {
 
         vm.duplicateTextOverlay(clip.id, "first-slice")
         val duplicateId = vm.state.value.selectedTextOverlayId!!
-        assertNull(vm.state.value.project!!.clips.single().textOverlays
-            .single { it.id == duplicateId }.karaokePhraseGroupId)
+        val duplicate = vm.state.value.project!!.clips.single().textOverlays.single { it.id == duplicateId }
+        assertNull(duplicate.karaokePhraseGroupId)
+        assertNull(duplicate.highlightStartUtf16)
+        assertNull(duplicate.highlightEndUtf16)
+        assertNull(duplicate.highlightSourceFingerprint)
+        assertNull(TextOverlayKaraoke.validRange(duplicate))
 
         vm.setTextOverlayText(clip.id, duplicateId, "Independent copy")
         val overlays = vm.state.value.project!!.clips.single().textOverlays.associateBy(TextOverlay::id)

@@ -162,6 +162,8 @@ data class EditorState(
     val isFullscreenPreview: Boolean = false,
     val adjustments: VideoAdjustments = VideoAdjustments(),
     val adjustmentsPanelOpen: Boolean = false,
+    /** Preview-only A/B state; never persisted to the project. */
+    val adjustmentsCompareMode: Boolean = false,
     // Photo-editing tools (PR F): true while the Edit Photo bottom
     // sheet is open for the selected IMAGE clip; photoEditTab selects
     // which tool tab is visible (the Crop tab also arms the drag

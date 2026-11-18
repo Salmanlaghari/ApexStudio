@@ -4,11 +4,17 @@ import com.apexstudio.app.domain.model.*
 import com.apexstudio.app.presentation.state.*
 import kotlinx.coroutines.flow.update
 
-fun EditorViewModel.openAdjustmentsPanel() = _state.update { it.copy(adjustmentsPanelOpen = true) }
+fun EditorViewModel.openAdjustmentsPanel() = _state.update {
+    it.copy(adjustmentsPanelOpen = true, adjustmentsCompareMode = false, lutCompareMode = false)
+}
 
 fun EditorViewModel.closeAdjustmentsPanel() {
-    _state.update { it.copy(adjustmentsPanelOpen = false) }
+    _state.update { it.copy(adjustmentsPanelOpen = false, adjustmentsCompareMode = false) }
     flushProject()
+}
+
+fun EditorViewModel.toggleAdjustmentsCompareMode() = _state.update {
+    it.copy(adjustmentsCompareMode = !it.adjustmentsCompareMode)
 }
 
 fun EditorViewModel.updateAdjustments(transform: (VideoAdjustments) -> VideoAdjustments) {
@@ -356,6 +362,7 @@ internal fun EditorViewModel.keepOnlyEditorPanel(active: EditorPanelKey?) {
             filterPanelOpen = active == EditorPanelKey.COLOR_GRADING && state.filterPanelOpen,
             colorGradingLutPanelOpen = active == EditorPanelKey.COLOR_GRADING && state.colorGradingLutPanelOpen,
             adjustmentsPanelOpen = active == EditorPanelKey.ADJUSTMENTS && state.adjustmentsPanelOpen,
+            adjustmentsCompareMode = active == EditorPanelKey.ADJUSTMENTS && state.adjustmentsCompareMode,
             fxPanelOpen = active == EditorPanelKey.FX && state.fxPanelOpen,
             transmissionPanelOpen = active == EditorPanelKey.TRANSMISSION && state.transmissionPanelOpen,
             transitionPickerOpen = active == EditorPanelKey.TRANSITION && state.transitionPickerOpen,

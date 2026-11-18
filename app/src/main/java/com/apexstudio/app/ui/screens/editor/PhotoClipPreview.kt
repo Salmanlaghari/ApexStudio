@@ -47,6 +47,7 @@ import com.apexstudio.app.data.filter.LutTexture
 import com.apexstudio.app.data.photoedit.PhotoEditRenderer
 import com.apexstudio.app.domain.model.PhotoCropRect
 import com.apexstudio.app.domain.model.PhotoEditSettings
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
@@ -71,6 +72,7 @@ fun PhotoClipPreview(
     onCropChange: (PhotoCropRect) -> Unit,
     modifier: Modifier = Modifier,
     isCoverMode: Boolean = false,
+    projectSelectiveHsl: SelectiveHslAdjustments = SelectiveHslAdjustments(),
     onImageAspectRatioChange: (Float) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -149,7 +151,7 @@ fun PhotoClipPreview(
         canvas = com.apexstudio.app.domain.model.PhotoCanvasSettings()
     ) else settings
     val activeLut = lutTexture.takeIf { lutFilterId == settings.filterId && settings.filterId != null }
-    LaunchedEffect(rawBitmap, effectiveSettings, activeLut) {
+    LaunchedEffect(rawBitmap, effectiveSettings, activeLut, projectSelectiveHsl) {
         val src = rawBitmap
         try {
             if (src == null) {
@@ -162,7 +164,9 @@ fun PhotoClipPreview(
                 activeRenderSources.add(src)
                 val next = withContext(Dispatchers.Default) {
                     try {
-                        PhotoEditRenderer.applyEdits(src, effectiveSettings, activeLut)
+                        PhotoEditRenderer.applyEdits(
+                            src, effectiveSettings, activeLut, projectSelectiveHsl
+                        )
                     } catch (e: Exception) {
                         null
                     }

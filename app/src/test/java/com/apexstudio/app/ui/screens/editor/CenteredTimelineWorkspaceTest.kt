@@ -72,6 +72,8 @@ class CenteredTimelineWorkspaceTest {
         listOf("Position", "Scale", "Rotation", "Opacity", "Animation").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
         val play = compose.onNodeWithContentDescription("Play playback").fetchSemanticsNode().boundsInRoot
         val focus = compose.onNodeWithContentDescription("Expand timeline to full height").fetchSemanticsNode().boundsInRoot
+        val ripple = bounds("timeline-ripple-toggle")
+        val zoomIn = compose.onNodeWithContentDescription("Zoom timeline in").fetchSemanticsNode().boundsInRoot
         val ruler = bounds("timeline-ruler")
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         val preview = bounds("preview")
@@ -80,7 +82,8 @@ class CenteredTimelineWorkspaceTest {
         assertTrue("Normal timeline host stays close to populated track height", timelineHost.height in 100f..200f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
         assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertEquals("Only the slim transport-to-ruler spacer remains", focus.bottom + 2f, ruler.top, 1f)
+        assertTrue("Snap and Ripple controls occupy the row below Focus", ripple.top >= focus.bottom && ripple.bottom <= ruler.top)
+        assertTrue("Only a slim spacer remains after the zoom controls", ruler.top - zoomIn.bottom in 0f..8f)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

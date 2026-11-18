@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,8 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Slider
@@ -86,11 +86,14 @@ internal fun SelectiveHslControls(
 
         Spacer(Modifier.height(8.dp))
 
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("hsl_color_range_row")
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(HslColorRange.values().toList(), key = { it.name }) { range ->
+            HslColorRange.values().forEach { range ->
                 val selected = range == selectedRange
                 Column(
                     modifier = Modifier
@@ -201,9 +204,9 @@ private fun HslSliderRow(
                 activeTrackColor = ApexPalette.NeonCyan,
                 inactiveTrackColor = ApexPalette.BgElevated
             ),
+            // Keep Material3's default 48dp touch target without fixing the track height.
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
                 .testTag("hsl_${id}_slider")
         )
     }

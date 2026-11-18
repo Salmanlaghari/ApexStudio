@@ -306,7 +306,9 @@ fun AdjustmentsPanelOverlay(
                 onUpdate = { vm.updateAdjustments(it) },
                 onReset = { vm.resetAdjustments() },
                 onResetAll = { vm.resetAllAdjustments() },
-                onClose = { vm.closeAdjustmentsPanel() }
+                onClose = { vm.closeAdjustmentsPanel() },
+                compareMode = state.adjustmentsCompareMode,
+                onToggleCompare = { vm.toggleAdjustmentsCompareMode() }
             )
         }
     }
@@ -1866,7 +1868,9 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
                 vm.upsertOverlayKeyframe(id, timeMs, x, y, scale, rotation, opacity, persist)
             },
             isCoverMode = isCoverMode,
-            adjustments = if (isTransitionPreview) com.apexstudio.app.domain.model.VideoAdjustments() else state.adjustments,
+            adjustments = if (isTransitionPreview || state.adjustmentsCompareMode) {
+                com.apexstudio.app.domain.model.VideoAdjustments()
+            } else state.adjustments,
             activeFilterId = if (isTransitionPreview) null else state.activeFilterId,
             filterIntensity = if (isTransitionPreview) 0f else state.filterIntensity,
             gpuFilterConfig = if (isTransitionPreview) com.apexstudio.app.domain.model.GpuFilterConfig()

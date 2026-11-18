@@ -11,6 +11,7 @@ import android.graphics.Paint
 import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
+import com.apexstudio.app.data.engine.ColorGradingProcessor
 import com.apexstudio.app.data.filter.FilterColorMatrix
 import com.apexstudio.app.data.filter.FilterPreset
 import com.apexstudio.app.data.filter.LutBitmapCache
@@ -18,6 +19,7 @@ import com.apexstudio.app.data.filter.LutFilterEngine
 import com.apexstudio.app.data.filter.LutTexture
 import com.apexstudio.app.domain.model.PhotoCropRect
 import com.apexstudio.app.domain.model.PhotoEditSettings
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -314,7 +316,8 @@ object PhotoEditRenderer {
     fun applyEdits(
         src: Bitmap,
         settings: PhotoEditSettings,
-        lutTexture: LutTexture?
+        lutTexture: LutTexture?,
+        projectSelectiveHsl: SelectiveHslAdjustments = SelectiveHslAdjustments()
     ): Bitmap {
         var cur = src
         // Advance the pipeline, recycling the previous stage's bitmap
@@ -374,6 +377,16 @@ object PhotoEditRenderer {
                 geometry.left, geometry.top, geometry.right, geometry.bottom
             ), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
             advance(out)
+        }
+        // Project-level HSL is applied after photo edits, matching the global
+        // video grade's position after each image has been rendered to a frame.
+        if (!projectSelectiveHsl.isDefault) {
+            advance(
+                ColorGradingProcessor.process(
+                    cur,
+                    ColorGradingProcessor.ColorParams(selectiveHsl = projectSelectiveHsl)
+                )
+            )
         }
         return cur
     }

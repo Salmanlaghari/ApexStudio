@@ -755,11 +755,16 @@ object MusicExportMixer {
                 val audioIdx = prepareWithCleanup(
                     resource = ex,
                     prepare = { extractor ->
-                        val clean = uri.removePrefix("file://")
-                        if (clean.startsWith("content://")) {
-                            extractor.setDataSource(context, Uri.parse(clean), null)
-                        } else {
-                            extractor.setDataSource(clean)
+                        val sourceUri = Uri.parse(uri)
+                        when (sourceUri.scheme) {
+                            "content" -> extractor.setDataSource(context, sourceUri, null)
+                            "file" -> {
+                                // Uri.path decodes escaped characters such as %20 before the native path API.
+                                val decodedPath = sourceUri.path
+                                    ?: throw IllegalArgumentException("Missing file path in $uri")
+                                extractor.setDataSource(decodedPath)
+                            }
+                            else -> extractor.setDataSource(uri)
                         }
                         (0 until extractor.trackCount).firstOrNull { index ->
                             extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME)

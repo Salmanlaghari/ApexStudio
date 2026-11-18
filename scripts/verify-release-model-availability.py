@@ -82,8 +82,10 @@ def _parse_build_identity(data: bytes) -> dict[str, str]:
     identity = {key: properties.get(key, "") for key in ("commit", "ref", "run")}
     if not re.fullmatch(r"[0-9a-fA-F]{40,64}", identity["commit"]):
         raise ReleaseModelAvailabilityError("Release APK build identity has no valid source commit")
-    if not identity["ref"] or not identity["run"]:
-        raise ReleaseModelAvailabilityError("Release APK build identity is missing its source ref or run ID")
+    if not identity["ref"]:
+        raise ReleaseModelAvailabilityError("Release APK build identity is missing its source ref")
+    if not identity["run"]:
+        raise ReleaseModelAvailabilityError("Release APK build identity is missing its run ID")
     return identity
 
 

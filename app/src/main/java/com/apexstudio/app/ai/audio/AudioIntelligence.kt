@@ -313,46 +313,100 @@ object AudioIntelligence {
         attackMs: Long = 40L,
         releaseMs: Long = 320L,
         speechThresholdDb: Float = -40f,
+    ): List<DuckPoint> = autoDuckPlanForRange(
+        music = music,
+        speech = speech,
+        sampleRateHz = sampleRateHz,
+        speechStartSampleIndex = 0,
+        speechEndSampleIndexExclusive = speech.size,
+        timelineStartMs = 0L,
+        trailingSilenceMs = 0L,
+        duckedGain = duckedGain,
+        attackMs = attackMs,
+        releaseMs = releaseMs,
+        speechThresholdDb = speechThresholdDb,
+    )
+
+    /**
+     * Plans ducking from an in-place speech PCM range without allocating a cropped copy.
+     * Returned times are offset by [timelineStartMs]; [trailingSilenceMs] lets the release
+     * envelope recover after the selected speech range ends.
+     */
+    internal fun autoDuckPlanForRange(
+        music: FloatArray,
+        speech: FloatArray,
+        sampleRateHz: Int,
+        speechStartSampleIndex: Int,
+        speechEndSampleIndexExclusive: Int,
+        timelineStartMs: Long,
+        trailingSilenceMs: Long,
+        duckedGain: Float = 0.25f,
+        attackMs: Long = 40L,
+        releaseMs: Long = 320L,
+        speechThresholdDb: Float = -40f,
     ): List<DuckPoint> {
-        if (music.isEmpty() || speech.isEmpty()) return emptyList()
+        if (music.isEmpty() || speech.isEmpty() || sampleRateHz <= 0) return emptyList()
+        val startSample = speechStartSampleIndex.coerceIn(0, speech.size)
+        val endSample = speechEndSampleIndexExclusive.coerceIn(startSample, speech.size)
+        val speechFrames = (endSample - startSample).toLong()
+        if (speechFrames <= 0L) return emptyList()
 
         val blockMs = 20L
-        val block = max(1, (sampleRateHz.toFloat() * blockMs.toFloat() / 1000f).toInt())
-        val speechActive = BooleanArray((speech.size + block - 1) / block)
+        val blockSamples = max(1, (sampleRateHz.toLong() * blockMs / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+        val safeTailMs = trailingSilenceMs.coerceIn(0L, 10_000L)
+        val tailFrames = safeTailMs * sampleRateHz.toLong() / 1000L
+        val totalFrames = speechFrames + tailFrames
+        val blockCount = (totalFrames + blockSamples - 1L) / blockSamples
         val threshold = dbToLinear(speechThresholdDb)
-        for (b in speechActive.indices) {
-            val from = b * block
-            val to = min(speech.size, from + block)
-            var peak = 0f
-            for (j in from until to) {
-                val a = abs(speech[j])
-                if (a > peak) peak = a
-            }
-            speechActive[b] = peak > threshold
-        }
 
-        val points = mutableListOf<DuckPoint>()
+        val points = mutableListOf(DuckPoint(timelineStartMs.coerceAtLeast(0L), 1f))
         var gain = 1f
+        val targetDuckedGain = duckedGain.coerceIn(0f, 1f)
         val attackPerBlock = blockMs.toFloat() / attackMs.coerceAtLeast(1).toFloat()
         val releasePerBlock = blockMs.toFloat() / releaseMs.coerceAtLeast(1).toFloat()
+        var previousSpeechActive = false
+        val startTimeMs = timelineStartMs.coerceAtLeast(0L)
 
-        var timeMs = 0L
-        points.add(DuckPoint(0L, 1f))
-        for (b in speechActive.indices) {
-            val target = if (speechActive[b]) duckedGain else 1f
-            val step = if (target < gain) attackPerBlock else releasePerBlock
-            gain = if (target < gain) {
-                max(target, gain - step)
-            } else {
-                min(target, gain + step)
-            }
-            timeMs = b * blockMs
+        fun timeAtFrame(frame: Long): Long {
+            val rate = sampleRateHz.toLong()
+            val elapsedMs = (frame / rate) * 1000L + ((frame % rate) * 1000L) / rate
+            return if (startTimeMs > Long.MAX_VALUE - elapsedMs) Long.MAX_VALUE else startTimeMs + elapsedMs
+        }
+
+        fun appendPoint(point: DuckPoint) {
             val previous = points.lastOrNull()
-            if (previous == null || abs(previous.gain - gain) > 0.005f) {
-                points.add(DuckPoint(timeMs, gain))
+            if (previous?.timeMs == point.timeMs) {
+                points[points.lastIndex] = point
+            } else if (previous == null || point.timeMs > previous.timeMs) {
+                points.add(point)
             }
         }
-        points.add(DuckPoint(timeMs + blockMs, gain))
+
+        var blockIndex = 0L
+        while (blockIndex < blockCount) {
+            val blockStart = blockIndex * blockSamples
+            val blockEnd = min(totalFrames, blockStart + blockSamples)
+            val sourceStart = startSample.toLong() + blockStart.coerceAtMost(speechFrames)
+            val sourceEnd = startSample.toLong() + blockEnd.coerceAtMost(speechFrames)
+            var peak = 0f
+            for (index in sourceStart.toInt() until sourceEnd.toInt()) {
+                val amplitude = abs(speech[index])
+                if (amplitude > peak) peak = amplitude
+            }
+
+            val speechIsActive = peak > threshold
+            if (speechIsActive != previousSpeechActive) {
+                appendPoint(DuckPoint(timeAtFrame(blockStart), gain))
+            }
+            val target = if (speechIsActive) targetDuckedGain else 1f
+            val step = if (target < gain) attackPerBlock else releasePerBlock
+            gain = if (target < gain) max(target, gain - step) else min(target, gain + step)
+            if (abs(points.last().gain - gain) > 0.005f) appendPoint(DuckPoint(timeAtFrame(blockEnd), gain))
+            previousSpeechActive = speechIsActive
+            blockIndex++
+        }
+
+        appendPoint(DuckPoint(timeAtFrame(totalFrames), gain))
         return points
     }
 

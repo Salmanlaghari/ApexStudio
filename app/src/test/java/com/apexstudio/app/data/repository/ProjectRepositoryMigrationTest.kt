@@ -20,6 +20,8 @@ import com.apexstudio.app.domain.model.VideoDrawingLayer
 import com.apexstudio.app.domain.model.VideoDrawingPoint
 import com.apexstudio.app.domain.model.VideoDrawingStroke
 import com.apexstudio.app.domain.model.VideoAdjustments
+import com.apexstudio.app.domain.model.HslBandAdjustment
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import com.apexstudio.app.domain.model.timeline.VideoTrack
 import com.apexstudio.app.domain.model.timeline.AudioTrack as SharedAudioTrack
 import com.apexstudio.app.domain.model.timeline.BlendMode
@@ -129,7 +131,12 @@ class ProjectRepositoryMigrationTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val repository = ProjectRepository(context)
         val id = "video-adjustments-${UUID.randomUUID()}"
-        val adjustments = VideoAdjustments(brightness = .27f, sharpness = .68f, contrast = 1.14f)
+        val adjustments = VideoAdjustments(
+            brightness = .27f,
+            sharpness = .68f,
+            contrast = 1.14f,
+            selectiveHsl = SelectiveHslAdjustments(blue = HslBandAdjustment(hueShift = 18f, saturation = -.2f))
+        )
         try {
             repository.saveProject(legacyProject(id).copy(videoAdjustments = adjustments))
 

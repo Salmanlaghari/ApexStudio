@@ -25,9 +25,12 @@ val sourceCommit = providers.exec {
   commandLine("git", "rev-parse", "HEAD")
   isIgnoreExitValue = true
 }.standardOutput.asText.map { it.trim().ifEmpty { "unknown" } }.get()
-val sourceRef = providers.environmentVariable("GITHUB_HEAD_REF")
-  .orElse(providers.environmentVariable("GITHUB_REF_NAME")).orElse("local").get()
-val buildRun = providers.environmentVariable("GITHUB_RUN_ID").orElse("local").get()
+val sourceRef = listOf(
+  providers.environmentVariable("GITHUB_HEAD_REF").orNull,
+  providers.environmentVariable("GITHUB_REF_NAME").orNull,
+).firstNotNullOfOrNull { it?.trim()?.takeIf(String::isNotEmpty) } ?: "local"
+val buildRun = providers.environmentVariable("GITHUB_RUN_ID")
+  .orNull?.trim()?.takeIf(String::isNotEmpty) ?: "local"
 fun buildString(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 // Large model weights are omitted from APK/AAB assets by default. Keep the 249.5 KB
 // checksum-pinned person-segmentation model bundled: Background Replace uses it on

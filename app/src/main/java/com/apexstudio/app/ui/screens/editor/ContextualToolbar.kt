@@ -562,6 +562,14 @@ fun ContextualBottomToolbar(
         else -> clipItems.map(::routed)
     }
     val easyMoreShortcuts = listOf(
+        CtxToolItem(
+            "Stickers", Icons.Outlined.SentimentSatisfiedAlt,
+            tint = ApexPalette.NeonCyan, onClick = onStickers
+        ),
+        CtxToolItem(
+            "Effects", Icons.Outlined.AutoAwesome,
+            tint = ApexPalette.NeonPurple, onClick = onEffects
+        ),
         CtxToolItem("AI tools", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPink, onClick = onAi),
         CtxToolItem("Captions", Icons.Default.Subtitles, tint = ApexPalette.NeonCyan, onClick = onCaptions),
         CtxToolItem("BG Remove", Icons.Default.AutoFixHigh, tint = ApexPalette.NeonPink, onClick = onBgRemover),

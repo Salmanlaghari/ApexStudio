@@ -95,9 +95,9 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            set -eu
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
+            bash scripts/ci-gradle-plugin-resolution-retry.sh :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
+            bash scripts/ci-gradle-plugin-resolution-retry.sh :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
+            bash scripts/ci-gradle-plugin-resolution-retry.sh :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.adjust.AdjustmentsGlEffectShaderTest
 
       - name: Upload instrumentation test results
         if: always()
@@ -146,6 +146,7 @@ jobs:
         run: |
           python scripts/verify-workspace-shaders.py
           python scripts/verify-keyframe-shaders.py
+          python scripts/verify-adjustments-shader.py
 
   build:
     name: Build APK (Debug)

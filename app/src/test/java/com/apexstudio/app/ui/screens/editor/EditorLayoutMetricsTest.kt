@@ -9,9 +9,9 @@ class EditorLayoutMetricsTest {
     fun brandedChromeUsesComfortableHeaderAndTransportDimensions() {
         assertEquals(52.dp, EditorLayoutMetrics.TopBarHeight)
         assertEquals(10.dp, EditorLayoutMetrics.TopBarHorizontalPadding)
-        assertEquals(52.dp, EditorLayoutMetrics.PlaybackBarHeight)
+        assertEquals(68.dp, EditorLayoutMetrics.PlaybackBarHeight)
         assertEquals(48.dp, EditorLayoutMetrics.TimelineActionHeight)
-        assertEquals(40.dp, EditorLayoutMetrics.TimelineToolbarHeight)
+        assertEquals(96.dp, EditorLayoutMetrics.TimelineToolbarHeight)
     }
 
     @Test

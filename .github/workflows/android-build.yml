@@ -95,7 +95,7 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            set -euo pipefail
+            bash -euo pipefail <<'BASH'
             gradle_with_plugin_resolution_retry() {
               local attempt=1
               local max_attempts=2
@@ -120,6 +120,7 @@ jobs:
             }
             gradle_with_plugin_resolution_retry :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
             gradle_with_plugin_resolution_retry :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
+            BASH
 
       - name: Upload instrumentation test results
         if: always()

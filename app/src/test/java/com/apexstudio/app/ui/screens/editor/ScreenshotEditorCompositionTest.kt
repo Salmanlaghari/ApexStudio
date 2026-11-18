@@ -79,6 +79,9 @@ class ScreenshotEditorCompositionTest {
         val playback = compose.onNodeWithTag("editor-playback-controls", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val keyframe = compose.onNodeWithTag("playback-keyframe-button", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertTrue("Keyframe toggle is inside the fixed playback row", keyframe.top >= playback.top && keyframe.bottom <= playback.bottom)
+        assertTrue("Keyframe action keeps a 44dp-tall touch target", keyframe.height >= 44f)
+        val play = compose.onNodeWithContentDescription("Play playback").fetchSemanticsNode().boundsInRoot
+        assertTrue("Play action keeps a comfortable phone touch target", play.width >= 44f && play.height >= 44f)
         val ruler = compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         assertTrue("The ruler stays directly above the video track", ruler.bottom <= track.top && track.top - ruler.bottom < 12f)

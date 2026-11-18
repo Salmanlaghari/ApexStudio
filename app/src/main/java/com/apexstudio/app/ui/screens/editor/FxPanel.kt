@@ -9,7 +9,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,8 +26,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Grain
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Texture
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -33,9 +42,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.fx.DownloadedFxEffect
@@ -68,11 +84,31 @@ fun FxPanel(
     onKeyframesClick: (() -> Unit)? = null,
     onClose: () -> Unit
 ) {
+    val context = LocalContext.current.applicationContext
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var activeCategory by remember { mutableStateOf("All") }
+    var recentSearches by remember(context) {
+        mutableStateOf(FxSearchCatalog.loadRecent(context))
+    }
+    val uniqueDownloadedEffects = remember(downloadedEffects) {
+        uniqueDownloadedFxEffects(downloadedEffects)
+    }
+    val searchResults = remember(searchQuery, uniqueDownloadedEffects) {
+        FxSearchCatalog.search(searchQuery, uniqueDownloadedEffects)
+    }
+    fun recordSearch(query: String) {
+        if (query.isBlank()) return
+        recentSearches = FxSearchCatalog.addRecent(recentSearches, query)
+        FxSearchCatalog.saveRecent(context, recentSearches)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             // Keep the preview visible; FX presets and categories are already horizontal.
-            .heightIn(max = 240.dp)
+            .heightIn(max = if (searchOpen) 520.dp else 240.dp)
             .navigationBarsPadding()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexPalette.BgSurface)
@@ -103,16 +139,33 @@ fun FxPanel(
                 fontSize = 18.sp,
                 modifier = Modifier.weight(1f)
             )
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "Close FX",
-                tint = ApexPalette.NeonCyan,
+            IconButton(
+                onClick = {
+                    if (searchOpen) {
+                        searchOpen = false
+                        searchQuery = ""
+                        keyboardController?.hide()
+                    } else searchOpen = true
+                },
                 modifier = Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .clickable { onClose() }
-                    .padding(4.dp)
-            )
+                    .size(44.dp)
+                    .testTag("fx-search-toggle")
+            ) {
+                Icon(
+                    if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                    contentDescription = if (searchOpen) "Close effect search" else "Search effects",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Close FX",
+                    tint = ApexPalette.NeonCyan,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
         Spacer(Modifier.height(10.dp))
 
@@ -123,9 +176,27 @@ fun FxPanel(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-
-        var activeCategory by remember { mutableStateOf("All") }
-
+        if (searchOpen) {
+            FxSearchBrowser(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                onRecordSearch = ::recordSearch,
+                recentQueries = recentSearches,
+                onClearRecent = {
+                    recentSearches = emptyList()
+                    FxSearchCatalog.clearRecent(context)
+                },
+                results = searchResults,
+                activeFxId = activeFxId,
+                onFxSelected = { result ->
+                    recordSearch(searchQuery)
+                    onFxSelected(result.id)
+                },
+                effectsPackState = effectsPackState,
+                downloadedCount = uniqueDownloadedEffects.size,
+                onDownloadEffectsPack = onDownloadEffectsPack,
+            )
+        } else {
         if (activeCategory == "Downloaded") {
             val state = effectsPackState
             val damagedInstalledPack = state == PackManager.PackState.Downloaded && downloadedEffects.isEmpty()
@@ -251,6 +322,7 @@ fun FxPanel(
                 }
             }
         }
+        }
 
         Spacer(Modifier.height(16.dp))
 
@@ -337,6 +409,338 @@ fun FxPanel(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun FxSearchBrowser(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onRecordSearch: (String) -> Unit,
+    recentQueries: List<String>,
+    onClearRecent: () -> Unit,
+    results: List<FxSearchResult>,
+    activeFxId: String?,
+    onFxSelected: (FxSearchResult) -> Unit,
+    effectsPackState: PackManager.PackState?,
+    downloadedCount: Int,
+    onDownloadEffectsPack: (() -> Unit)?,
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    Column(modifier = Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth().testTag("fx-search-field"),
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp),
+            placeholder = { Text("Search effects") },
+            leadingIcon = {
+                Icon(Icons.Default.Search, contentDescription = null, tint = ApexPalette.NeonCyan)
+            },
+            trailingIcon = if (query.isNotEmpty()) {
+                {
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear effect search")
+                    }
+                }
+            } else null,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = {
+                onRecordSearch(query)
+                keyboardController?.hide()
+            }),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = ApexPalette.TextPrimary,
+                unfocusedTextColor = ApexPalette.TextPrimary,
+                focusedContainerColor = ApexPalette.BgElevated,
+                unfocusedContainerColor = ApexPalette.BgElevated,
+                focusedBorderColor = ApexPalette.NeonCyan,
+                unfocusedBorderColor = ApexPalette.BorderGlass,
+                cursorColor = ApexPalette.NeonCyan,
+            ),
+        )
+        Spacer(Modifier.height(12.dp))
+
+        if (query.isBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Recent searches",
+                    color = ApexPalette.TextPrimary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                if (recentQueries.isNotEmpty()) {
+                    Text(
+                        "Clear",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 12.sp,
+                        modifier = Modifier
+                            .heightIn(min = 44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(role = Role.Button, onClick = onClearRecent)
+                            .padding(horizontal = 10.dp, vertical = 12.dp)
+                            .testTag("fx-search-clear-recent"),
+                    )
+                }
+            }
+            if (recentQueries.isEmpty()) {
+                Text(
+                    "Your searches appear here after you preview an effect.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(vertical = 6.dp),
+                )
+            } else {
+                FxSearchQueryChips(
+                    queries = recentQueries,
+                    tagPrefix = "fx-search-recent",
+                    onQuerySelected = { term ->
+                        onQueryChange(term)
+                        onRecordSearch(term)
+                    },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Trending searches",
+                color = ApexPalette.TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 13.sp,
+            )
+            FxSearchQueryChips(
+                queries = FxSearchCatalog.suggestedQueries,
+                tagPrefix = "fx-search-suggestion",
+                onQuerySelected = { term ->
+                    onQueryChange(term)
+                    onRecordSearch(term)
+                },
+            )
+            Text(
+                "Curated terms match real catalog effects. The small verified profile pack downloads only when you tap it.",
+                color = ApexPalette.TextTertiary,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+            )
+        } else {
+            Text(
+                "${results.size} ${if (results.size == 1) "effect" else "effects"}",
+                color = ApexPalette.TextSecondary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            if (results.isEmpty()) {
+                Text(
+                    "No effects match “${query.trim()}”. Try another search or explore the downloadable pack below.",
+                    color = ApexPalette.TextSecondary,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(vertical = 12.dp).testTag("fx-search-empty"),
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .testTag("fx-search-results-grid"),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp),
+                ) {
+                    gridItems(results, key = { it.id }) { result ->
+                        FxSearchEffectCard(
+                            result = result,
+                            selected = result.id == activeFxId,
+                            onClick = { onFxSelected(result) },
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        FxDownloadPackCard(
+            state = effectsPackState,
+            downloadedCount = downloadedCount,
+            onDownload = onDownloadEffectsPack,
+        )
+    }
+}
+
+@Composable
+private fun FxSearchQueryChips(
+    queries: List<String>,
+    tagPrefix: String,
+    onQuerySelected: (String) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().testTag("$tagPrefix-list"),
+    ) {
+        items(queries, key = { it.lowercase() }) { term ->
+            val slug = term.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+            Box(
+                modifier = Modifier
+                    .heightIn(min = 44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ApexPalette.BgElevated)
+                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(10.dp))
+                    .clickable(role = Role.Button) { onQuerySelected(term) }
+                    .testTag("$tagPrefix-$slug")
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(term, color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FxSearchEffectCard(
+    result: FxSearchResult,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val preset = FxPreset.byId(result.id)
+    val colors = preset?.let(::colorsFor) ?: colorsForFamily(result.family.orEmpty())
+    val icon = preset?.let(::iconFor) ?: Icons.Default.Layers
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) ApexPalette.NeonCyan.copy(alpha = 0.10f) else ApexPalette.BgElevated)
+            .border(
+                1.dp,
+                if (selected) ApexPalette.NeonCyan else ApexPalette.BorderGlass,
+                RoundedCornerShape(14.dp),
+            )
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                this.selected = selected
+                contentDescription = "${result.label}, ${if (result.downloaded) "downloaded and verified" else "built-in shader"}; tap to preview"
+            }
+            .testTag("fx-search-result-${result.id}")
+            .padding(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Brush.linearGradient(colors)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White.copy(alpha = 0.95f), modifier = Modifier.size(28.dp))
+            if (selected) {
+                Text(
+                    "PREVIEWING",
+                    color = ApexPalette.BgDeep,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(ApexPalette.NeonCyan)
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            result.label,
+            color = if (selected) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            if (result.downloaded) "Verified download" else "Built-in shader",
+            color = ApexPalette.TextTertiary,
+            fontSize = 9.sp,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun FxDownloadPackCard(
+    state: PackManager.PackState?,
+    downloadedCount: Int,
+    onDownload: (() -> Unit)?,
+) {
+    val canDownload = state == PackManager.PackState.NotDownloaded ||
+        state == PackManager.PackState.UpdateAvailable || state is PackManager.PackState.Failed ||
+        (state == PackManager.PackState.Downloaded && downloadedCount == 0)
+    val title: String
+    val detail: String
+    when (state) {
+        PackManager.PackState.NotDownloaded -> {
+            title = "Explore 30 more effects"
+            detail = "On-demand verified profile pack · 5.2 KB"
+        }
+        PackManager.PackState.UpdateAvailable -> {
+            title = "Update effect pack"
+            detail = "Downloads only when tapped · 5.2 KB"
+        }
+        is PackManager.PackState.Downloading -> {
+            val progress = if (state.fraction >= 0f) " · ${(state.fraction * 100).toInt()}%" else ""
+            title = "Downloading effect pack$progress"
+            detail = "Verified effect profiles"
+        }
+        PackManager.PackState.Downloaded -> if (downloadedCount == 0) {
+            title = "Reinstall effect pack"
+            detail = "No verified profiles are currently available"
+        } else {
+            title = "Effect pack ready"
+            detail = "$downloadedCount verified profiles · shaders stay in the app"
+        }
+        is PackManager.PackState.Failed -> {
+            title = "Retry effect pack download"
+            detail = state.reason.take(80)
+        }
+        PackManager.PackState.ComingSoon -> {
+            title = "Downloadable effects unavailable"
+            detail = "Built-in effects are ready to use"
+        }
+        null -> {
+            title = "Checking downloadable effects…"
+            detail = "Built-in effects are ready to use"
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(ApexPalette.BgElevated)
+            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
+            .clickable(enabled = canDownload && onDownload != null) { onDownload?.invoke() }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("fx-search-download-pack"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = if (canDownload) ApexPalette.NeonCyan else ApexPalette.TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+            )
+            Text(detail, color = ApexPalette.TextSecondary, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (canDownload) {
+            Text("Download", color = ApexPalette.NeonCyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

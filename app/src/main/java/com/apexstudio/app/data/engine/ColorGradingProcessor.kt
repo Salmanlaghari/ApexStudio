@@ -2,13 +2,15 @@ package com.apexstudio.app.data.engine
 
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import com.apexstudio.app.data.adjust.SelectiveHslMath
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import kotlin.math.*
 
 /**
- * 12-factor photographic color grading engine:
+ * 13-factor photographic color grading engine:
  * Brightness, Contrast (S-curve), Exposure (2^EV), Highlights, Shadows,
  * Saturation, Vibrance, Warmth (Kelvin shift), Tint (Green-Magenta),
- * Sharpness (Laplacian convolution), Fade, Hue Shift.
+ * Sharpness (Laplacian convolution), Fade, Hue Shift, Selective HSL.
  */
 object ColorGradingProcessor {
 
@@ -24,7 +26,8 @@ object ColorGradingProcessor {
         val tint: Float = 0f,          // -1..1
         val sharpness: Float = 0f,     // 0..1
         val fade: Float = 0f,          // 0..1
-        val hueShift: Float = 0f       // 0..360 deg
+        val hueShift: Float = 0f,      // 0..360 deg
+        val selectiveHsl: SelectiveHslAdjustments = SelectiveHslAdjustments()
     )
 
     fun process(source: Bitmap, params: ColorParams): Bitmap {
@@ -36,6 +39,7 @@ object ColorGradingProcessor {
 
         val expFactor = 2f.pow(params.exposure)
         val satFactor = params.saturation.coerceAtLeast(0f)
+        val hslOutput = FloatArray(3)
 
         for (i in pixels.indices) {
             val p = pixels[i]
@@ -87,6 +91,11 @@ object ColorGradingProcessor {
             r = r * (1f - params.fade) + params.fade * 0.2f
             g = g * (1f - params.fade) + params.fade * 0.2f
             b = b * (1f - params.fade) + params.fade * 0.2f
+
+            SelectiveHslMath.apply(r, g, b, params.selectiveHsl, hslOutput)
+            r = hslOutput[0]
+            g = hslOutput[1]
+            b = hslOutput[2]
 
             val ir = (r.coerceIn(0f, 1f) * 255f).toInt()
             val ig = (g.coerceIn(0f, 1f) * 255f).toInt()

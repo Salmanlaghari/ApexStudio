@@ -353,6 +353,7 @@ fun VideoPreviewArea(
                     onCropChange = { onPhotoCropRectChange?.invoke(it) },
                     modifier = Modifier.fillMaxSize(),
                     isCoverMode = isCoverMode,
+                    projectSelectiveHsl = adjustments.selectiveHsl,
                     onImageAspectRatioChange = { photoAspectRatio = it }
                 )
             } else if (previewPlayer != null) {

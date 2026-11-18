@@ -9,6 +9,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BaseGlShaderProgram
 import androidx.media3.effect.GlEffect
 import androidx.media3.effect.GlShaderProgram
+import com.apexstudio.app.domain.model.HslColorRange
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import com.apexstudio.app.domain.model.VideoAdjustments
 
 /**
@@ -64,7 +66,8 @@ class AdjustmentsGlEffect(
     private val denoiseProvider: (() -> Float)? = null,
     private val sharpnessProvider: (() -> Float)? = null,
     private val fadeProvider: (() -> Float)? = null,
-    private val vibranceProvider: (() -> Float)? = null
+    private val vibranceProvider: (() -> Float)? = null,
+    private val selectiveHslProvider: (() -> SelectiveHslAdjustments)? = null
 ) : GlEffect {
 
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram {
@@ -92,6 +95,7 @@ class AdjustmentsGlEffect(
             sharpnessProvider = sharpnessProvider,
             fadeProvider = fadeProvider,
             vibranceProvider = vibranceProvider,
+            selectiveHslProvider = selectiveHslProvider,
             useHdr = useHdr
         )
     }
@@ -121,6 +125,7 @@ class AdjustmentsGlEffect(
         private val sharpnessProvider: (() -> Float)?,
         private val fadeProvider: (() -> Float)?,
         private val vibranceProvider: (() -> Float)?,
+        private val selectiveHslProvider: (() -> SelectiveHslAdjustments)?,
         useHdr: Boolean
     ) : BaseGlShaderProgram(useHdr, TEXTURE_POOL_CAPACITY) {
 
@@ -151,6 +156,9 @@ class AdjustmentsGlEffect(
         private var sharpness: Float = adjustments.sharpness
         private var fade: Float = adjustments.fade
         private var vibrance: Float = adjustments.vibrance
+        private var selectiveHsl: SelectiveHslAdjustments = adjustments.selectiveHsl
+        private val hslRanges = HslColorRange.values()
+        private val hslUniformBuffers = Array(hslRanges.size) { FloatArray(4) }
         private var texelWidth: Float = 0f
         private var texelHeight: Float = 0f
         // Actual input resolution for the grain pattern (>= 1, guarded
@@ -221,6 +229,7 @@ class AdjustmentsGlEffect(
                 sharpnessProvider?.let { sharpness = it() }
                 fadeProvider?.let { fade = it() }
                 vibranceProvider?.let { vibrance = it() }
+                selectiveHslProvider?.let { selectiveHsl = it() }
 
                 // A zero input dimension yields a zero texel (see
                 // configure()); disable the spatial ops explicitly rather
@@ -250,6 +259,16 @@ class AdjustmentsGlEffect(
                 glProgram.setFloatUniform("uSharpness", if (spatialValid) sharpness else 0f)
                 glProgram.setFloatUniform("uFade", fade)
                 glProgram.setFloatUniform("uVibrance", vibrance)
+                for (index in hslRanges.indices) {
+                    val range = hslRanges[index]
+                    val band = selectiveHsl.forRange(range)
+                    val uniform = hslUniformBuffers[index]
+                    uniform[0] = band.hueShift.coerceIn(-180f, 180f)
+                    uniform[1] = band.saturation.coerceIn(-1f, 1f)
+                    uniform[2] = band.lightness.coerceIn(-1f, 1f)
+                    uniform[3] = range.centerDegrees
+                    glProgram.setFloatsUniform(range.shaderUniformName, uniform)
+                }
                 glProgram.setFloatsUniform("uTexelSize", floatArrayOf(texelWidth, texelHeight))
                 glProgram.setFloatsUniform("uResolution", floatArrayOf(inputResW, inputResH))
                 glProgram.bindAttributesAndUniforms()
@@ -336,6 +355,12 @@ class AdjustmentsGlEffect(
             uniform float uSharpness;
             uniform float uFade;
             uniform float uVibrance;
+            uniform vec4 uHslRed;
+            uniform vec4 uHslYellow;
+            uniform vec4 uHslGreen;
+            uniform vec4 uHslCyan;
+            uniform vec4 uHslBlue;
+            uniform vec4 uHslMagenta;
             uniform vec2 uTexelSize;
             uniform vec2 uResolution;
 
@@ -382,6 +407,91 @@ class AdjustmentsGlEffect(
                               0.587 - 0.587 * cosA - 1.050 * sinA,
                               0.114 + 0.886 * cosA - 0.203 * sinA);
                 return vec3(dot(c, r), dot(c, g), dot(c, b));
+            }
+
+            float hslRangeWeight(float hueDegrees, float centerDegrees) {
+                float distanceDegrees = abs(hueDegrees - centerDegrees);
+                distanceDegrees = min(distanceDegrees, 360.0 - distanceDegrees);
+                return 1.0 - smoothstep(0.0, 60.0, distanceDegrees);
+            }
+
+            vec3 rgbToHsl(vec3 color) {
+                float maximum = max(max(color.r, color.g), color.b);
+                float minimum = min(min(color.r, color.g), color.b);
+                float delta = maximum - minimum;
+                float lightness = (maximum + minimum) * 0.5;
+                float saturation = delta <= 0.00001 ? 0.0 : delta / max(1.0 - abs(2.0 * lightness - 1.0), 0.00001);
+                float hue = 0.0;
+                if (delta > 0.00001) {
+                    if (maximum == color.r) {
+                        hue = 60.0 * mod((color.g - color.b) / delta, 6.0);
+                    } else if (maximum == color.g) {
+                        hue = 60.0 * ((color.b - color.r) / delta + 2.0);
+                    } else {
+                        hue = 60.0 * ((color.r - color.g) / delta + 4.0);
+                    }
+                    if (hue < 0.0) hue += 360.0;
+                }
+                return vec3(hue, clamp(saturation, 0.0, 1.0), clamp(lightness, 0.0, 1.0));
+            }
+
+            vec3 hslToRgb(vec3 hsl) {
+                float chroma = (1.0 - abs(2.0 * hsl.z - 1.0)) * hsl.y;
+                float hueSector = mod(hsl.x, 360.0) / 60.0;
+                float secondary = chroma * (1.0 - abs(mod(hueSector, 2.0) - 1.0));
+                vec3 rgb1;
+                if (hueSector < 1.0) rgb1 = vec3(chroma, secondary, 0.0);
+                else if (hueSector < 2.0) rgb1 = vec3(secondary, chroma, 0.0);
+                else if (hueSector < 3.0) rgb1 = vec3(0.0, chroma, secondary);
+                else if (hueSector < 4.0) rgb1 = vec3(0.0, secondary, chroma);
+                else if (hueSector < 5.0) rgb1 = vec3(secondary, 0.0, chroma);
+                else rgb1 = vec3(chroma, 0.0, secondary);
+                return rgb1 + vec3(hsl.z - chroma * 0.5);
+            }
+
+            vec3 applySelectiveHsl(vec3 color) {
+                float active = dot(abs(uHslRed.xyz), vec3(1.0)) +
+                    dot(abs(uHslYellow.xyz), vec3(1.0)) +
+                    dot(abs(uHslGreen.xyz), vec3(1.0)) +
+                    dot(abs(uHslCyan.xyz), vec3(1.0)) +
+                    dot(abs(uHslBlue.xyz), vec3(1.0)) +
+                    dot(abs(uHslMagenta.xyz), vec3(1.0));
+                if (active < 0.000001) return color;
+
+                vec3 hsl = rgbToHsl(clamp(color, 0.0, 1.0));
+                if (hsl.y <= 0.00001) return color;
+                float hueShift = 0.0;
+                float saturationShift = 0.0;
+                float lightnessShift = 0.0;
+                float weight = hslRangeWeight(hsl.x, uHslRed.w);
+                hueShift += uHslRed.x * weight;
+                saturationShift += uHslRed.y * weight;
+                lightnessShift += uHslRed.z * weight;
+                weight = hslRangeWeight(hsl.x, uHslYellow.w);
+                hueShift += uHslYellow.x * weight;
+                saturationShift += uHslYellow.y * weight;
+                lightnessShift += uHslYellow.z * weight;
+                weight = hslRangeWeight(hsl.x, uHslGreen.w);
+                hueShift += uHslGreen.x * weight;
+                saturationShift += uHslGreen.y * weight;
+                lightnessShift += uHslGreen.z * weight;
+                weight = hslRangeWeight(hsl.x, uHslCyan.w);
+                hueShift += uHslCyan.x * weight;
+                saturationShift += uHslCyan.y * weight;
+                lightnessShift += uHslCyan.z * weight;
+                weight = hslRangeWeight(hsl.x, uHslBlue.w);
+                hueShift += uHslBlue.x * weight;
+                saturationShift += uHslBlue.y * weight;
+                lightnessShift += uHslBlue.z * weight;
+                weight = hslRangeWeight(hsl.x, uHslMagenta.w);
+                hueShift += uHslMagenta.x * weight;
+                saturationShift += uHslMagenta.y * weight;
+                lightnessShift += uHslMagenta.z * weight;
+
+                hsl.x = mod(hsl.x + hueShift + 360.0, 360.0);
+                hsl.y = clamp(hsl.y + saturationShift, 0.0, 1.0);
+                hsl.z = clamp(hsl.z + lightnessShift, 0.0, 1.0);
+                return hslToRgb(hsl);
             }
 
             // Full per-pixel color chain (steps 1-11, then 15-17 below).
@@ -491,6 +601,10 @@ class AdjustmentsGlEffect(
                     float midtoneWeight = 1.0 - abs(luma - 0.5) * 2.0;
                     c += vec3(uBrilliance * 0.25 * midtoneWeight);
                 }
+
+                // Selective HSL is last in the shared grade chain, so the
+                // same hue-band result is used by preview and Transformer export.
+                c = applySelectiveHsl(c);
 
                 return c;
             }

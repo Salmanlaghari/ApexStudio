@@ -25,10 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.VideoAdjustments
+import com.apexstudio.app.domain.model.HslColorRange
 import com.apexstudio.app.ui.theme.EditorPalette as ApexPalette
 
 private data class AdjustItem(
@@ -44,12 +46,13 @@ private data class AdjustItem(
 
 /**
  * Adjustment tabs (photo-editor parity easy layout).
- * Tone = light/exposure controls, Colours = color controls,
- * Details = sharpness/texture controls.
+ * Tone = light/exposure controls, Colours = global color controls,
+ * HSL = selective color ranges, Details = sharpness/texture controls.
  */
 private enum class AdjustTab(val title: String) {
     TONE("Tone"),
     COLOURS("Colours"),
+    HSL("HSL"),
     DETAILS("Details")
 }
 
@@ -106,7 +109,9 @@ fun AdjustPanel(
     onReset: () -> Unit,
     onResetAll: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compareMode: Boolean = false,
+    onToggleCompare: () -> Unit = {}
 ) {
     var activeTab by remember { mutableStateOf(AdjustTab.TONE) }
     var selectedAdjustId by remember { mutableStateOf("hdr") }
@@ -189,7 +194,7 @@ fun AdjustPanel(
                         }
                     }
                     Text(
-                        "${ADJUST_ITEMS.size} Professional Parameters • Real-time Hardware GL",
+                        "${ADJUST_ITEMS.size + HslColorRange.values().size * 3} Parameters • Live GL",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )
@@ -197,6 +202,23 @@ fun AdjustPanel(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (compareMode) ApexPalette.NeonCyan.copy(alpha = 0.2f) else ApexPalette.BgElevated)
+                        .border(0.5.dp, ApexPalette.NeonCyan.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                        .clickable { onToggleCompare() }
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .testTag("adjust_compare_toggle")
+                ) {
+                    Text(
+                        if (compareMode) "After" else "Before",
+                        color = ApexPalette.NeonCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -225,15 +247,19 @@ fun AdjustPanel(
 
         Spacer(Modifier.height(8.dp))
 
-        // TAB ROW: Tone | Colours | Details (photo-editor parity easy layout)
+        // TAB ROW: Tone | Colours | HSL | Details
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             AdjustTab.values().forEach { tab ->
                 val isActive = tab == activeTab
-                val modifiedCount = TAB_TOOLS[tab].orEmpty().count { id ->
-                    ITEM_BY_ID[id]?.let { isModified(it, adjustments) } == true
+                val modifiedCount = if (tab == AdjustTab.HSL) {
+                    if (adjustments.selectiveHsl.isDefault) 0 else 1
+                } else {
+                    TAB_TOOLS[tab].orEmpty().count { id ->
+                        ITEM_BY_ID[id]?.let { isModified(it, adjustments) } == true
+                    }
                 }
                 Column(
                     modifier = Modifier
@@ -282,15 +308,20 @@ fun AdjustPanel(
 
         Spacer(Modifier.height(4.dp))
 
-        // TOOL GRID for the active tab
-        Text(
-            "SELECT PARAMETER (${tabItems.size} TOOLS)",
-            color = ApexPalette.TextSecondary,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 0.8.sp
-        )
-        Spacer(Modifier.height(4.dp))
+        if (activeTab == AdjustTab.HSL) {
+            SelectiveHslControls(adjustments.selectiveHsl) { update ->
+                onUpdate { current -> current.copy(selectiveHsl = update(current.selectiveHsl)) }
+            }
+        } else {
+            // TOOL GRID for Tone, Colours or Details.
+            Text(
+                "SELECT PARAMETER (${tabItems.size} TOOLS)",
+                color = ApexPalette.TextSecondary,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
+            Spacer(Modifier.height(4.dp))
 
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -465,6 +496,8 @@ fun AdjustPanel(
         }
 
         Spacer(Modifier.height(8.dp))
+
+        }
 
         // Quick Preset Color Grade Buttons
         Row(

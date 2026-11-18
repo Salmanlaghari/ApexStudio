@@ -787,6 +787,7 @@ private fun EditorScreenContent(
         state.lutCompareMode,
         globalFxBinding,
         state.adjustments,
+        state.adjustmentsCompareMode,
         selectedKeyframes,
         sharedPreviewClip,
         projectColorEffects
@@ -828,7 +829,7 @@ private fun EditorScreenContent(
                     )
                 )
             }
-            if (!state.lutCompareMode && !state.adjustments.isDefault) {
+            if (!state.lutCompareMode && !state.adjustmentsCompareMode && !state.adjustments.isDefault) {
                 val adjustMatrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
                     filterId = null,
                     intensity = 0f,
@@ -838,11 +839,11 @@ private fun EditorScreenContent(
             }
             // Video Adjustments v2: the non-matrix adjustments
             // (highlights/shadows/sharpness/fade/vignette/grain/lightness/
-            // whites/blacks/hue/vibrance/clarity/denoise) can't be expressed
+            // whites/blacks/hue/vibrance/clarity/denoise/selective HSL) can't be expressed
             // as a color matrix, so they run in the live GL shader below.
             // Base = all-default VideoAdjustments so the matrix-covered
             // knobs don't double-apply; only the v2 providers are live.
-            if (!state.lutCompareMode) run {
+            if (!state.lutCompareMode && !state.adjustmentsCompareMode) run {
                 val v2 = state.adjustments
                 if (v2.hasNonMatrixAdjustments) {
                     add(
@@ -860,7 +861,8 @@ private fun EditorScreenContent(
                             hueProvider = { state.adjustments.hue },
                             vibranceProvider = { state.adjustments.vibrance },
                             clarityProvider = { state.adjustments.clarity },
-                            denoiseProvider = { state.adjustments.denoise }
+                            denoiseProvider = { state.adjustments.denoise },
+                            selectiveHslProvider = { state.adjustments.selectiveHsl }
                         )
                     )
                 }
@@ -897,6 +899,7 @@ private fun EditorScreenContent(
         transitionProjectColorEffectsByClipId,
         state.filterIntensity,
         state.adjustments,
+        state.adjustmentsCompareMode,
         state.gpuFilterCompareMode,
         state.lutCompareMode
     ) {
@@ -965,7 +968,7 @@ private fun EditorScreenContent(
                         }
                     ))
                 }
-                if (!state.lutCompareMode && !state.adjustments.isDefault) {
+                if (!state.lutCompareMode && !state.adjustmentsCompareMode && !state.adjustments.isDefault) {
                     val matrix = com.apexstudio.app.data.filter.FilterColorMatrix.getCombinedMatrix(
                         filterId = null, intensity = 0f, adjustments = state.adjustments
                     )
@@ -985,7 +988,8 @@ private fun EditorScreenContent(
                             hueProvider = { state.adjustments.hue },
                             vibranceProvider = { state.adjustments.vibrance },
                             clarityProvider = { state.adjustments.clarity },
-                            denoiseProvider = { state.adjustments.denoise }
+                            denoiseProvider = { state.adjustments.denoise },
+                            selectiveHslProvider = { state.adjustments.selectiveHsl }
                         ))
                     }
                 }

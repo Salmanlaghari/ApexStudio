@@ -1645,6 +1645,59 @@ enum class ExportQuality(val label: String) {
     HIGH("High"), MEDIUM("Med"), LOW("Low")
 }
 
+/** Selective hue ranges used by the editor's HSL colour controls. */
+enum class HslColorRange(val displayName: String, val centerDegrees: Float, val shaderUniformName: String) {
+    RED("Red", 0f, "uHslRed"),
+    YELLOW("Yellow", 60f, "uHslYellow"),
+    GREEN("Green", 120f, "uHslGreen"),
+    CYAN("Cyan", 180f, "uHslCyan"),
+    BLUE("Blue", 240f, "uHslBlue"),
+    MAGENTA("Magenta", 300f, "uHslMagenta")
+}
+
+@Serializable
+data class HslBandAdjustment(
+    @FloatRange(from = -180.0, to = 180.0) val hueShift: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0) val saturation: Float = 0f,
+    @FloatRange(from = -1.0, to = 1.0) val lightness: Float = 0f
+) {
+    val isDefault: Boolean get() = hueShift == 0f && saturation == 0f && lightness == 0f
+}
+
+/** Per-colour HSL offsets; all values default to a neutral, legacy-safe grade. */
+@Serializable
+data class SelectiveHslAdjustments(
+    val red: HslBandAdjustment = HslBandAdjustment(),
+    val yellow: HslBandAdjustment = HslBandAdjustment(),
+    val green: HslBandAdjustment = HslBandAdjustment(),
+    val cyan: HslBandAdjustment = HslBandAdjustment(),
+    val blue: HslBandAdjustment = HslBandAdjustment(),
+    val magenta: HslBandAdjustment = HslBandAdjustment()
+) {
+    val isDefault: Boolean
+        get() = red.isDefault && yellow.isDefault && green.isDefault &&
+            cyan.isDefault && blue.isDefault && magenta.isDefault
+
+    fun forRange(range: HslColorRange): HslBandAdjustment = when (range) {
+        HslColorRange.RED -> red
+        HslColorRange.YELLOW -> yellow
+        HslColorRange.GREEN -> green
+        HslColorRange.CYAN -> cyan
+        HslColorRange.BLUE -> blue
+        HslColorRange.MAGENTA -> magenta
+    }
+
+    fun updateRange(range: HslColorRange, transform: (HslBandAdjustment) -> HslBandAdjustment): SelectiveHslAdjustments =
+        when (range) {
+            HslColorRange.RED -> copy(red = transform(red))
+            HslColorRange.YELLOW -> copy(yellow = transform(yellow))
+            HslColorRange.GREEN -> copy(green = transform(green))
+            HslColorRange.CYAN -> copy(cyan = transform(cyan))
+            HslColorRange.BLUE -> copy(blue = transform(blue))
+            HslColorRange.MAGENTA -> copy(magenta = transform(magenta))
+        }
+}
+
 @Serializable
 data class VideoAdjustments(
     /** SDR tone-map/color grade only; this field does not signal or produce HDR output. Kept as `hdr` for saved-project compatibility. */
@@ -1679,7 +1732,8 @@ data class VideoAdjustments(
     @FloatRange(from = 0.0, to = 1.0)
     val denoise: Float = 0f,
     @FloatRange(from = -1.0, to = 1.0)
-    val vibrance: Float = 0f
+    val vibrance: Float = 0f,
+    val selectiveHsl: SelectiveHslAdjustments = SelectiveHslAdjustments()
 ) {
     val isDefault: Boolean
         get() = hdr == 0f &&
@@ -1702,7 +1756,8 @@ data class VideoAdjustments(
                 hue == 0f &&
                 clarity == 0f &&
                 denoise == 0f &&
-                vibrance == 0f
+                vibrance == 0f &&
+                selectiveHsl.isDefault
 
     /**
      * True when any adjustment that can't be expressed as a color matrix is
@@ -1714,7 +1769,8 @@ data class VideoAdjustments(
         get() = highlights != 0f || shadows != 0f ||
                 sharpness != 0f || fade != 0f || vignette != 0f || grain != 0f ||
                 lightness != 0f || whites != 0f || blacks != 0f || hue != 0f ||
-                vibrance != 0f || clarity != 0f || denoise != 0f
+                vibrance != 0f || clarity != 0f || denoise != 0f ||
+                !selectiveHsl.isDefault
 }
 
 /**

@@ -6,8 +6,11 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.net.Uri
+import com.apexstudio.app.data.engine.ColorGradingProcessor
+import com.apexstudio.app.domain.model.HslBandAdjustment
 import com.apexstudio.app.domain.model.PhotoCropRect
 import com.apexstudio.app.domain.model.PhotoEditSettings
+import com.apexstudio.app.domain.model.SelectiveHslAdjustments
 import com.apexstudio.app.domain.model.VideoAdjustments
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
@@ -67,6 +70,35 @@ class PhotoPreviewExportParityTest {
             if (preview !== previewSource) preview.recycle()
             previewSource.recycle()
             export.recycle()
+        }
+    }
+
+    @Test fun selectiveHslPhotoPreviewMatchesPhotoEditsThenGlobalGradeAndBeforeIsNeutral() {
+        val source = markerBitmap(128, 96, enhanced = false)
+        val exportSource = markerBitmap(128, 96, enhanced = false)
+        val photoSettings = PhotoEditSettings(
+            adjustments = VideoAdjustments(brightness = 0.08f, contrast = 1.07f, saturation = 1.04f)
+        )
+        val projectHsl = SelectiveHslAdjustments(
+            red = HslBandAdjustment(hueShift = 60f, saturation = 0.1f),
+            blue = HslBandAdjustment(lightness = -0.08f)
+        )
+        val preview = PhotoEditRenderer.applyEdits(source, photoSettings, null, projectHsl)
+        val photoEditedExport = PhotoEditRenderer.applyEdits(exportSource, photoSettings, null)
+        val export = ColorGradingProcessor.process(
+            photoEditedExport,
+            ColorGradingProcessor.ColorParams(selectiveHsl = projectHsl)
+        )
+        val before = PhotoEditRenderer.applyEdits(source, photoSettings, null)
+        try {
+            assertArrayEquals(bitmapPixels(preview), bitmapPixels(export))
+            assertArrayEquals(bitmapPixels(photoEditedExport), bitmapPixels(before))
+            assertTrue(Color.green(preview.getPixel(0, 0)) > Color.green(source.getPixel(0, 0)))
+            assertEquals(Color.RED, source.getPixel(0, 0))
+        } finally {
+            listOf(preview, photoEditedExport, export, before, source, exportSource)
+                .distinct()
+                .forEach { if (!it.isRecycled) it.recycle() }
         }
     }
 

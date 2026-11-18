@@ -95,9 +95,31 @@ jobs:
           emulator-boot-timeout: 600
           disable-animations: true
           script: |
-            set -eu
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
+            set -euo pipefail
+            gradle_with_plugin_resolution_retry() {
+              local attempt=1
+              local max_attempts=2
+              local status
+              local log_file
+              log_file="$(mktemp)"
+              while true; do
+                if ./gradlew "$@" --no-daemon 2>&1 | tee "$log_file"; then
+                  rm -f "$log_file"
+                  return 0
+                else
+                  status=$?
+                fi
+                if [ "$attempt" -ge "$max_attempts" ] || ! grep -Eq 'Plugin \[id:.*\] was not found in any of the following sources:|Could not resolve plugin artifact' "$log_file"; then
+                  rm -f "$log_file"
+                  return "$status"
+                fi
+                echo '::warning::Gradle plugin resolution failed; retrying once in 15 seconds.'
+                sleep 15
+                attempt=$((attempt + 1))
+              done
+            }
+            gradle_with_plugin_resolution_retry :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.export.ExportTimestampParityInstrumentedTest
+            gradle_with_plugin_resolution_retry :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.apexstudio.app.data.effect.StickerGlLifecycleTest
 
       - name: Upload instrumentation test results
         if: always()

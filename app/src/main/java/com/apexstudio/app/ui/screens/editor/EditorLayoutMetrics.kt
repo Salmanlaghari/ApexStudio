@@ -6,9 +6,11 @@ import androidx.compose.ui.unit.dp
 internal object EditorLayoutMetrics {
     val TopBarHeight = 52.dp
     val TopBarHorizontalPadding = 10.dp
-    val PlaybackBarHeight = 52.dp
+    /** Timecode plus a comfortable 44dp transport-control row. */
+    val PlaybackBarHeight = 60.dp
     val TimelineActionHeight = 48.dp
-    val TimelineToolbarHeight = 40.dp
+    /** Two 44dp phone-first rows with a small inset and separator. */
+    val TimelineToolbarHeight = 96.dp
     /** 46dp reference toolbar row plus its 4dp top/bottom inset. */
     val ReferenceToolbarHeight = 54.dp
     val PreviewCornerRadius = 14.dp

@@ -73,8 +73,14 @@ class ProfessionalTimelineToolbarTest {
         val toolbar = compose.onNodeWithTag("professional-timeline-toolbar").fetchSemanticsNode().boundsInRoot
         val ripple = compose.onNodeWithTag("timeline-ripple-toggle").fetchSemanticsNode().boundsInRoot
         val focus = compose.onNodeWithTag("timeline-focus-toggle").fetchSemanticsNode().boundsInRoot
+        val snap = compose.onNodeWithContentDescription("Magnetic snapping disabled").fetchSemanticsNode().boundsInRoot
+        val zoomOut = compose.onNodeWithContentDescription("Zoom timeline out").fetchSemanticsNode().boundsInRoot
         assertTrue("Timeline controls must stay within a compact phone width: $toolbar root=$root", toolbar.right <= root.right)
         assertTrue("Ripple control must stay within a compact phone width: $ripple root=$root", ripple.right <= root.right)
         assertTrue("Focus control must stay within a compact phone width: $focus root=$root", focus.right <= root.right)
+        assertTrue("Snap target should be at least 44dp tall and wide: $snap", snap.width >= 44f && snap.height >= 44f)
+        assertTrue("Ripple target should be at least 44dp tall and wide: $ripple", ripple.width >= 44f && ripple.height >= 44f)
+        assertTrue("Focus target should be at least 44dp: $focus", focus.width >= 44f && focus.height >= 44f)
+        assertTrue("Zoom target should be at least 44dp: $zoomOut", zoomOut.width >= 44f && zoomOut.height >= 44f)
     }
 }

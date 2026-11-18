@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.util.TimeFormat
 
-/** Flat transport row beneath the preview, wired to the editor's real actions. */
+/** Branded transport row beneath the preview, wired to the editor's real actions. */
 @Composable
 fun PlaybackControlBar(
     isPlaying: Boolean = false,
@@ -63,8 +63,8 @@ fun PlaybackControlBar(
             .testTag("editor-playback-controls")
     ) {
         val compact = maxWidth < 360.dp
-        val iconWidth = if (compact) 34.dp else 38.dp
-        val playWidth = if (compact) 40.dp else 44.dp
+        val iconWidth = if (compact) 40.dp else 42.dp
+        val playWidth = if (compact) 44.dp else 48.dp
         val sideBalanceWidth = 48.dp - iconWidth
 
         Text(
@@ -82,13 +82,20 @@ fun PlaybackControlBar(
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.align(Alignment.TopCenter).testTag("playback-timecode")
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 2.dp)
+                .clip(RoundedCornerShape(7.dp))
+                .background(EditorPalette.BgSurface)
+                .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(7.dp))
+                .padding(horizontal = 6.dp, vertical = 1.dp)
+                .testTag("playback-timecode")
         )
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(44.dp)
                 .align(Alignment.BottomCenter)
                 .padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -143,14 +150,14 @@ private fun TransportIconButton(
 ) {
     Box(
         modifier = Modifier
-            .size(width = buttonWidth, height = 40.dp)
+            .size(width = buttonWidth, height = 44.dp)
+            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
+            .semantics { contentDescription = description }
             .padding(2.dp)
             .clip(if (prominent) CircleShape else RoundedCornerShape(8.dp))
             .then(if (prominent) Modifier
-                .background(EditorPalette.BgElevated, CircleShape)
-                .border(1.dp, EditorPalette.TrackBlue, CircleShape) else Modifier)
-            .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
-            .semantics { contentDescription = description },
+                .background(EditorPalette.GradientPrimary, CircleShape)
+                .border(1.dp, EditorPalette.NeonCyan.copy(alpha = 0.82f), CircleShape) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -175,7 +182,7 @@ private fun KeyframeDiamondAddButton(
 ) {
     val color = if (!enabled) EditorPalette.TextMuted else if (hasKeyframeAtPlayhead) EditorPalette.NeonCyan else EditorPalette.TextSecondary
     Box(
-        Modifier.size(width = 48.dp, height = 40.dp)
+        Modifier.size(width = 48.dp, height = 44.dp)
             .clickable(enabled = enabled, onClick = onClick, role = Role.Button)
             .testTag("playback-keyframe-button")
             .semantics {

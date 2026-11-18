@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -13,6 +14,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.domain.model.HslBandAdjustment
 import com.apexstudio.app.domain.model.VideoAdjustments
@@ -66,5 +69,21 @@ class AdjustPanelSelectiveHslTest {
         compose.onNodeWithTag("hsl_reset_range").performClick()
         compose.waitForIdle()
         assertEquals(HslBandAdjustment(), adjustments.value.selectiveHsl.yellow)
+
+        compose.onNodeWithTag("hsl_saturation_slider").assertHeightIsAtLeast(48.dp)
+        val swatchRow = compose.onNodeWithTag("hsl_color_range_row")
+        swatchRow.performTouchInput { swipeLeft() }
+        compose.waitForIdle()
+        val rowBounds = swatchRow.fetchSemanticsNode().boundsInRoot
+        val magentaBounds = compose.onNodeWithTag("hsl_range_magenta").fetchSemanticsNode().boundsInRoot
+        assertTrue(
+            "Magenta swatch should be fully reachable on a compact phone: row=$rowBounds item=$magentaBounds",
+            magentaBounds.left >= rowBounds.left && magentaBounds.right <= rowBounds.right
+        )
+
+        compose.onNodeWithText("Colours").performClick()
+        compose.onNodeWithTag("adjust_active_tool_title").assertTextEquals("Saturation")
+        compose.onNodeWithText("Details").performClick()
+        compose.onNodeWithTag("adjust_active_tool_title").assertTextEquals("Sharpness")
     }
 }

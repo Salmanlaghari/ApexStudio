@@ -116,14 +116,7 @@ fun AdjustPanel(
     var activeTab by remember { mutableStateOf(AdjustTab.TONE) }
     var selectedAdjustId by remember { mutableStateOf("hdr") }
 
-    // Keep the selected tool inside the active tab (side-effect, so it
-    // runs in LaunchedEffect rather than during composition).
     val tabItems = TAB_TOOLS[activeTab].orEmpty().mapNotNull { ITEM_BY_ID[it] }
-    LaunchedEffect(activeTab) {
-        if (tabItems.none { it.id == selectedAdjustId } && tabItems.isNotEmpty()) {
-            selectedAdjustId = tabItems.first().id
-        }
-    }
     val activeItem = ITEM_BY_ID[selectedAdjustId] ?: tabItems.firstOrNull() ?: ADJUST_ITEMS.first()
     val currentValue = activeItem.getValue(adjustments)
 
@@ -263,7 +256,13 @@ fun AdjustPanel(
                 }
                 Column(
                     modifier = Modifier
-                        .clickable { activeTab = tab }
+                        .clickable {
+                            activeTab = tab
+                            val tabTools = TAB_TOOLS[tab].orEmpty()
+                            if (tabTools.isNotEmpty() && selectedAdjustId !in tabTools) {
+                                selectedAdjustId = tabTools.first()
+                            }
+                        }
                         .padding(bottom = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -396,7 +395,8 @@ fun AdjustPanel(
                         activeItem.label,
                         color = ApexPalette.NeonCyan,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.testTag("adjust_active_tool_title")
                     )
                 }
 

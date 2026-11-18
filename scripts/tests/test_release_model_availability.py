@@ -69,6 +69,16 @@ class ReleaseModelAvailabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.ReleaseModelAvailabilityError, "build-identity.properties"):
             MODULE.verify_release_apk(self.apk, self.models_root)
 
+    def test_missing_source_ref_is_reported(self):
+        identity = b"commit=" + b"a" * 40 + b"\nref=\nrun=12345\n"
+        with self.assertRaisesRegex(MODULE.ReleaseModelAvailabilityError, "missing its source ref"):
+            MODULE._parse_build_identity(identity)
+
+    def test_missing_run_id_is_reported(self):
+        identity = b"commit=" + b"a" * 40 + b"\nref=fixture-branch\nrun=\n"
+        with self.assertRaisesRegex(MODULE.ReleaseModelAvailabilityError, "missing its run ID"):
+            MODULE._parse_build_identity(identity)
+
     def test_missing_always_bundled_model_fails(self):
         self._write_apk(omit=(MODULE.ALWAYS_BUNDLED[0],))
         with self.assertRaisesRegex(MODULE.ReleaseModelAvailabilityError, "missing required offline model"):

@@ -281,9 +281,19 @@ class ScreenshotClipToolbarTest {
     @Test fun easyModeMoreShowsSharedActionsOnceAndKeepsThemRouted() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(calls, horizontalProjectLayout = true) }
+        listOf("Trim", "Split", "Text", "Music", "More").forEach { label ->
+            composeRule.onNode(
+                hasText(label).and(hasAnyAncestor(hasTestTag("mobile-editor-edit-tools")))
+            ).assertIsDisplayed()
+        }
+        composeRule.onNodeWithText("Stickers").assertDoesNotExist()
+        composeRule.onNodeWithText("Effects").assertDoesNotExist()
         composeRule.onNodeWithText("More").performClick()
 
-        listOf("AI tools", "Captions", "BG Remove", "Project tools", "History").forEach {
+        listOf(
+            "Stickers", "Effects", "AI tools", "Captions",
+            "BG Remove", "Project tools", "History"
+        ).forEach {
             composeRule.onAllNodesWithText(it).assertCountEquals(1)
         }
         listOf("AI", "Subtitles", "Enhance", "Templates").forEach {
@@ -292,6 +302,8 @@ class ScreenshotClipToolbarTest {
         composeRule.onNodeWithText("Audio").assertDoesNotExist()
         composeRule.onAllNodesWithText("Device Music").assertCountEquals(1)
         listOf(
+            "Stickers" to "stickers",
+            "Effects" to "effects",
             "AI tools" to "ai",
             "Captions" to "captions",
             "BG Remove" to "bg-remover",

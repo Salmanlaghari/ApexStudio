@@ -194,7 +194,7 @@ fun AdjustPanel(
                         }
                     }
                     Text(
-                        "${ADJUST_ITEMS.size + HslColorRange.values().size * 3} Parameters • Live GL",
+                        "${ADJUST_ITEMS.size} global + ${HslColorRange.values().size * 3} HSL",
                         color = ApexPalette.TextTertiary,
                         fontSize = 9.sp
                     )

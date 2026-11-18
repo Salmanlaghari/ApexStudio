@@ -306,7 +306,7 @@ class AdjustmentsGlEffect(
          * slider value:
          *  - uBrightness: -1..1 additive (multiplied by 255 inside)
          *  - uContrast: 0..3 multiplicative
-         *  - uSaturation: 0..3 (1 = no change)
+         *  - uSaturation: 0..2 editor slider range (1 = no change)
          *  - uExposure: -2..2 in stops (2^stops multiplier)
          *  - uTemperature: -1..1 (positive = warmer, scales R↑ B↓)
          *  - uTint: -1..1 (positive = green↑)
@@ -410,6 +410,7 @@ class AdjustmentsGlEffect(
             }
 
             float hslRangeWeight(float hueDegrees, float centerDegrees) {
+                // Matches SelectiveHslMath: full weight at the center, zero at 60°.
                 float distanceDegrees = abs(hueDegrees - centerDegrees);
                 distanceDegrees = min(distanceDegrees, 360.0 - distanceDegrees);
                 return 1.0 - smoothstep(0.0, 60.0, distanceDegrees);

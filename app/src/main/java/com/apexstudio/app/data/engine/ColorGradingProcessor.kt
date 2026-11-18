@@ -26,7 +26,7 @@ object ColorGradingProcessor {
         val tint: Float = 0f,          // -1..1
         val sharpness: Float = 0f,     // 0..1
         val fade: Float = 0f,          // 0..1
-        val hueShift: Float = 0f,      // 0..360 deg
+        val hueShift: Float = 0f,      // -180..180 degrees, matching the GPU control
         val selectiveHsl: SelectiveHslAdjustments = SelectiveHslAdjustments()
     )
 
@@ -39,6 +39,9 @@ object ColorGradingProcessor {
 
         val expFactor = 2f.pow(params.exposure)
         val satFactor = params.saturation.coerceAtLeast(0f)
+        val hueRadians = params.hueShift * (PI.toFloat() / 180f)
+        val hueCos = cos(hueRadians)
+        val hueSin = sin(hueRadians)
         val hslOutput = FloatArray(3)
 
         for (i in pixels.indices) {
@@ -86,6 +89,22 @@ object ColorGradingProcessor {
             r = lum + (r - lum) * (1f + vibBoost)
             g = lum + (g - lum) * (1f + vibBoost)
             b = lum + (b - lum) * (1f + vibBoost)
+
+            // Same YIQ hue-rotation matrix as applyHue() in AdjustmentsGlEffect.
+            if (params.hueShift != 0f) {
+                val sourceR = r
+                val sourceG = g
+                val sourceB = b
+                r = sourceR * (0.299f + 0.701f * hueCos + 0.168f * hueSin) +
+                    sourceG * (0.587f - 0.587f * hueCos + 0.330f * hueSin) +
+                    sourceB * (0.114f - 0.114f * hueCos - 0.497f * hueSin)
+                g = sourceR * (0.299f - 0.299f * hueCos - 0.328f * hueSin) +
+                    sourceG * (0.587f + 0.413f * hueCos + 0.035f * hueSin) +
+                    sourceB * (0.114f - 0.114f * hueCos + 0.292f * hueSin)
+                b = sourceR * (0.299f - 0.299f * hueCos + 1.250f * hueSin) +
+                    sourceG * (0.587f - 0.587f * hueCos - 1.050f * hueSin) +
+                    sourceB * (0.114f + 0.886f * hueCos - 0.203f * hueSin)
+            }
 
             // Fade (lift blacks)
             r = r * (1f - params.fade) + params.fade * 0.2f

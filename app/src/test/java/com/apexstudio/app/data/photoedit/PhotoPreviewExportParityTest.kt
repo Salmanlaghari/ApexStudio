@@ -102,6 +102,22 @@ class PhotoPreviewExportParityTest {
         }
     }
 
+    @Test fun globalHueShiftMatchesTheGpuRotationMatrixForStillPixels() {
+        val source = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888).apply {
+            setPixel(0, 0, Color.RED)
+        }
+        val shifted = ColorGradingProcessor.process(
+            source,
+            ColorGradingProcessor.ColorParams(hueShift = 90f)
+        )
+        try {
+            assertEquals(Color.rgb(119, 0, 255), shifted.getPixel(0, 0))
+        } finally {
+            source.recycle()
+            shifted.recycle()
+        }
+    }
+
     private fun markerBitmap(width: Int, height: Int, enhanced: Boolean): Bitmap =
         Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
             val colors = if (enhanced) {

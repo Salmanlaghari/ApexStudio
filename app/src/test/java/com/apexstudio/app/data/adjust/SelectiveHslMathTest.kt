@@ -48,4 +48,27 @@ class SelectiveHslMathTest {
         )
         assertArrayEquals(floatArrayOf(1f, 0f, 0.5f), output, 0.0001f)
     }
+
+    @Test
+    fun cyanAndBlueBandsShiftColorsAtTheirCenters() {
+        val settings = SelectiveHslAdjustments(
+            cyan = HslBandAdjustment(hueShift = 60f),
+            blue = HslBandAdjustment(hueShift = 60f)
+        )
+        SelectiveHslMath.apply(0f, 1f, 1f, settings, output)
+        assertArrayEquals(floatArrayOf(0f, 0f, 1f), output, 0.0001f)
+
+        SelectiveHslMath.apply(0f, 0f, 1f, settings, output)
+        assertArrayEquals(floatArrayOf(1f, 0f, 1f), output, 0.0001f)
+    }
+
+    @Test
+    fun redBandWrapsAcrossZeroAndHasZeroWeightAtSixtyDegrees() {
+        val settings = SelectiveHslAdjustments(red = HslBandAdjustment(hueShift = 60f))
+        SelectiveHslMath.apply(1f, 0f, 0.5f, settings, output)
+        assertArrayEquals(floatArrayOf(1f, 0f, 0f), output, 0.0001f)
+
+        SelectiveHslMath.apply(1f, 1f, 0f, settings, output)
+        assertArrayEquals(floatArrayOf(1f, 1f, 0f), output, 0.0001f)
+    }
 }

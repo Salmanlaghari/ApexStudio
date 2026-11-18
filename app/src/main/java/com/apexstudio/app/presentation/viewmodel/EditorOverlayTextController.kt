@@ -197,8 +197,39 @@ fun EditorViewModel.moveTextOverlay(
 }
 
 
-fun EditorViewModel.setTextOverlayText(clipId: String, overlayId: String, text: String) =
-    updateTextOverlay(clipId, overlayId) { it.copy(text = text) }
+/** Editing a generated karaoke slice edits its phrase siblings; stale word offsets remain guarded by their source fingerprint. */
+fun EditorViewModel.setTextOverlayText(clipId: String, overlayId: String, text: String) {
+    val initialProject = _state.value.project ?: return
+    val initialOwner = resolveTextOverlayOwner(initialProject.clips, clipId, overlayId) ?: return
+    val groupId = initialOwner.overlay.karaokePhraseGroupId?.takeIf { it.isNotBlank() }
+    if (groupId == null) {
+        updateTextOverlay(clipId, overlayId) { it.copy(text = text) }
+        return
+    }
+
+    var found = false
+    _state.update { state ->
+        found = false
+        val project = state.project ?: return@update state
+        val owner = resolveTextOverlayOwner(project.clips, clipId, overlayId) ?: return@update state
+        if (owner.overlay.karaokePhraseGroupId != groupId) return@update state
+        if (owner.clip.textOverlays.filter { it.karaokePhraseGroupId == groupId }.all { it.text == text }) {
+            return@update state
+        }
+        val updatedClips = project.clips.map { clip ->
+            if (clip.id != owner.clip.id) clip else clip.copy(textOverlays = clip.textOverlays.map { overlay ->
+                if (overlay.karaokePhraseGroupId == groupId && overlay.text != text) {
+                    found = true
+                    overlay.copy(text = text)
+                } else overlay
+            })
+        }
+        if (found) state.copy(
+            project = project.copy(clips = updatedClips).syncSharedTimeline(refreshLegacyAnimation = true)
+        ) else state
+    }
+    if (found) persistProject()
+}
 
 
 fun EditorViewModel.setTextOverlayColor(clipId: String, overlayId: String, colorArgb: Long) =
@@ -275,6 +306,10 @@ fun EditorViewModel.duplicateTextOverlay(clipId: String, overlayId: String) {
                 else owner.id == target.clip.id && overlay.id == overlayId
             }.map { overlay ->
                 overlay.copy(id = newId, projectTextLayerId = newGroupId,
+                    karaokePhraseGroupId = null,
+                    highlightStartUtf16 = null,
+                    highlightEndUtf16 = null,
+                    highlightSourceFingerprint = null,
                     x = placedX, y = placedY)
             }
             owner.copy(textOverlays = owner.textOverlays + copies)

@@ -94,6 +94,8 @@ class EditorWordCaptionTest {
         val overlays = karaokeCaptionOverlaysFor(clip, listOf(phrase), words)
         val highlighted = overlays.filter { TextOverlayKaraoke.validRange(it) != null }
         assertTrue(overlays.all { it.text == "Hello, brave world!" })
+        assertTrue(overlays.all { it.karaokePhraseGroupId == overlays.first().karaokePhraseGroupId })
+        assertNotNull(overlays.first().karaokePhraseGroupId)
         assertEquals(listOf(50L, 300L, 600L), highlighted.map { it.startMs })
         assertEquals(listOf(124L, 424L, 749L), highlighted.map { it.endMs })
         assertFalse(highlighted[0].isActiveAt(125L)) // inclusive persisted end represents the measured [start,end)
@@ -104,6 +106,25 @@ class EditorWordCaptionTest {
         assertNull(TextOverlayKaraoke.validRange(overlays.single { it.isActiveAt(200L) }))
         assertNull(TextOverlayKaraoke.validRange(overlays.single { it.isActiveAt(800L) }))
         assertTrue(overlays.none { it.isActiveAt(1_000L) })
+    }
+
+    @Test fun adjacentIdenticalKaraokePhrasesKeepSeparateGroupIds() {
+        val clip = MediaClip(id = "v", name = "v", uri = "file:///v.mp4", durationMs = 3_000L,
+            trimStartMs = 0L, trimEndMs = 3_000L)
+        val phrase = WhisperCaptionEngine.CaptionSegment("Um, now", 0L, 1_000L)
+        val nextPhrase = WhisperCaptionEngine.CaptionSegment("Um, now", 1_000L, 2_000L)
+        val words = listOf(
+            word("Um", 100L, 200L), word("now", 600L, 800L),
+            word("Um", 1_100L, 1_200L), word("now", 1_500L, 1_700L)
+        )
+
+        val overlays = karaokeCaptionOverlaysFor(clip, listOf(phrase, nextPhrase), words)
+        val firstPhraseIds = overlays.filter { it.startMs < 1_000L }.mapNotNull { it.karaokePhraseGroupId }.distinct()
+        val secondPhraseIds = overlays.filter { it.startMs >= 1_000L }.mapNotNull { it.karaokePhraseGroupId }.distinct()
+
+        assertEquals(1, firstPhraseIds.size)
+        assertEquals(1, secondPhraseIds.size)
+        assertNotEquals(firstPhraseIds.single(), secondPhraseIds.single())
     }
 
     @Test fun constantMainSpeedMapsKaraokeWordBoundariesAtTwoXAndHalfX() {
@@ -138,14 +159,20 @@ class EditorWordCaptionTest {
     @Test fun staleEditedTextDisablesHighlightAndKaraokeFieldsPersist() {
         val source = "A brave phrase"
         val overlay = TextOverlay.of(text = source).copy(highlightStartUtf16 = 2, highlightEndUtf16 = 7,
-            highlightSourceFingerprint = TextOverlayKaraoke.fingerprint(source))
+            highlightSourceFingerprint = TextOverlayKaraoke.fingerprint(source), karaokePhraseGroupId = "phrase-a")
         assertEquals(2, TextOverlayKaraoke.validRange(overlay)?.startUtf16)
         assertNull(TextOverlayKaraoke.validRange(overlay.copy(text = "Manually changed")))
         val restored = Json.decodeFromString<TextOverlay>(Json.encodeToString(overlay))
         assertEquals(overlay.highlightStartUtf16, restored.highlightStartUtf16)
         assertEquals(overlay.highlightEndUtf16, restored.highlightEndUtf16)
         assertEquals(overlay.highlightSourceFingerprint, restored.highlightSourceFingerprint)
+        assertEquals(overlay.karaokePhraseGroupId, restored.karaokePhraseGroupId)
         assertEquals(0xFFFFFF00L, restored.highlightColorArgb)
+    }
+
+    @Test fun legacyTextOverlayJsonWithoutPhraseGroupIdDefaultsToNull() {
+        val restored = Json.decodeFromString<TextOverlay>("""{"id":"legacy-caption","text":"Saved caption"}""")
+        assertNull(restored.karaokePhraseGroupId)
     }
 
     @Test fun legacyWindowsStayInclusiveAndNewProjectRangesAreHalfOpen() {

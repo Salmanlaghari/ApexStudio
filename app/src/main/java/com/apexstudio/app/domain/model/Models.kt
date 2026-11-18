@@ -595,7 +595,10 @@ data class TextOverlay(
     val projectTextLayerId: String? = null,
     // Legacy karaoke generators persist inclusive end frames. New segmented
     // project-clock windows opt into conventional half-open [start, end) ranges.
-    val rangeEndExclusive: Boolean = false
+    val rangeEndExclusive: Boolean = false,
+    // Explicit identity shared by the timed slices of one generated karaoke phrase.
+    // Kept last so older positional constructors remain source-compatible.
+    val karaokePhraseGroupId: String? = null
 ) {
     fun isActiveAt(timeMs: Long): Boolean =
         timeMs >= startMs && if (rangeEndExclusive) timeMs < endMs else timeMs <= endMs

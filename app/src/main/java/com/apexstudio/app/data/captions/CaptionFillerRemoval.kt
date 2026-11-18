@@ -136,19 +136,24 @@ object CaptionFillerWordStream {
             it.presetId == "caption_auto" && it.highlightSourceFingerprint != null &&
                 it.highlightSourceFingerprint == TextOverlayKaraoke.fingerprint(it.text)
         }.sortedWith(compareBy<TextOverlay> { it.startMs }.thenBy { it.endMs }.thenBy { it.id })
-        val result = mutableListOf<CaptionPhraseGroup>()
+        val explicitGroups = eligible
+            .filter { !it.karaokePhraseGroupId.isNullOrBlank() }
+            .groupBy { it.karaokePhraseGroupId!! }
+            .map { (groupId, members) -> CaptionPhraseGroup("$clipId:karaoke:$groupId", members) }
+        val legacyEligible = eligible.filter { it.karaokePhraseGroupId.isNullOrBlank() }
+        val legacyGroups = mutableListOf<CaptionPhraseGroup>()
         var cluster = mutableListOf<TextOverlay>()
         var clusterEnd = Long.MIN_VALUE
         var clusterKey: Pair<String, String>? = null
         fun flush() {
             if (cluster.isNotEmpty()) {
-                val id = "$clipId:${cluster.first().id}"
-                result += CaptionPhraseGroup(id, cluster.toList())
+                val id = "$clipId:legacy:${cluster.first().id}"
+                legacyGroups += CaptionPhraseGroup(id, cluster.toList())
             }
             cluster = mutableListOf()
             clusterEnd = Long.MIN_VALUE
         }
-        eligible.forEach { overlay ->
+        legacyEligible.forEach { overlay ->
             val key = overlay.highlightSourceFingerprint!! to overlay.text
             if (cluster.isNotEmpty() && (key != clusterKey || overlay.startMs > clusterEnd)) flush()
             if (cluster.isEmpty()) clusterKey = key
@@ -156,7 +161,11 @@ object CaptionFillerWordStream {
             clusterEnd = maxOf(clusterEnd, overlayEndExclusive(overlay))
         }
         flush()
-        return result
+        return (explicitGroups + legacyGroups).sortedWith(
+            compareBy<CaptionPhraseGroup> { group ->
+                group.overlays.minOfOrNull(TextOverlay::startMs) ?: Long.MAX_VALUE
+            }.thenBy { it.id }
+        )
     }
 
     fun overlayEndExclusive(overlay: TextOverlay): Long = if (overlay.rangeEndExclusive) {

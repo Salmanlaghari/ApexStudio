@@ -1,6 +1,8 @@
 package com.apexstudio.app.data.captions
 
 import com.apexstudio.app.domain.model.TextOverlayKaraoke
+import com.apexstudio.app.domain.model.MediaClip
+import com.apexstudio.app.domain.model.TextOverlay
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -104,5 +106,62 @@ class CaptionFillerDetectionTest {
             TextOverlayKaraoke.validRange(it)!!.let { range -> range.startUtf16 to range.endUtf16Exclusive }
         })
         assertTrue(updated.all { it.highlightSourceFingerprint == TextOverlayKaraoke.fingerprint("I like it") })
+    }
+
+    @Test
+    fun `phrase groups with equal starts use stable group IDs as a tiebreaker`() {
+        val fingerprint = TextOverlayKaraoke.fingerprint("um")
+        fun slice(overlayId: String, groupId: String) = TextOverlay.of(id = overlayId, text = "um").copy(
+            presetId = "caption_auto",
+            startMs = 100L,
+            endMs = 199L,
+            highlightStartUtf16 = 0,
+            highlightEndUtf16 = 2,
+            highlightSourceFingerprint = fingerprint,
+            karaokePhraseGroupId = groupId
+        )
+        val overlays = listOf(slice("a-overlay", "z-group"), slice("z-overlay", "a-group"))
+        val expectedIds = listOf("clip:karaoke:a-group", "clip:karaoke:z-group")
+
+        assertEquals(expectedIds, CaptionFillerWordStream.phraseGroups("clip", overlays).map { it.id })
+        assertEquals(expectedIds, CaptionFillerWordStream.phraseGroups("clip", overlays.reversed()).map { it.id })
+    }
+
+    @Test
+    fun `explicit phrase IDs keep adjacent identical phrases separate during filler removal`() {
+        val phrase = "um now"
+        val fingerprint = TextOverlayKaraoke.fingerprint(phrase)
+        fun slice(id: String, groupId: String, start: Long, end: Long, wordStart: Int, wordEnd: Int) =
+            TextOverlay.of(text = phrase).copy(
+                id = id,
+                presetId = "caption_auto",
+                startMs = start,
+                endMs = end,
+                highlightStartUtf16 = wordStart,
+                highlightEndUtf16 = wordEnd,
+                highlightSourceFingerprint = fingerprint,
+                karaokePhraseGroupId = groupId
+            )
+        val clip = MediaClip(
+            id = "clip", name = "clip", uri = "file:///clip.mp4", durationMs = 1_000L,
+            trimEndMs = 1_000L,
+            textOverlays = listOf(
+                slice("first-um", "phrase-one", 0L, 99L, 0, 2),
+                slice("first-now", "phrase-one", 100L, 199L, 3, 6),
+                slice("second-um", "phrase-two", 200L, 299L, 0, 2),
+                slice("second-now", "phrase-two", 300L, 399L, 3, 6)
+            )
+        )
+
+        val fillers = CaptionFillerDetector.detect(CaptionFillerWordStream.fromMainVideoClips(listOf(clip)))
+        assertEquals(2, fillers.size)
+        assertTrue(fillers[0].timedWord.phraseGroupId != fillers[1].timedWord.phraseGroupId)
+
+        val updated = CaptionFillerCaptionEditor.removeSelectedWords(clip, listOf(fillers.first().timedWord))
+        val updatedById = updated.associateBy(TextOverlay::id)
+        assertNull(updatedById["first-um"])
+        assertEquals("now", updatedById["first-now"]?.text)
+        assertEquals(phrase, updatedById["second-um"]?.text)
+        assertEquals(phrase, updatedById["second-now"]?.text)
     }
 }

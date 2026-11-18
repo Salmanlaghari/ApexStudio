@@ -67,6 +67,7 @@ class TimelineModelSerializationTest {
                         TextItem(
                             id = "title",
                             text = "Title",
+                            karaokePhraseGroupId = "karaoke-phrase-a",
                             colorKeyframes = listOf(Keyframe(0L, Color.Red, Curve.LINEAR), Keyframe(100L, Color.Blue))
                         )
                     )
@@ -104,6 +105,7 @@ class TimelineModelSerializationTest {
         assertEquals(0f, (restored.tracks[1] as AudioTrack).panAt(250L), 0.0001f)
         val restoredText = (restored.tracks[2] as TextTrack).items.single()
         assertEquals(Color.Red, restoredText.colorKeyframes.first().value)
+        assertEquals("karaoke-phrase-a", restoredText.karaokePhraseGroupId)
         val middleTextColor = restoredText.colorAt(50L)
         assertEquals(0.5f, middleTextColor.red, 0.003f)
         assertEquals(0.5f, middleTextColor.blue, 0.003f)
@@ -137,5 +139,11 @@ class TimelineModelSerializationTest {
         assertEquals("@apex", restoredProject.signature?.text)
         assertEquals(0.6f, restoredProject.signature?.color?.blue ?: 0f, 0.001f)
         assertTrue(restoredProject.signature?.alwaysOn == true)
+    }
+
+    @Test
+    fun `older text items without a karaoke phrase ID default to null`() {
+        val restored = Json.decodeFromString<TextItem>("""{"id":"old-text","text":"Old caption"}""")
+        assertEquals(null, restored.karaokePhraseGroupId)
     }
 }

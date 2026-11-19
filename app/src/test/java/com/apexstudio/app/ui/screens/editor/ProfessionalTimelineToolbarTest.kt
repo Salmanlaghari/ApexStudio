@@ -80,7 +80,7 @@ class ProfessionalTimelineToolbarTest {
         assertTrue("Timeline controls must stay within a compact phone width: $toolbar root=$root", toolbar.right <= root.right)
         assertTrue("Ripple control must stay within a compact phone width: $ripple root=$root", ripple.right <= root.right)
         assertTrue("Focus control must stay within a compact phone width: $focus root=$root", focus.right <= root.right)
-        assertTrue("Timeline toolbar should be compact: $toolbar", toolbar.height <= 80f)
+        assertTrue("Timeline toolbar should be compact and show its timecode: $toolbar", toolbar.height <= 84f)
         assertTrue("Snap should not stretch across unused row width: $snap", snap.width in 44f..64f)
         assertTrue("Ripple should keep an intrinsic compact width: $ripple", ripple.width in 44f..80f)
         assertEquals("Snap and Ripple share one control row", snap.top, ripple.top, 1f)

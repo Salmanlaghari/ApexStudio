@@ -73,7 +73,7 @@ internal fun ProfessionalTimelineToolbar(
         verticalArrangement = Arrangement.Center,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(28.dp),
+            modifier = Modifier.fillMaxWidth().height(34.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(

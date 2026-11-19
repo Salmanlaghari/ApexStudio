@@ -9,9 +9,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -51,10 +53,10 @@ class ProfessionalTimelineToolbarTest {
         }
 
         compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
-        compose.onNodeWithText("TIMELINE").assertDoesNotExist()
-        compose.onNodeWithText("00:01.234").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Zoom timeline out").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Zoom timeline in").assertDoesNotExist()
+        compose.onAllNodesWithText("TIMELINE").assertCountEquals(0)
+        compose.onAllNodesWithText("00:01.234").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Zoom timeline out").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("Zoom timeline in").assertCountEquals(0)
         compose.onNodeWithContentDescription("Magnetic snapping enabled").performClick()
         compose.onNodeWithContentDescription("Magnetic snapping disabled").assertIsDisplayed()
         compose.onNodeWithContentDescription("Ripple editing enabled").performClick()

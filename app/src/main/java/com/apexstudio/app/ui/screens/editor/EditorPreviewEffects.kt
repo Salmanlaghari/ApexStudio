@@ -74,10 +74,19 @@ internal fun editorPreviewStageAspectRatio(sourceAspectRatio: Float?, fallbackAs
 internal fun usesHorizontalProjectLayout(aspectRatio: Float?): Boolean =
     aspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }?.let { it > 1.1f } == true
 
-/** Reserve fixed transport/timeline chrome so a landscape frame never leaves a dead spacer below it. */
+/** Keep the phone preview usable above the adaptive workspace's scrollable timeline pane. */
+internal const val MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP = 180f
+
+/**
+ * Use the preview pane's allocated height directly. The legacy [reservedHeight] argument stays
+ * for call compatibility, but subtracting dynamic timeline rows here double-counts the sibling
+ * timeline pane and collapses landscape previews on multilayer projects.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun previewStageHeightBudget(availableHeight: Float, reservedHeight: Float): Float {
-    if (!availableHeight.isFinite() || !reservedHeight.isFinite()) return 0f
-    return (availableHeight - reservedHeight).coerceAtLeast(0f)
+    if (availableHeight.isNaN() || availableHeight <= 0f) return 0f
+    if (availableHeight == Float.POSITIVE_INFINITY) return MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP
+    return availableHeight.coerceAtLeast(MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP)
 }
 
 /** A restrained enlargement makes portrait footage easier to inspect without changing its frame geometry. */

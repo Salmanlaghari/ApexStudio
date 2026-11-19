@@ -64,7 +64,9 @@ internal fun ColumnScope.AdaptiveEditorWorkspace(
             } else if (horizontalProjectMode && !focused) {
                 Column(Modifier.fillMaxWidth().weight(1f).testTag("horizontal-project-workspace")) {
                     Column(
-                        Modifier.fillMaxWidth().wrapContentHeight().testTag("horizontal-project-preview-pane"),
+                        Modifier.fillMaxWidth()
+                            .heightIn(min = MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP.dp)
+                            .testTag("horizontal-project-preview-pane"),
                         content = preview
                     )
                     Column(

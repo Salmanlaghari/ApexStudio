@@ -56,6 +56,21 @@ class EditorPreviewEffectsTest {
     }
 
     @Test
+    fun `dynamic timeline height cannot consume the phone preview budget`() {
+        val budget = previewStageHeightBudget(320f, reservedHeight = 900f)
+        assertEquals(320f, budget, 0.001f)
+        val stage = fittedPreviewStageSize(maxWidth = 320f, maxHeight = budget, aspectRatio = 16f / 9f)
+        assertEquals(320f, stage?.width ?: -1f, 0.01f)
+        assertEquals(MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP, stage?.height ?: -1f, 0.01f)
+        assertEquals(
+            MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP,
+            previewStageHeightBudget(Float.POSITIVE_INFINITY, reservedHeight = 900f),
+            0.001f,
+        )
+        assertEquals(0f, previewStageHeightBudget(Float.NaN, reservedHeight = 900f), 0.001f)
+    }
+
+    @Test
     fun `preview frame follows decoded source ratio and gently enlarges portrait media`() {
         val fallback = 16f / 9f
         assertEquals(9f / 16f, editorPreviewStageAspectRatio(9f / 16f, fallback), 0.0001f)

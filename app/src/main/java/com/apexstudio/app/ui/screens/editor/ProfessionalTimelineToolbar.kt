@@ -73,14 +73,15 @@ internal fun ProfessionalTimelineToolbar(
         verticalArrangement = Arrangement.Center,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(34.dp),
+            modifier = Modifier.fillMaxWidth().height(28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .weight(1f)
                     .semantics { contentDescription = "Timeline playhead at $timecode" },
-                verticalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = "TIMELINE",

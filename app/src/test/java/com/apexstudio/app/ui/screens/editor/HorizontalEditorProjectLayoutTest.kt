@@ -1,5 +1,9 @@
 package com.apexstudio.app.ui.screens.editor
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertCountEquals
@@ -37,6 +41,7 @@ class HorizontalEditorProjectLayoutTest {
         clipType: ClipType = ClipType.VIDEO,
         hasDecodedVideoSize: Boolean = true,
         exportAspectRatio: String = if (aspectRatio > 1f) "16:9" else "9:16",
+        overlayTrackCount: Int = 0,
     ): EditorViewModel {
         val clip = MediaClip(
             id = "main-video",
@@ -46,6 +51,15 @@ class HorizontalEditorProjectLayoutTest {
             trimEndMs = 12_000L,
             type = clipType,
         )
+        val projectClips = listOf(clip) + (1..overlayTrackCount).map { layer ->
+            clip.copy(
+                id = "overlay-$layer",
+                name = "Overlay $layer",
+                uri = "file:///missing-overlay-layer-$layer.mp4",
+                type = ClipType.OVERLAY,
+                trackIndex = layer,
+            )
+        }
         return EditorViewModel().also { vm ->
             vm._export.value = vm.export.value.copy(
                 settings = vm.export.value.settings.copy(
@@ -57,7 +71,7 @@ class HorizontalEditorProjectLayoutTest {
                     id = "layout-project",
                     name = "Layout project",
                     durationMs = 12_000L,
-                    clips = listOf(clip),
+                    clips = projectClips,
                     videoAspectRatio = aspectRatio,
                 ),
                 durationMs = 12_000L,
@@ -79,6 +93,23 @@ class HorizontalEditorProjectLayoutTest {
                 vm = vm,
                 entryWorkspace = entryWorkspace,
             )
+        }
+        compose.waitForIdle()
+    }
+
+    private fun showNarrowPhone(vm: EditorViewModel, entryWorkspace: String = "edit") {
+        compose.setContent {
+            Box(Modifier.requiredSize(320.dp, 640.dp).testTag("narrow-phone-root")) {
+                EditorScreen(
+                    projectId = "layout-project",
+                    onBack = {},
+                    onExport = {},
+                    onColor = {},
+                    onAudio = {},
+                    vm = vm,
+                    entryWorkspace = entryWorkspace,
+                )
+            }
         }
         compose.waitForIdle()
     }
@@ -220,6 +251,75 @@ class HorizontalEditorProjectLayoutTest {
     }
 
     @Test
+    fun narrowLandscapePhoneKeepsProminentPreviewAndUsableLayerTimeline() {
+        showNarrowPhone(editor(16f / 9f, overlayTrackCount = 7))
+
+        compose.onNodeWithTag("horizontal-project-workspace").assertIsDisplayed()
+        compose.onNodeWithTag("horizontal-project-preview-pane").assertIsDisplayed()
+        compose.onNodeWithTag("horizontal-project-timeline-pane").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-header").assertDoesNotExist()
+        compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-snap-toggle").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-ripple-toggle").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-video-canvas").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Main video track").assertIsDisplayed()
+
+        val root = compose.onNodeWithTag("narrow-phone-root").fetchSemanticsNode().boundsInRoot
+        val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
+        val timeline = compose.onNodeWithTag("horizontal-project-timeline-pane").fetchSemanticsNode().boundsInRoot
+        val controls = compose.onNodeWithTag("timeline-layer-controls").fetchSemanticsNode().boundsInRoot
+        val snap = compose.onNodeWithTag("timeline-snap-toggle").fetchSemanticsNode().boundsInRoot
+        val ripple = compose.onNodeWithTag("timeline-ripple-toggle").fetchSemanticsNode().boundsInRoot
+        val canvas = compose.onNodeWithTag("timeline-video-canvas").fetchSemanticsNode().boundsInRoot
+        val mainTrack = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
+        val minPreviewHeightPx = with(compose.density) { MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP.dp.toPx() }
+        val touchTargetPx = with(compose.density) { 44.dp.toPx() }
+        val minCanvasHeightPx = with(compose.density) { 64.dp.toPx() }
+
+        assertTrue(
+            "Preview keeps its 180dp minimum on a 320x640dp phone: $preview",
+            preview.height >= minPreviewHeightPx - 1f,
+        )
+        assertTrue(
+            "Landscape preview uses nearly the full phone width: root=$root preview=$preview",
+            preview.width >= root.width * 0.9f,
+        )
+        assertTrue(
+            "Video source aspect remains 16:9: $preview",
+            kotlin.math.abs(preview.width / preview.height - 16f / 9f) < 0.03f,
+        )
+        assertTrue(
+            "Preview stays inside the phone viewport: root=$root preview=$preview",
+            preview.left >= root.left - 1f && preview.right <= root.right + 1f && preview.bottom <= root.bottom + 1f,
+        )
+        assertTrue(
+            "Timeline begins below the stable preview: preview=$preview timeline=$timeline",
+            timeline.top >= preview.bottom - 1f,
+        )
+        assertTrue(
+            "Timeline stays inside the phone viewport: root=$root timeline=$timeline",
+            timeline.bottom <= root.bottom + 1f,
+        )
+        assertTrue(
+            "Snap/Ripple controls remain at the top of the track area: controls=$controls canvas=$canvas",
+            controls.bottom <= canvas.top + 1f && controls.height >= touchTargetPx - 1f,
+        )
+        assertTrue(
+            "Snap keeps a 44dp touch target: $snap",
+            snap.width >= touchTargetPx - 1f && snap.height >= touchTargetPx - 1f,
+        )
+        assertTrue(
+            "Ripple keeps a 44dp touch target: $ripple",
+            ripple.width >= touchTargetPx - 1f && ripple.height >= touchTargetPx - 1f,
+        )
+        assertTrue("Video-track viewport remains visible: $canvas", canvas.height >= minCanvasHeightPx)
+        assertTrue(
+            "Main video lane remains in the timeline viewport: canvas=$canvas track=$mainTrack",
+            mainTrack.height > 0f && mainTrack.top >= timeline.top - 1f && mainTrack.bottom <= timeline.bottom + 1f,
+        )
+    }
+
+    @Test
     fun portraitCompositionKeepsAspectAwarePortraitWorkspace() {
         show(editor(9f / 16f))
 
@@ -279,7 +379,7 @@ class HorizontalEditorProjectLayoutTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("horizontal-project-workspace").assertIsDisplayed()
-        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Decoded landscape source keeps a wide preview despite saved portrait output: $preview",
             preview.width > preview.height)
@@ -295,7 +395,7 @@ class HorizontalEditorProjectLayoutTest {
 
         compose.onNodeWithTag("horizontal-project-workspace").assertDoesNotExist()
         compose.onNodeWithTag("portrait-preview-pane").assertIsDisplayed()
-        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Decoded portrait source keeps a tall preview despite saved landscape output: $preview",
             preview.height > preview.width)

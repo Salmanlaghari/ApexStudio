@@ -71,9 +71,11 @@ class CenteredTimelineWorkspaceTest {
         }
         listOf("Position", "Scale", "Rotation", "Opacity", "Animation").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
         val play = compose.onNodeWithContentDescription("Play playback").fetchSemanticsNode().boundsInRoot
-        val focus = compose.onNodeWithContentDescription("Expand timeline to full height").fetchSemanticsNode().boundsInRoot
+        val controls = bounds("timeline-layer-controls")
+        val focus = bounds("timeline-focus-toggle")
+        val snap = bounds("timeline-snap-toggle")
         val ripple = bounds("timeline-ripple-toggle")
-        val zoomIn = compose.onNodeWithContentDescription("Zoom timeline in").fetchSemanticsNode().boundsInRoot
+        val canvas = bounds("timeline-video-canvas")
         val ruler = bounds("timeline-ruler")
         val track = compose.onNodeWithContentDescription("Main video track").fetchSemanticsNode().boundsInRoot
         val preview = bounds("preview")
@@ -81,9 +83,13 @@ class CenteredTimelineWorkspaceTest {
         assertTrue("Production preview uses remaining height above the bounded timeline", preview.height > 340f)
         assertTrue("Normal timeline host stays close to populated track height", timelineHost.height in 100f..200f)
         assertEquals(bounds("root").bottom, bounds("dock").bottom, 1f)
-        assertTrue("Focus control immediately follows transport", focus.top >= play.bottom && focus.top - play.bottom <= 20f)
-        assertTrue("Snap and Ripple controls occupy the row below Focus", ripple.top >= focus.bottom && ripple.bottom <= ruler.top)
-        assertTrue("Only a slim spacer remains after the zoom controls", ruler.top - zoomIn.bottom in 0f..8f)
+        assertTrue("Snap/Ripple controls immediately follow transport", controls.top >= play.bottom && controls.top - play.bottom <= 20f)
+        assertEquals("Layer controls sit at the top edge of the video-layer viewport", controls.bottom, canvas.top, 1f)
+        assertTrue("Focus stays inside the layer-control row", focus.top >= controls.top && focus.bottom <= controls.bottom)
+        assertTrue("Normal single-clip timeline keeps the compact host", timelineHost.height <= 180f)
+        assertEquals("Snap and Ripple share one row", snap.top, ripple.top, 1f)
+        assertEquals("Focus shares the layer-control row", snap.top, focus.top, 1f)
+        assertTrue("Video-layer viewport gains the space released from the old toolbar", canvas.height > track.bottom - canvas.top)
         assertTrue(track.bottom <= bounds("dock").top)
     }
 }

@@ -40,10 +40,16 @@ class EditorPreviewStageGeometryTest {
     }
 
     @Test
-    fun contentSizedPreviewReservesPlaybackAndTimelineChromeWithoutNegativeHeight() {
-        assertEquals(260f, previewStageHeightBudget(640f, 380f), 0.001f)
-        assertEquals(0f, previewStageHeightBudget(300f, 380f), 0.001f)
+    fun allocatedPreviewHeightIsNotReducedByDynamicTimelineChrome() {
+        assertEquals(640f, previewStageHeightBudget(640f, 380f), 0.001f)
+        assertEquals(300f, previewStageHeightBudget(300f, 380f), 0.001f)
+        assertEquals(
+            MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP,
+            previewStageHeightBudget(100f, 380f),
+            0.001f,
+        )
         assertEquals(0f, previewStageHeightBudget(Float.NaN, 10f), 0.001f)
+        assertEquals(0f, previewStageHeightBudget(-1f, 10f), 0.001f)
     }
 
     @Test

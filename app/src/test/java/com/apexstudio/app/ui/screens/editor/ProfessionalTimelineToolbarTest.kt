@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.state.TIMELINE_MIN_ZOOM
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test

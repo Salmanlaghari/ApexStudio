@@ -1636,7 +1636,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         contentAlignment = Alignment.TopCenter
     ) {
         val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
-            compactTimelineHeight(state) + EditorLayoutMetrics.TimelineToolbarHeight + 2.dp
+            compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
         val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
             maxHeight.value
         } else {
@@ -2152,7 +2152,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
         !isTimelineFocusMode && !timelinePaneResized
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {
         compactTimelineHeight(state, compactWaveform = compactPhoneTimeline) +
-            (if (compactLandscape) 44.dp else EditorLayoutMetrics.TimelineToolbarHeight) + 2.dp
+            (if (compactLandscape) EditorLayoutMetrics.TimelineLayerControlsHeight else EditorLayoutMetrics.TimelineHostExtraHeight) + 2.dp
     }
     CenteredTimelineWorkspace(
         layoutWeight = if (horizontalProjectLayout || timelinePaneResized) 1f else timelineTrackLayoutWeight(isTimelineFocusMode),
@@ -2182,16 +2182,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
                         tint = ApexPalette.TextSecondary, modifier = Modifier.padding(start = 2.dp).size(14.dp))
                 }
             }
-        } else {
-            ProfessionalTimelineToolbar(
-                state = state,
-                focused = isTimelineFocusMode,
-                onToggleFocus = { onTimelineFocusModeChange(!isTimelineFocusMode) },
-                onToggleSnapping = { vm.toggleMagneticSnapping() },
-                onToggleRippleEditing = { vm.toggleRippleEditing() },
-                onZoomOut = { vm.setTimelineZoom(state.timelineZoom / 1.5f) },
-                onZoomIn = { vm.setTimelineZoom(state.timelineZoom * 1.5f) },
-            )
         }
 
 
@@ -2203,6 +2193,10 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     TimelineTrackArea(
         state = state,
         compactTimeline = compactPhoneTimeline,
+        showLayerControls = !(compactLandscape && !horizontalProjectLayout),
+        focused = isTimelineFocusMode,
+        onToggleFocus = { onTimelineFocusModeChange(!isTimelineFocusMode) },
+        onToggleRippleEditing = { vm.toggleRippleEditing() },
         onScrub = { targetMs ->
             val snapped = vm.findMagneticSnapPoint(targetMs)
             seekPlayerAndState(snapped)

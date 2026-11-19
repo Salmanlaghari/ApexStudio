@@ -205,7 +205,7 @@ private fun EditorScreenContent(
     var manualTimelinePaneHeightDp by rememberSaveable(projectId) { mutableStateOf<Float?>(null) }
     val manualTimelinePaneHeight = manualTimelinePaneHeightDp?.dp
     val compactTimelinePaneHeight = EditorLayoutMetrics.PlaybackBarHeight +
-        compactTimelineHeight(state) + EditorLayoutMetrics.TimelineToolbarHeight + 2.dp
+        compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
     // of the editor. The player's audio sink (DenoiseRenderersFactory)

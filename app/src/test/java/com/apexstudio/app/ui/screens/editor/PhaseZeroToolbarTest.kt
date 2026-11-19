@@ -126,6 +126,28 @@ class PhaseZeroToolbarTest {
     }
 
     @Test
+    fun `Manual HSL in More opens the existing adjustments panel without a clip selected`() {
+        val vm = com.apexstudio.app.presentation.viewmodel.EditorViewModel()
+        val picker = com.apexstudio.app.data.picker.MediaPickerHelper(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        )
+        composeRule.setContent {
+            EditorBottomToolbarSection(
+                state = vm.state.value,
+                vm = vm,
+                mediaPicker = picker,
+                horizontalProjectLayout = true,
+            )
+        }
+
+        composeRule.onNodeWithText("More").assertIsDisplayed().performClick()
+        composeRule.onNodeWithText("HSL").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.runOnIdle {
+            assertEquals(true, vm.state.value.adjustmentsPanelOpen)
+        }
+    }
+
+    @Test
     fun `More expands a scrollable secondary row while primary dock stays visible`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent { testToolbar(ToolbarSelectionKind.NONE, calls) }

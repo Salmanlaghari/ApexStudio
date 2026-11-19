@@ -71,7 +71,7 @@ internal val CONTEXTUAL_VIDEO_PRIORITY_TOOL_ORDER = listOf(
 
 /** Tools exposed by tapping More; clip-specific actions remain in the contextual clip row. */
 internal val CONTEXTUAL_MORE_TOOL_ORDER = listOf(
-    "Music", "SFX", "Color", "Project tools", "Canvas",
+    "Music", "SFX", "Color", "HSL", "Project tools", "Canvas",
     "Challenge", "Subtitles", "Next", "Draw", "AI", "AR Face",
     "Chroma Key", "Mask", "Add Image", "Add Video", "Transition", "Edit Pack",
     "Scopes", "BG Remove", "Auto Clip", "Device Music", "Audio Mix", "Voiceover", "History", "Signature", "Info"
@@ -303,6 +303,13 @@ fun ContextualBottomToolbar(
             CtxToolItem("Music", Icons.Default.MusicNote, onClick = onMusic),
             CtxToolItem("SFX", Icons.Default.GraphicEq, tint = ApexPalette.NeonPurple, onClick = onSfxLibrary),
             CtxToolItem("Color", Icons.Default.Palette, onClick = onColorWorkspace),
+            CtxToolItem(
+                "HSL",
+                Icons.Default.Tune,
+                tint = ApexPalette.NeonCyan,
+                onClick = onAdjust,
+                contentDescription = "Manual HSL color grading",
+            ),
             CtxToolItem("Project tools", Icons.Default.Collections, onClick = onProjectVideoTools),
             CtxToolItem("Canvas", Icons.Default.Crop, tint = ApexPalette.NeonCyan, onClick = onCrop),
             CtxToolItem("Challenge", Icons.Default.LocalFireDepartment, onClick = onChallenge),

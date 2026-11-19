@@ -279,7 +279,7 @@ class HorizontalEditorProjectLayoutTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("horizontal-project-workspace").assertIsDisplayed()
-        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Decoded landscape source keeps a wide preview despite saved portrait output: $preview",
             preview.width > preview.height)
@@ -295,7 +295,7 @@ class HorizontalEditorProjectLayoutTest {
 
         compose.onNodeWithTag("horizontal-project-workspace").assertDoesNotExist()
         compose.onNodeWithTag("portrait-preview-pane").assertIsDisplayed()
-        compose.onNodeWithTag("professional-timeline-toolbar").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-layer-controls").assertIsDisplayed()
         val preview = compose.onNodeWithTag("editor-preview-frame").fetchSemanticsNode().boundsInRoot
         assertTrue("Decoded portrait source keeps a tall preview despite saved landscape output: $preview",
             preview.height > preview.width)

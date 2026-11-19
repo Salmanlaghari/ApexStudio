@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
@@ -37,7 +38,7 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.ui.theme.EditorPalette
 import java.util.Locale
 
-/** Two-level, project-backed timeline controls sized for comfortable phone use. */
+/** Compact timeline metadata with a single row of project-backed phone controls. */
 @Composable
 internal fun ProfessionalTimelineToolbar(
     state: EditorState,
@@ -72,7 +73,7 @@ internal fun ProfessionalTimelineToolbar(
         verticalArrangement = Arrangement.Center,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().height(44.dp),
+            modifier = Modifier.fillMaxWidth().height(28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
@@ -99,6 +100,58 @@ internal fun ProfessionalTimelineToolbar(
                     softWrap = false,
                 )
             }
+        }
+
+        Spacer(Modifier.height(2.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth().height(44.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            TimelineModeToggle(
+                text = "Snap",
+                enabled = state.magneticSnapping,
+                description = snapLabel,
+                testTag = "timeline-snap-toggle",
+                onClick = onToggleSnapping,
+                modifier = Modifier.widthIn(min = 48.dp),
+            )
+            TimelineModeToggle(
+                text = if (state.rippleEditing) "Ripple on" else "Ripple off",
+                enabled = state.rippleEditing,
+                description = rippleLabel,
+                testTag = "timeline-ripple-toggle",
+                onClick = onToggleRippleEditing,
+                modifier = Modifier.widthIn(min = 48.dp),
+            )
+
+            // Keep the two zoom actions easy to hit without letting the
+            // controls consume the entire timeline width.
+            Row(
+                modifier = Modifier
+                    .width(120.dp)
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(EditorPalette.BgSurface)
+                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(11.dp)),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                TimelineToolbarIconButton(Icons.Default.ZoomOut, "Zoom timeline out", onZoomOut)
+                Text(
+                    text = zoomLabel,
+                    color = EditorPalette.TextPrimary,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    modifier = Modifier.width(32.dp),
+                )
+                TimelineToolbarIconButton(Icons.Default.ZoomIn, "Zoom timeline in", onZoomIn)
+            }
+
+            Spacer(Modifier.weight(1f))
 
             Box(
                 modifier = Modifier
@@ -127,54 +180,6 @@ internal fun ProfessionalTimelineToolbar(
                     tint = if (focused) EditorPalette.NeonCyan else EditorPalette.TextSecondary,
                     modifier = Modifier.size(20.dp),
                 )
-            }
-        }
-
-        Spacer(Modifier.height(2.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth().height(44.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            TimelineModeToggle(
-                text = "Snap",
-                enabled = state.magneticSnapping,
-                description = snapLabel,
-                testTag = "timeline-snap-toggle",
-                onClick = onToggleSnapping,
-                modifier = Modifier.weight(1f),
-            )
-            TimelineModeToggle(
-                text = if (state.rippleEditing) "Ripple on" else "Ripple off",
-                enabled = state.rippleEditing,
-                description = rippleLabel,
-                testTag = "timeline-ripple-toggle",
-                onClick = onToggleRippleEditing,
-                modifier = Modifier.weight(1f),
-            )
-
-            Row(
-                modifier = Modifier
-                    .width(120.dp)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(EditorPalette.BgSurface)
-                    .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(11.dp)),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                TimelineToolbarIconButton(Icons.Default.ZoomOut, "Zoom timeline out", onZoomOut)
-                Text(
-                    text = zoomLabel,
-                    color = EditorPalette.TextPrimary,
-                    fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    modifier = Modifier.width(32.dp),
-                )
-                TimelineToolbarIconButton(Icons.Default.ZoomIn, "Zoom timeline in", onZoomIn)
             }
         }
     }

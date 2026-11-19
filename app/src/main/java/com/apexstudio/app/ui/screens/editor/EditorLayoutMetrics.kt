@@ -9,8 +9,8 @@ internal object EditorLayoutMetrics {
     /** 24dp timecode space above a comfortable 44dp transport-control row. */
     val PlaybackBarHeight = 68.dp
     val TimelineActionHeight = 48.dp
-    /** Two 44dp phone-first rows with a small inset and separator. */
-    val TimelineToolbarHeight = 96.dp
+    /** Compact metadata header plus one 44dp touch-target row and insets. */
+    val TimelineToolbarHeight = 80.dp
     /** 46dp reference toolbar row plus its 4dp top/bottom inset. */
     val ReferenceToolbarHeight = 54.dp
     val PreviewCornerRadius = 14.dp

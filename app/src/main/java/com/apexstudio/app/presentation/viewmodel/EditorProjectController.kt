@@ -69,6 +69,10 @@ internal fun normalizeOverlayTrackIndices(clips: List<MediaClip>): List<MediaCli
 internal fun withImportedMainVideoFitDefault(clip: MediaClip): MediaClip =
     if (clip.type == ClipType.VIDEO) clip.copy(videoFitMode = VideoFitMode.COVER) else clip
 
+/** Default PiP imports share V2; explicit layer requests remain clamped to V2..V10. */
+internal fun overlayImportLayer(targetLayer: Int?): Int =
+    targetLayer?.coerceIn(1, MAX_VIDEO_LAYERS - 1) ?: 1
+
 /** Recreates a cached procedural SFX source when a saved audio track is loaded. */
 internal fun recoverCachedSfxTrack(context: android.content.Context, track: AudioTrack): AudioTrack {
     val effectId = track.sfxEffectId ?: return track
@@ -359,13 +363,8 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
             return@launch
         }
         val playheadMs = s.playerPositionMs.coerceAtLeast(0L)
-        // First free overlay layer for this batch (multi-pick spreads
-        // across consecutive free layers instead of stacking all clips
-        // on one track at the same offset).
-        val firstFreeLayer = nextFreeVideoLayer()
-            .takeIf { it in 1 until MAX_VIDEO_LAYERS } ?: 1
         val newClips = mutableListOf<com.apexstudio.app.domain.model.MediaClip>()
-        for ((batchIndex, meta) in mediaList.withIndex()) {
+        for (meta in mediaList) {
             val resolvedMeta = if (context != null) {
                 meta.copy(uri = com.apexstudio.app.data.media.MediaUriResolver.resolvePlayableUri(context!!, meta.uri).toString())
             } else meta
@@ -399,11 +398,9 @@ fun EditorViewModel.onMediaPicked(mediaList: List<com.apexstudio.app.data.picker
                 val isImage = resolvedMeta.type == ClipType.IMAGE
                 val overlayDurationMs = if (isImage) 5_000L else created.durationMs.coerceAtLeast(500L)
                 val aspect = effectiveMeta.sourceDisplayAspectRatio ?: (16f / 9f)
-                // First free overlay layer (OVL1 = trackIndex 1, ...),
-                // or the explicitly requested layer from the V2 "+".
-                // Multi-pick spreads across consecutive free layers.
-                val layer = targetLayer
-                    ?: (firstFreeLayer + batchIndex).coerceAtMost(MAX_VIDEO_LAYERS - 1)
+                // All ordinary PiP imports share V2, including multi-picks;
+                // a caller targeting a particular overlay layer still wins.
+                val layer = overlayImportLayer(targetLayer)
                 newClips += created.copy(
                     type = ClipType.OVERLAY,
                     trackIndex = layer,

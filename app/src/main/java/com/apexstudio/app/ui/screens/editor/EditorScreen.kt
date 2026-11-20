@@ -205,6 +205,7 @@ private fun EditorScreenContent(
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
     var manualTimelinePaneHeightDp by rememberSaveable(projectId) { mutableStateOf<Float?>(null) }
     val manualTimelinePaneHeight = manualTimelinePaneHeightDp?.dp
+    // The fixed timeline-host slack accommodates the empty grouped V2 add row.
     val compactTimelinePaneHeight = EditorLayoutMetrics.PlaybackBarHeight +
         compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
 

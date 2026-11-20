@@ -65,9 +65,142 @@ class VideoTimelineHeaderTest {
         compose.onNodeWithTag("timeline-ruler", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Main video · V1", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("Music (A1)").assertIsDisplayed()
+        compose.onNodeWithTag("timeline-add-overlay", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("♫").assertDoesNotExist()
         compose.waitForIdle()
         compose.runOnIdle { scrollState.dispatchRawDelta(scrollState.maxValue.toFloat()) }
+    }
+
+    @Test
+    fun reservedOverlayLanePlusInvokesTheOverlayPickerAction() {
+        var addedType: ClipType? = null
+        val state = EditorState(
+            project = Project(id = "empty", name = "Empty", durationMs = 10_000L, clips = emptyList()),
+            durationMs = 10_000L
+        )
+        compose.setContent {
+            VideoTimeline(
+                state = state,
+                onScrub = {},
+                onSelectClip = {},
+                onReorderClips = {},
+                onAddMedia = { addedType = it },
+                onSplitClip = { _, _ -> },
+                onDuplicateClip = {},
+                onDeleteClip = {},
+                onZoomChange = {},
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                modifier = Modifier.requiredSize(320.dp, 240.dp)
+            )
+        }
+
+        compose.onNodeWithTag("timeline-add-overlay", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .performClick()
+        compose.runOnIdle { assertEquals(ClipType.OVERLAY, addedType) }
+    }
+
+    @Test
+    fun overlaysFromDifferentTracksShareOneRowAndKeepTheirActualLayerSemantics() {
+        val lower = MediaClip(
+            id = "overlay-v2", name = "lower", uri = "file:///lower.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 1, timelineOffsetMs = 1_000L
+        )
+        val upper = MediaClip(
+            id = "overlay-v5", name = "upper", uri = "file:///upper.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 4, timelineOffsetMs = 3_000L
+        )
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(lower, upper),
+                totalDurationMs = 10_000L,
+                playheadMs = 0L,
+                lockedVideoLayers = setOf(4),
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                scrollState = ScrollState(0),
+                modifier = Modifier.requiredSize(320.dp, 300.dp)
+            )
+        }
+
+        val lowerNode = compose.onNodeWithTag("timeline-overlay-clip-overlay-v2", useUnmergedTree = true)
+            .assertIsDisplayed()
+        val upperNode = compose.onNodeWithTag("timeline-overlay-clip-overlay-v5", useUnmergedTree = true)
+            .assertIsDisplayed()
+        val lowerBounds = lowerNode.fetchSemanticsNode().boundsInRoot
+        val upperBounds = upperNode.fetchSemanticsNode().boundsInRoot
+        assertEquals("Grouped overlay clips must share one visible row", lowerBounds.top, upperBounds.top, 0.5f)
+        compose.onNodeWithContentDescription("V2 overlay", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("V5 overlay", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("timeline-overlay-trim-start-overlay-v2", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("timeline-overlay-trim-start-overlay-v5", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun overlappingGroupedOverlaysCanBeSelectedFromTheStackMenu() {
+        var selectedClipId: String? = null
+        val lower = MediaClip(
+            id = "lower-overlay", name = "lower", uri = "file:///lower.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 1, timelineOffsetMs = 1_000L
+        )
+        val upper = MediaClip(
+            id = "upper-overlay", name = "upper", uri = "file:///upper.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 4, timelineOffsetMs = 1_000L
+        )
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(lower, upper),
+                totalDurationMs = 10_000L,
+                playheadMs = 0L,
+                onSelectClip = { selectedClipId = it },
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                scrollState = ScrollState(0),
+                modifier = Modifier.requiredSize(320.dp, 300.dp)
+            )
+        }
+
+        compose.onNodeWithTag("timeline-overlay-stack-upper-overlay", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .performClick()
+        compose.onNodeWithText("lower · V2", useUnmergedTree = true).performClick()
+        compose.runOnIdle { assertEquals("lower-overlay", selectedClipId) }
+    }
+
+    @Test
+    fun hidingOneOriginalOverlayLayerDoesNotHideOtherGroupedClips() {
+        val visible = MediaClip(
+            id = "visible-overlay", name = "visible", uri = "file:///visible.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 1, timelineOffsetMs = 1_000L
+        )
+        val hidden = MediaClip(
+            id = "hidden-overlay", name = "hidden", uri = "file:///hidden.jpg",
+            durationMs = 10_000L, trimEndMs = 10_000L, type = ClipType.OVERLAY,
+            trackIndex = 4, timelineOffsetMs = 3_000L
+        )
+        compose.setContent {
+            VideoTimeline(
+                clips = listOf(visible, hidden),
+                totalDurationMs = 10_000L,
+                playheadMs = 0L,
+                hiddenVideoLayers = setOf(4),
+                onOpenSpeed = {},
+                onOpenTrim = {},
+                scrollState = ScrollState(0),
+                modifier = Modifier.requiredSize(320.dp, 300.dp)
+            )
+        }
+
+        compose.onNodeWithTag("timeline-overlay-clip-visible-overlay", useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithTag("timeline-overlay-clip-hidden-overlay", useUnmergedTree = true)
+            .assertDoesNotExist()
     }
 
     @Test

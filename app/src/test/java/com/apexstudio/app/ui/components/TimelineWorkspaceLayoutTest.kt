@@ -198,7 +198,8 @@ class TimelineWorkspaceLayoutTest {
 
         assertEquals(28.dp, compactTimelineHeight(empty)) // 28dp ruler; no duplicate title row
         assertEquals(90.dp, compactTimelineHeight(singleMain))
-        assertEquals(170.dp, compactTimelineHeight(mainAndOverlay))
+        assertEquals(158.dp, compactTimelineHeight(singleMain, includeEmptyOverlayLane = true))
+        assertEquals(210.dp, compactTimelineHeight(mainAndOverlay))
     }
 
     @Test
@@ -313,7 +314,7 @@ class TimelineWorkspaceLayoutTest {
         composeRule.onNodeWithContentDescription("V2 overlay").assertExists()
         assertEquals("V1 retains its fixed 52dp filmstrip height beside its supporting row", 52f, main.height, 1f)
         val overlay = composeRule.onNodeWithContentDescription("V2 overlay").fetchSemanticsNode().boundsInRoot
-        assertEquals("Populated overlay layers retain the historical 60dp row height", 60f, overlay.height, 1f)
+        assertEquals("Grouped overlays retain the touchable 42dp clip-chip height", OVERLAY_CLIP_HEIGHT_DP.toFloat(), overlay.height, 1f)
         composeRule.onNodeWithTag("timeline-overlay-clip-overlay", useUnmergedTree = true).assertExists()
     }
 

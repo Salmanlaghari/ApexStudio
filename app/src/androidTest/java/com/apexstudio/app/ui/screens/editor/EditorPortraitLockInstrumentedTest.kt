@@ -75,11 +75,14 @@ class EditorPortraitLockInstrumentedTest {
                             var editorVisible by remember { mutableStateOf(true) }
                             if (editorVisible) {
                                 EditorScreen(
-                    projectId = project.id,
-                    onBack = { backRequested.set(true); editorVisible = false },
-                    onExport = {},
-                    onColor = {},
-                    onAudio = {},
+                                    projectId = project.id,
+                                    onBack = {
+                                        backRequested.set(true)
+                                        editorVisible = false
+                                    },
+                                    onExport = {},
+                                    onColor = {},
+                                    onAudio = {},
                                     vm = vm,
                                 )
                             } else {

@@ -62,7 +62,7 @@ class SettingsScreenTest {
     fun themeChoicesRemainVisibleAtNarrowWidth() {
         compose.setContent { MaterialTheme { SettingsScreen(onBack = {}, onOpenDiagnostics = {}) } }
         compose.onNodeWithText("Themes").performScrollTo().performClick()
-        compose.onNodeWithText("Neon Dark").assertIsDisplayed()
+        compose.onNodeWithText("Violet Night").assertIsDisplayed()
         compose.onNodeWithText("Ember Night").assertIsDisplayed()
     }
 }

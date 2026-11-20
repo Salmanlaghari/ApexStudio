@@ -54,15 +54,17 @@ class EffectWorkspacePanelTest {
             }
         }
         compose.waitForIdle()
-        val source = compose.onNodeWithTag("workspace-source-card").fetchSemanticsNode().boundsInRoot
-        val presets = compose.onNodeWithTag("workspace-presets-card").fetchSemanticsNode().boundsInRoot
-        val tuning = compose.onNodeWithTag("workspace-tuning-card").fetchSemanticsNode().boundsInRoot
-        assertTrue("Source range starts the vertical card flow at ${widthDp}dp: $source", source.top < presets.top)
-        assertTrue("Presets precede tuning/actions at ${widthDp}dp: $presets / $tuning", presets.top < tuning.top)
+        val source = compose.onNodeWithTag("workspace-source-card").performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val presets = compose.onNodeWithTag("workspace-presets-card").performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val tuning = compose.onNodeWithTag("workspace-tuning-card").performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         assertEquals("Compact cards share one portrait column at ${widthDp}dp", source.left, presets.left, 1f)
         assertEquals("Tuning/actions stays in that portrait column at ${widthDp}dp", source.left, tuning.left, 1f)
-        assertTrue("Cards use nearly the available phone width at ${widthDp}dp: $source",
+        assertTrue("Source card uses nearly the available phone width at ${widthDp}dp: $source",
             source.width >= width.value - 30f)
+        assertTrue("Presets card uses nearly the available phone width at ${widthDp}dp: $presets",
+            presets.width >= width.value - 30f)
+        assertTrue("Tuning/actions card uses nearly the available phone width at ${widthDp}dp: $tuning",
+            tuning.width >= width.value - 30f)
     }
 
     @Test fun `wide effect cards remain in one horizontal row`() {

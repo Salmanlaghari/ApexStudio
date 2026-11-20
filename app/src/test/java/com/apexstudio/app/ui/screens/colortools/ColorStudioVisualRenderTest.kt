@@ -53,7 +53,7 @@ class ColorStudioVisualRenderTest {
         compose.onNodeWithText("Brightness").assertIsDisplayed()
         compose.onNodeWithText("Tone Map (SDR)").performScrollTo()
         compose.onNodeWithText("Tone Map (SDR)").assertIsDisplayed()
-        compose.onNodeWithText("Sharpness").assertIsDisplayed()
+        compose.onNodeWithText("Sharpness").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("SHADOWS").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("MIDTONES").assertIsDisplayed()
         compose.onNodeWithText("HIGHLIGHTS").assertIsDisplayed()

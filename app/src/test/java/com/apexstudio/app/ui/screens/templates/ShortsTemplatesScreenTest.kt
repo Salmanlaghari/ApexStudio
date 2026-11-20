@@ -48,7 +48,10 @@ class ShortsTemplatesScreenTest {
             }
         }
 
-        val previewBounds = compose.onNodeWithTag("shorts-template-preview-shorts_travel_adventure").fetchSemanticsNode().boundsInRoot
+        val previewBounds = compose.onNodeWithTag(
+            "shorts-template-preview-shorts_travel_adventure",
+            useUnmergedTree = true
+        ).fetchSemanticsNode().boundsInRoot
         assertTrue("portrait template preview should be taller than it is wide", previewBounds.height > previewBounds.width)
     }
 }

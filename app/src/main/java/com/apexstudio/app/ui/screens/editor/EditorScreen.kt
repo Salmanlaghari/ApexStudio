@@ -102,7 +102,6 @@ fun EditorScreen(
             context = LocalContext.current.applicationContext,
             projectId = projectId
         )
-        )
     )
 ) {
     EditorPortraitOrientationEffect()

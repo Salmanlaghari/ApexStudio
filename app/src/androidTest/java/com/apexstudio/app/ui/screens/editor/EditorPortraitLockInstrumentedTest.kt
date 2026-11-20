@@ -133,7 +133,7 @@ class EditorPortraitLockInstrumentedTest {
 
                 val backButton = device.findObject(By.desc("Back to projects"))
                 assertTrue("Back-to-projects control is not clickable", backButton.isClickable)
-                assertTrue("Back-to-projects click was not delivered", backButton.click())
+                backButton.click()
                 await("Back-to-projects control did not invoke the editor exit callback") {
                     backRequested.get()
                 }

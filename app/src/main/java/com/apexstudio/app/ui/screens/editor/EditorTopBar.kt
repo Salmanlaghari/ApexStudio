@@ -38,6 +38,7 @@ import com.apexstudio.app.ui.components.BuildIdentity
 import com.apexstudio.app.ui.components.BuildIdentityDialog
 import com.apexstudio.app.ui.theme.EditorPalette
 import com.apexstudio.app.ui.theme.ApexThemeTokens
+import com.apexstudio.app.presentation.state.ProjectSaveStatus
 
 /** Branded editor header: identity is in the mark, while project details remain semantic. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -58,12 +59,30 @@ fun TopAppBarSection(
     onExport: () -> Unit = {},
     projectId: String = "",
     exportEnabled: Boolean = true,
-    resolutionEnabled: Boolean = true
+    resolutionEnabled: Boolean = true,
+    projectSaveStatus: ProjectSaveStatus = ProjectSaveStatus.SAVED,
+    projectSaveError: String? = null,
+    onRetrySave: () -> Unit = {}
 ) {
     var showResolutionDropdown by remember { mutableStateOf(false) }
     var showBuildIdentity by remember { mutableStateOf(false) }
     if (showBuildIdentity) {
         BuildIdentityDialog(onDismiss = { showBuildIdentity = false })
+    }
+    val saveStatusLabel = when (projectSaveStatus) {
+        ProjectSaveStatus.SAVED -> "Saved"
+        ProjectSaveStatus.SAVING -> "Saving…"
+        ProjectSaveStatus.ERROR -> "Save failed · Retry"
+    }
+    val saveStatusDescription = when (projectSaveStatus) {
+        ProjectSaveStatus.SAVED -> "Project save status: Saved"
+        ProjectSaveStatus.SAVING -> "Project save status: Saving"
+        ProjectSaveStatus.ERROR -> "Project save failed. ${projectSaveError ?: "Tap to retry saving."}"
+    }
+    val saveStatusColor = when (projectSaveStatus) {
+        ProjectSaveStatus.SAVED -> EditorPalette.TextSecondary
+        ProjectSaveStatus.SAVING -> EditorPalette.NeonCyan
+        ProjectSaveStatus.ERROR -> EditorPalette.NeonPink
     }
 
     Row(
@@ -96,8 +115,20 @@ fun TopAppBarSection(
             },
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Edit project", color = EditorPalette.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            Text(title.ifBlank { "Untitled project" }, color = EditorPalette.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = saveStatusLabel,
+                color = saveStatusColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                modifier = (if (projectSaveStatus == ProjectSaveStatus.ERROR) {
+                    Modifier.clickable(onClick = onRetrySave, role = Role.Button)
+                } else Modifier).semantics { contentDescription = saveStatusDescription }
+            )
         }
         Box {
             Row(

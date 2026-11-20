@@ -3,6 +3,12 @@ package com.apexstudio.app.presentation.state
 import com.apexstudio.app.data.export.ExportProgressStage
 import com.apexstudio.app.domain.model.*
 
+enum class ProjectSaveStatus {
+    SAVED,
+    SAVING,
+    ERROR
+}
+
 /** Timeline scale bounds: approximately 5 ms/px at max and 2000 ms/px at min (54 dp/s base). */
 const val TIMELINE_MIN_ZOOM: Float = 0.01f
 const val TIMELINE_MAX_ZOOM: Float = 3.7f
@@ -240,6 +246,8 @@ data class EditorState(
     val historyDraftsTab: HistoryDraftsTab = HistoryDraftsTab.HISTORY,
     // Auto-save bookkeeping: last time the project was auto-persisted.
     val lastAutoSaveMs: Long = 0L,
+    val projectSaveStatus: ProjectSaveStatus = ProjectSaveStatus.SAVED,
+    val projectSaveError: String? = null,
     // CapCut-style contextual toolbar selection. selectedAudioTrackId
     // tracks the tapped A1 audio lane; it is mutually exclusive with
     // selectedClipId (one selection at a time, like CapCut).

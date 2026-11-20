@@ -6,12 +6,10 @@ import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performScrollTo
 import com.github.takahirom.roborazzi.RoborazziComposeOptions
 import com.github.takahirom.roborazzi.RoborazziComposeSizeOption
 import com.github.takahirom.roborazzi.RoborazziOptions
@@ -45,16 +43,21 @@ class ColorStudioVisualRenderTest {
         compose.onNodeWithText("Export when finished.", substring = true).assertIsDisplayed()
     }
 
-    @Test fun compactPhoneStripExposesBrightnessSdrToneMapAndSharpnessControls() {
+    @Test fun compactPhoneWorkspaceStacksSourceSlidersToneWheelsAndCurvesVertically() {
         val vm = EditorViewModel()
         val clip = MediaClip("fixture", "Host layout fixture", "file:///test-only.mp4", 5_000L, trimEndMs = 5_000L)
         vm._state.value = EditorState(project = Project("fixture", "Host only", 5_000L, clips = listOf(clip)), selectedClipId = clip.id)
         compose.setContent { ColorStudioScreen("fixture", {}, {}, vm = vm, embedded = true) }
 
+        compose.onNodeWithText("SOURCE • PAUSED VIDEO FRAME").assertIsDisplayed()
         compose.onNodeWithText("Brightness").assertIsDisplayed()
-        compose.onNodeWithTag("color_adjustment_controls").performScrollToNode(hasText("Tone Map (SDR)"))
+        compose.onNodeWithText("Tone Map (SDR)").performScrollTo()
         compose.onNodeWithText("Tone Map (SDR)").assertIsDisplayed()
-        compose.onNodeWithText("Sharpness").assertIsDisplayed()
+        compose.onNodeWithText("Sharpness").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("SHADOWS").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("MIDTONES").assertIsDisplayed()
+        compose.onNodeWithText("HIGHLIGHTS").assertIsDisplayed()
+        compose.onNodeWithText("RGBL CURVES").performScrollTo().assertIsDisplayed()
     }
 
     @Test fun projectApplyReplacesStandaloneColorExportActions() {

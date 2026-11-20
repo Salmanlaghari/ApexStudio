@@ -3,9 +3,12 @@ package com.apexstudio.app.ui.screens.templates
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -29,11 +32,26 @@ class ShortsTemplatesScreenTest {
         }
 
         compose.onNodeWithText("10 editable video starters").assertIsDisplayed()
-        compose.onNodeWithText("Travel Adventure").performClick()
+        compose.onNodeWithText("Travel Adventure").performScrollTo().performClick()
         compose.onNodeWithText("Sample title: CHASE THE HORIZON").assertIsDisplayed()
         compose.onNodeWithText("Title motion: Rise · subtitle: Fade in").assertIsDisplayed()
-        compose.onNodeWithText("License").assertIsDisplayed()
+        compose.onNodeWithText("License").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Choose video").performClick()
         compose.runOnIdle { assertEquals("shorts_travel_adventure", appliedTemplateId) }
+    }
+
+    @Test
+    fun `portrait width uses tall video preview`() {
+        compose.setContent {
+            MaterialTheme {
+                ShortsTemplatesScreen(onBack = {}, onUseTemplate = {})
+            }
+        }
+
+        val previewBounds = compose.onNodeWithTag(
+            "shorts-template-preview-shorts_travel_adventure",
+            useUnmergedTree = true
+        ).fetchSemanticsNode().boundsInRoot
+        assertTrue("portrait template preview should be taller than it is wide", previewBounds.height > previewBounds.width)
     }
 }

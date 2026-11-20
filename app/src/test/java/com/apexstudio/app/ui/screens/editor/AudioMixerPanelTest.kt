@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -161,6 +162,25 @@ class AudioMixerPanelTest {
 
         compose.onNodeWithTag("audio-separate-video-audio").assertIsEnabled().performClick()
         assertTrue(extracted)
+    }
+
+    @Test
+    fun portraitMixerUsesFullWidthCardsInItsVerticalScroller() {
+        compose.setContent {
+            MixerForTest(
+                track = AudioTrack(id = "portrait-music", name = "Music", uri = "file://music"),
+                playheadMs = 0L,
+                onTrim = { _, _, _ -> },
+                onSplit = {}
+            )
+        }
+
+        compose.onNodeWithTag("audio-mixer-panel-cards").performScrollToKey("portrait-music")
+        val panelWidth = compose.onNodeWithTag("audio-mixer-panel-root").fetchSemanticsNode().boundsInRoot.width
+        val card = compose.onNodeWithTag("audio-mixer-panel-card-portrait-music")
+        card.assertIsDisplayed()
+        val cardWidth = card.fetchSemanticsNode().boundsInRoot.width
+        assertTrue("Portrait mixer cards should use the available panel width", cardWidth >= panelWidth * 0.85f)
     }
 }
 

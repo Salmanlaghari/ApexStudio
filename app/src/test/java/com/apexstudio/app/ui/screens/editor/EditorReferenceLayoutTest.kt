@@ -87,7 +87,7 @@ class EditorReferenceLayoutTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("workspace-panel").assertIsDisplayed()
-        compose.onNodeWithTag("workspace-presets-card").assertIsDisplayed()
+        compose.onNodeWithTag("workspace-presets-card").performScrollTo().assertIsDisplayed()
         assertTrue(
             "Effects must not launch the Color Studio export dialog",
             compose.onAllNodesWithText("Export Color result").fetchSemanticsNodes().isEmpty()

@@ -57,4 +57,12 @@ class SettingsScreenTest {
         compose.onNodeWithText("Ember Night").assertIsDisplayed()
         runBlocking { SettingsPreferences.setTheme(context, ApexThemeOption.NEON) }
     }
+
+    @Test
+    fun themeChoicesRemainVisibleAtNarrowWidth() {
+        compose.setContent { MaterialTheme { SettingsScreen(onBack = {}, onOpenDiagnostics = {}) } }
+        compose.onNodeWithText("Themes").performScrollTo().performClick()
+        compose.onNodeWithText("Violet Night").assertIsDisplayed()
+        compose.onNodeWithText("Ember Night").assertIsDisplayed()
+    }
 }

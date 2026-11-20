@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-DEFAULT_CLASS = "com.apexstudio.app.ui.screens.editor.LandscapeEditorInstrumentedTest"
+DEFAULT_CLASS = "com.apexstudio.app.ui.screens.editor.EditorPortraitLockInstrumentedTest"
 IDENTITY_ASSET = "assets/build-identity.properties"
 ADB_COMMAND_TIMEOUT = 180
 INSTRUMENTATION_TIMEOUT = 900

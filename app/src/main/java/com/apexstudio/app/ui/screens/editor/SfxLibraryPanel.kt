@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,8 @@ fun SfxLibraryPanel(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val effectListHeight = (configuration.screenHeightDp - 300).coerceIn(160, 320).dp
     val controller = remember { SfxLibraryController(context.applicationContext) }
     val uiState by controller.state.collectAsStateWithLifecycle()
     var selectedCategory by remember { mutableStateOf<SfxCategory?>(null) }
@@ -147,7 +150,7 @@ fun SfxLibraryPanel(
             SfxLibrary.effects.filter { selectedCategory == null || it.category == selectedCategory }
         }
         LazyColumn(
-            modifier = Modifier.fillMaxWidth().height(265.dp),
+            modifier = Modifier.fillMaxWidth().height(effectListHeight),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(effects, key = { it.id }) { effect ->

@@ -7,8 +7,11 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -71,7 +74,7 @@ internal fun sourceTimeAtProjectPlayhead(
 }
 
 /** A contextual bottom workspace, not a replacement for the established editor layout. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun EffectWorkspacePanel(
     projectId: String,
@@ -293,6 +296,7 @@ internal fun EffectWorkspacePanel(
     val nextMainClip = mainTrackClips.getOrNull(selectedMainIndex + 1).takeIf { selectedMainIndex >= 0 }
     val galleryStartPx = ((292f + 10f) * context.resources.displayMetrics.density).toInt()
     val effectGalleryScroll = rememberScrollState(initial = galleryStartPx)
+    val effectGalleryVerticalScroll = rememberScrollState()
     Surface(
         color = background,
         contentColor = foreground,
@@ -300,7 +304,10 @@ internal fun EffectWorkspacePanel(
         modifier = Modifier.fillMaxWidth().heightIn(max = 230.dp).testTag("workspace-panel")
     ) {
         Column(Modifier.fillMaxWidth().heightIn(max = 230.dp).padding(horizontal = 12.dp, vertical = 4.dp)) {
-            // The title stays pinned while the workspace cards move horizontally.
+            BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+            val horizontalCardsFit = maxWidth >= 892.dp
+            Column(Modifier.fillMaxSize()) {
+            // The title stays pinned while compact card content scrolls vertically.
             Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(when (category) {
                     WorkspaceCategory.TIME -> "Motion actions"
@@ -316,17 +323,28 @@ internal fun EffectWorkspacePanel(
                     fontSize = 11.sp, color = EditorPalette.TextSecondary)
             }
 
-            Row(
-                Modifier.weight(1f).fillMaxWidth().horizontalScroll(effectGalleryScroll),
+            FlowRow(
+                Modifier.weight(1f).fillMaxWidth().then(
+                    if (horizontalCardsFit) Modifier.horizontalScroll(effectGalleryScroll)
+                    else Modifier.verticalScroll(effectGalleryVerticalScroll)
+                ),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Card(
-                    modifier = Modifier.width(292.dp).fillMaxHeight(),
+                    modifier = Modifier.then(
+                        if (horizontalCardsFit) Modifier.width(292.dp).fillMaxHeight()
+                        else Modifier.fillMaxWidth().wrapContentHeight()
+                    ).testTag("workspace-source-card"),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .then(if (horizontalCardsFit) Modifier.fillMaxHeight() else Modifier.wrapContentHeight())
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text("Source range", fontSize = 13.sp, modifier = Modifier.weight(1f))
                             Box(Modifier.size(36.dp).combinedClickable(
@@ -383,11 +401,19 @@ internal fun EffectWorkspacePanel(
                 }
 
                 Card(
-                    modifier = Modifier.width(330.dp).fillMaxHeight().testTag("workspace-presets-card"),
+                    modifier = Modifier.then(
+                        if (horizontalCardsFit) Modifier.width(330.dp).fillMaxHeight()
+                        else Modifier.fillMaxWidth().wrapContentHeight()
+                    ).testTag("workspace-presets-card"),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .then(if (horizontalCardsFit) Modifier.fillMaxHeight() else Modifier.wrapContentHeight())
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         Text("Presets", fontSize = 13.sp)
                         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                             WorkspaceCategory.entries.forEach { item ->
@@ -407,7 +433,7 @@ internal fun EffectWorkspacePanel(
                             }
                         }
                         when (category) {
-                            WorkspaceCategory.VISUAL -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            WorkspaceCategory.VISUAL -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(82.dp)) {
                                 items(visualPresets, key = { it.id }) { preset ->
                                     WorkspacePresetCard(preset.label, preset.description, visualId == preset.id, !busy,
                                         sampleImage = effectSamples[preset.id], id = preset.id,
@@ -416,7 +442,7 @@ internal fun EffectWorkspacePanel(
                                     }
                                 }
                             }
-                            WorkspaceCategory.VFX -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            WorkspaceCategory.VFX -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(82.dp)) {
                                 items(listOf(
                                     WorkspaceEffectPresets.VFX_CHROMATIC_SPLIT to "RGB Split",
                                     WorkspaceEffectPresets.VFX_SCAN_GLITCH to "Scan Glitch",
@@ -428,19 +454,19 @@ internal fun EffectWorkspacePanel(
                                         sampleImage = effectSamples[id], id = id, onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
                                 }
                             }
-                            WorkspaceCategory.SPLIT -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            WorkspaceCategory.SPLIT -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(82.dp)) {
                                 items(listOf(WorkspaceEffectPresets.SPLIT_2 to "2 tiles", WorkspaceEffectPresets.SPLIT_3 to "3 tiles")) { (id, label) ->
                                     WorkspacePresetCard(label, "Repeats the same source in $label", visualId == id, !busy,
                                         sampleImage = effectSamples[id], id = id, onHoldStart = { startHeldEffect(id) }, onHoldEnd = ::finishHeldEffect) { selectVisual(id) }
                                 }
                             }
-                            WorkspaceCategory.TIME -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            WorkspaceCategory.TIME -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(82.dp)) {
                                 items(listOf(RangeTimeOperation.SLOW to "Slow 0.5×", RangeTimeOperation.REPEAT to "Repeat ×2", RangeTimeOperation.REVERSE to "Reverse")) { (operation, label) ->
                                     WorkspacePresetCard(label, "Render selected range: $label", timeOperation == operation, !busy) { renderTime(operation) }
                                 }
                             }
                             WorkspaceCategory.TRANSITIONS -> {
-                                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
+                                Column(Modifier.fillMaxWidth().heightIn(min = 80.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center) {
                                     if (nextMainClip == null) {
                                         Text("Add another main-track clip after this one to create a transition.",
@@ -466,11 +492,19 @@ internal fun EffectWorkspacePanel(
                 }
 
                 Card(
-                    modifier = Modifier.width(250.dp).fillMaxHeight().testTag("workspace-tuning-card"),
+                    modifier = Modifier.then(
+                        if (horizontalCardsFit) Modifier.width(250.dp).fillMaxHeight()
+                        else Modifier.fillMaxWidth().wrapContentHeight()
+                    ).testTag("workspace-tuning-card"),
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = EditorPalette.BgSurface)
                 ) {
-                    Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .then(if (horizontalCardsFit) Modifier.fillMaxHeight() else Modifier.wrapContentHeight())
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
                         Text(if (category == WorkspaceCategory.TIME) "Render status" else "Tuning & actions", fontSize = 13.sp)
                         if (category != WorkspaceCategory.TIME) {
                             Text("Intensity  ${(intensity * 100).toInt()}%", fontSize = 11.sp)
@@ -496,8 +530,10 @@ internal fun EffectWorkspacePanel(
                     }
                 }
             }
+            }
+            }
 
-            // Cancel and Apply remain reachable regardless of the active horizontal card.
+            // Cancel and Apply remain pinned while compact cards scroll vertically.
             targetReason?.let { Text(it, color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }
                 ?: editorState.playerError?.let { Text("Playback error: $it. Apply is blocked until playback recovers.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }
                 ?: editorState.previewOnlyError?.let { Text("Preview unavailable: $it. This is only a preview limitation; Apply saves the effect for export.", color = EditorPalette.Warning, fontSize = 10.sp, maxLines = 2) }

@@ -104,6 +104,7 @@ fun EditorScreen(
         )
     )
 ) {
+    EditorPortraitOrientationEffect()
     EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm, entryWorkspace, onCloseWorkspace)
 }
 

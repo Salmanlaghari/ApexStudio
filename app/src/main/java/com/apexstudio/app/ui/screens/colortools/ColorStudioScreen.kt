@@ -185,74 +185,143 @@ fun ColorStudioScreen(
                     loading = frameResult == null, error = processingError ?: frameResult?.exceptionOrNull()?.message)
                 Text("Paused source-frame preview. Apply & preview saves the grade and returns to Edit for live video preview; it affects all current and future main-track videos. Export when finished.",
                     color = ApexPalette.TextTertiary, fontSize = 9.sp)
-                LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
-                    .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    item {
-                        Column(Modifier.width(246.dp).height(146.dp).clip(RoundedCornerShape(14.dp))
-                            .background(ApexPalette.BgSurface).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
-                            .padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("SOURCE • PAUSED VIDEO FRAME",
-                                color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                            Text(clip?.name.orEmpty(), color = ApexPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)
-                            if (clip?.type == ClipType.VIDEO) {
-                                val min = clip.trimStartMs.coerceAtLeast(0L)
-                                val max = (clip.trimEndMs.takeIf { it > min } ?: clip.durationMs).coerceAtLeast(min + 1L)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(sourceFrame?.let { timecode(it.timeMs) } ?: "—", color = ApexPalette.TextSecondary, fontSize = 9.sp)
-                                    Slider(value = frameTime.coerceIn(min, max).toFloat(), onValueChange = { frameTime = it.toLong() },
-                                        valueRange = min.toFloat()..max.toFloat(), colors = sliderColors(ApexPalette.NeonCyan), modifier = Modifier.weight(1f).height(28.dp))
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    if (maxWidth >= 600.dp) {
+                        LazyRow(Modifier.fillMaxWidth().height(if (embedded) 154.dp else 170.dp)
+                            .testTag("color_adjustment_controls"), horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            item {
+                                Column(Modifier.width(246.dp).height(146.dp).clip(RoundedCornerShape(14.dp))
+                                    .background(ApexPalette.BgSurface).border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                                    .padding(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Text("SOURCE • PAUSED VIDEO FRAME",
+                                        color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Text(clip?.name.orEmpty(), color = ApexPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)
+                                    if (clip?.type == ClipType.VIDEO) {
+                                        val min = clip.trimStartMs.coerceAtLeast(0L)
+                                        val max = (clip.trimEndMs.takeIf { it > min } ?: clip.durationMs).coerceAtLeast(min + 1L)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(sourceFrame?.let { timecode(it.timeMs) } ?: "—", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+                                            Slider(value = frameTime.coerceIn(min, max).toFloat(), onValueChange = { frameTime = it.toLong() },
+                                                valueRange = min.toFloat()..max.toFloat(), colors = sliderColors(ApexPalette.NeonCyan), modifier = Modifier.weight(1f).height(28.dp))
+                                        }
+                                    }
+                                    if (candidates.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        candidates.forEach { candidate ->
+                                            val active = candidate.id == clip?.id
+                                            val icon = Icons.Default.VideoLibrary
+                                            Row(Modifier.clip(RoundedCornerShape(7.dp))
+                                                .background(if (active) ApexPalette.NeonCyan.copy(.15f) else ApexPalette.BgElevated)
+                                                .clickable { chosenClipId = candidate.id; frameTime = ColorMediaIO.previewTimeMs(candidate, candidate.trimStartMs) }
+                                                .padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                androidx.compose.material3.Icon(icon, null, tint = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, modifier = Modifier.size(12.dp))
+                                                Spacer(Modifier.width(3.dp))
+                                                Text(candidate.name.ifBlank { "Video" },
+                                                    color = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, maxLines = 1, fontSize = 9.sp)
+                                            }
+                                        }
+                                    } else Text("Project-wide video grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
                                 }
                             }
-                            if (candidates.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                candidates.forEach { candidate ->
-                                    val active = candidate.id == clip?.id
-                                    val icon = Icons.Default.VideoLibrary
-                                    Row(Modifier.clip(RoundedCornerShape(7.dp))
-                                        .background(if (active) ApexPalette.NeonCyan.copy(.15f) else ApexPalette.BgElevated)
-                                        .clickable { chosenClipId = candidate.id; frameTime = ColorMediaIO.previewTimeMs(candidate, candidate.trimStartMs) }
-                                        .padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        androidx.compose.material3.Icon(icon, null, tint = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, modifier = Modifier.size(12.dp))
-                                        Spacer(Modifier.width(3.dp))
-                                        Text(candidate.name.ifBlank { "Video" },
-                                            color = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, maxLines = 1, fontSize = 9.sp)
+                            item {
+                                Column(Modifier.width(230.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("LIGHT & COLOR", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    AdjustmentSlider("Brightness", grade.brightness, -1f..1f, ApexPalette.NeonCyan, { grade = grade.copy(brightness = it) })
+                                    AdjustmentSlider("Contrast", grade.contrast, 0f..2f, ApexPalette.NeonPurple, { grade = grade.copy(contrast = it) })
+                                    AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
+                                }
+                            }
+                            item {
+                                Column(Modifier.width(220.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    AdjustmentSlider("Tone Map (SDR)", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
+                                    AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
+                                    Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                                }
+                            }
+                            item { WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.width(104.dp)) }
+                            item { WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.width(104.dp)) }
+                            item { WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.width(104.dp)) }
+                            item {
+                                Column(Modifier.width(250.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                    .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(7.dp)) {
+                                    Text("RGBL CURVES", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    RgbCurvesCanvas(grade, curveChannel, curvePoint, { curveChannel = it }, { index, value ->
+                                        curvePoint = index
+                                        grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
+                                    }, Modifier.fillMaxWidth().height(126.dp))
+                                }
+                            }
+                        }
+                    } else {
+                        Column(Modifier.fillMaxWidth().testTag("color_adjustment_controls"),
+                            verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("SOURCE • PAUSED VIDEO FRAME",
+                                    color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Text(clip?.name.orEmpty(), color = ApexPalette.TextPrimary, fontSize = 10.sp, maxLines = 1)
+                                if (clip?.type == ClipType.VIDEO) {
+                                    val min = clip.trimStartMs.coerceAtLeast(0L)
+                                    val max = (clip.trimEndMs.takeIf { it > min } ?: clip.durationMs).coerceAtLeast(min + 1L)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(sourceFrame?.let { timecode(it.timeMs) } ?: "—", color = ApexPalette.TextSecondary, fontSize = 9.sp)
+                                        Slider(value = frameTime.coerceIn(min, max).toFloat(), onValueChange = { frameTime = it.toLong() },
+                                            valueRange = min.toFloat()..max.toFloat(), colors = sliderColors(ApexPalette.NeonCyan), modifier = Modifier.weight(1f).height(28.dp))
                                     }
                                 }
-                            } else Text("Project-wide video grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
-                        }
-                    }
-                    item {
-                        Column(Modifier.width(230.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("LIGHT & COLOR", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            AdjustmentSlider("Brightness", grade.brightness, -1f..1f, ApexPalette.NeonCyan, { grade = grade.copy(brightness = it) })
-                            AdjustmentSlider("Contrast", grade.contrast, 0f..2f, ApexPalette.NeonPurple, { grade = grade.copy(contrast = it) })
-                            AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
-                        }
-                    }
-                    item {
-                        Column(Modifier.width(220.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            AdjustmentSlider("Tone Map (SDR)", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
-                            AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
-                            Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
-                        }
-                    }
-                    item { WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.width(104.dp)) }
-                    item { WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.width(104.dp)) }
-                    item { WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.width(104.dp)) }
-                    item {
-                        Column(Modifier.width(250.dp).clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
-                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(7.dp)) {
-                            Text("RGBL CURVES", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                            RgbCurvesCanvas(grade, curveChannel, curvePoint, { curveChannel = it }, { index, value ->
-                                curvePoint = index
-                                grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
-                            }, Modifier.fillMaxWidth().height(126.dp))
+                                if (candidates.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    candidates.forEach { candidate ->
+                                        val active = candidate.id == clip?.id
+                                        Row(Modifier.clip(RoundedCornerShape(7.dp))
+                                            .background(if (active) ApexPalette.NeonCyan.copy(.15f) else ApexPalette.BgElevated)
+                                            .clickable { chosenClipId = candidate.id; frameTime = ColorMediaIO.previewTimeMs(candidate, candidate.trimStartMs) }
+                                            .padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            androidx.compose.material3.Icon(Icons.Default.VideoLibrary, null,
+                                                tint = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, modifier = Modifier.size(12.dp))
+                                            Spacer(Modifier.width(3.dp))
+                                            Text(candidate.name.ifBlank { "Video" },
+                                                color = if (active) ApexPalette.NeonCyan else ApexPalette.TextSecondary, maxLines = 1, fontSize = 9.sp)
+                                        }
+                                    }
+                                } else Text("Project-wide video grade", color = ApexPalette.TextTertiary, fontSize = 9.sp)
+                            }
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("LIGHT & COLOR", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                AdjustmentSlider("Brightness", grade.brightness, -1f..1f, ApexPalette.NeonCyan, { grade = grade.copy(brightness = it) })
+                                AdjustmentSlider("Contrast", grade.contrast, 0f..2f, ApexPalette.NeonPurple, { grade = grade.copy(contrast = it) })
+                                AdjustmentSlider("Saturation", grade.saturation, 0f..2f, ApexPalette.NeonPink, { grade = grade.copy(saturation = it) })
+                            }
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("TONE & DETAIL", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                AdjustmentSlider("Tone Map (SDR)", grade.hdr, 0f..1f, ApexPalette.NeonCyan, { grade = grade.copy(hdr = it) })
+                                AdjustmentSlider("Sharpness", grade.sharpness, 0f..1f, ApexPalette.NeonPurple, { grade = grade.copy(sharpness = it) })
+                                Text("SDR tone effect; output stays SDR", color = ApexPalette.TextTertiary, fontSize = 8.sp, maxLines = 1)
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                WheelControl("SHADOWS", grade.shadows, ApexPalette.NeonCyan, { grade = grade.copy(shadows = it) }, Modifier.weight(1f))
+                                WheelControl("MIDTONES", grade.midtones, ApexPalette.NeonPurple, { grade = grade.copy(midtones = it) }, Modifier.weight(1f))
+                                WheelControl("HIGHLIGHTS", grade.highlights, ApexPalette.NeonPink, { grade = grade.copy(highlights = it) }, Modifier.weight(1f))
+                            }
+                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(ApexPalette.BgSurface)
+                                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp)).padding(7.dp)) {
+                                Text("RGBL CURVES", color = ApexPalette.TextTertiary, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                RgbCurvesCanvas(grade, curveChannel, curvePoint, { curveChannel = it }, { index, value ->
+                                    curvePoint = index
+                                    grade = grade.withCurve(curveChannel) { points -> points.toMutableList().also { it[index] = value } }
+                                }, Modifier.fillMaxWidth().height(126.dp))
+                            }
                         }
                     }
                 }

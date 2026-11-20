@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -58,6 +59,7 @@ import com.apexstudio.app.ui.theme.ApexThemeTokens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ExportScreen(
     projectId: String,
@@ -300,15 +302,23 @@ fun ExportScreen(
         }
     ) {
         if (embedded) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(232.dp)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                GlassCard(modifier = Modifier.width(276.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val portraitStack = maxWidth < 600.dp
+                FlowRow(
+                    modifier = if (portraitStack) {
+                        Modifier.fillMaxWidth().heightIn(max = 430.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    } else {
+                        Modifier.fillMaxWidth().height(232.dp)
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    },
+                    maxItemsInEachRow = if (portraitStack) 1 else 5,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                GlassCard(modifier = if (portraitStack) Modifier.fillMaxWidth() else Modifier.width(276.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("EXPORT SCOPE", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -337,7 +347,7 @@ fun ExportScreen(
                     }
                 }
 
-                GlassCard(modifier = Modifier.width(278.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                GlassCard(modifier = if (portraitStack) Modifier.fillMaxWidth() else Modifier.width(278.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("VIDEO OUTPUT", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -368,7 +378,7 @@ fun ExportScreen(
                     }
                 }
 
-                GlassCard(modifier = Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                GlassCard(modifier = if (portraitStack) Modifier.fillMaxWidth() else Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("ENCODING", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Text("BITRATE • ${if (selectedBitrateMbps == 0) "Auto" else "$selectedBitrateMbps Mbps"}", color = ApexPalette.TextSecondary, fontSize = 10.sp)
@@ -393,7 +403,7 @@ fun ExportScreen(
                     }
                 }
 
-                GlassCard(modifier = Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                GlassCard(modifier = if (portraitStack) Modifier.fillMaxWidth() else Modifier.width(270.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("SIZE & PROGRESS", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -419,7 +429,7 @@ fun ExportScreen(
                     }
                 }
 
-                GlassCard(modifier = Modifier.width(260.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
+                GlassCard(modifier = if (portraitStack) Modifier.fillMaxWidth() else Modifier.width(260.dp).fillMaxHeight(), cornerRadius = 14.dp, contentPadding = PaddingValues(10.dp)) {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("EXPORT & SHARE", color = ApexPalette.TextTertiary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -461,6 +471,7 @@ fun ExportScreen(
                         }
                         shareError?.let { Text(it, color = ApexPalette.Danger, fontSize = 10.sp, maxLines = 2) }
                     }
+                }
                 }
             }
         } else {
@@ -578,8 +589,9 @@ fun ExportScreen(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().padding(10.dp).testTag("export-aspect-options"),
+                    maxItemsInEachRow = 2,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     for ((label, sub) in listOf(
@@ -640,9 +652,11 @@ fun ExportScreen(
                         )
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().testTag("export-frame-rate-options"),
+                        maxItemsInEachRow = 4,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         for (f in listOf(24f, 30f, 60f, 90f, 120f)) {
                             val sel = selectedFps == f
@@ -682,10 +696,12 @@ fun ExportScreen(
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 14.dp
             ) {
-                Row(
+                FlowRow(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(10.dp),
+                        .padding(10.dp)
+                        .testTag("export-bitrate-options"),
+                    maxItemsInEachRow = 3,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val bitrateOptions = listOf(0 to "Auto", 8 to "8", 12 to "12", 16 to "16", 24 to "24", 32 to "32")
@@ -729,7 +745,11 @@ fun ExportScreen(
             }
 
             SectionLabel("QUALITY • AUTO BITRATE ONLY")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                maxItemsInEachRow = 3,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 for (quality in com.apexstudio.app.domain.model.ExportQuality.entries) {
                     FilterChip(
                         selected = export.settings.quality == quality,

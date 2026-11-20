@@ -11,8 +11,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
@@ -73,6 +75,64 @@ class PipOverlayCanvasTest {
 
         composeRule.onNodeWithTag("pip-overlay-image-pip-image", useUnmergedTree = true)
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun unmodifiedOverlayKeepsTheFullSourceAspectInItsPreviewFrame() {
+        val source = overlay().copy(id = "wide-source", overlayAspect = 2f)
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(source),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(source.id to false),
+                )
+            }
+        }
+
+        val frame = composeRule.onNodeWithTag(
+            "pip-overlay-item-${source.id}", useUnmergedTree = true
+        ).fetchSemanticsNode().boundsInRoot
+        assertEquals(2f, frame.width / frame.height, 0.01f)
+    }
+
+    @Test
+    fun selectionOutlineAppearsOnlyForTheSelectedOverlay() {
+        val source = overlay()
+        val selectedId = mutableStateOf<String?>(null)
+        val outlineTag = "pip-overlay-selection-outline-${source.id}"
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(source),
+                    selectedOverlayClipId = selectedId.value,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = { selectedId.value = it },
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(source.id to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(outlineTag, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { selectedId.value = source.id }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(outlineTag, useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test

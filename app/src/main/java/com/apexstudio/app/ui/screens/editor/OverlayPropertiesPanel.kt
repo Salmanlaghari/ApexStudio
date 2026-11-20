@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -109,23 +108,16 @@ fun OverlayPropertiesPanel(
         0xFF00E676.toInt(), 0xFF7C4DFF.toInt()
     )
 
-    // Compact sheet: keep preview + timeline visible while the horizontal
-    // cards remain available for detailed controls.
-    // The controls live in HORIZONTAL cards (swipe left/right between
-    // control groups) instead of one tall vertical column.
-    // Stay in the editor's persistent preview area on portrait phones; the
-    // horizontally swiped cards retain their own overflow access.
-    // This cap is for the inner column; the surrounding 16dp padding on each
-    // side adds 32dp to the measured sheet height.
-    val maxSheetHeight = minOf((LocalConfiguration.current.screenHeightDp * 0.55f).dp, 228.dp)
-    val cardsHeight = (maxSheetHeight - 74.dp).coerceAtLeast(120.dp)
+    // Give overlay editing enough room to feel complete on portrait phones.
+    // The content scrolls vertically in one place; the 16dp outer padding on
+    // each side adds 32dp to the measured sheet height.
+    val maxSheetHeight = minOf((LocalConfiguration.current.screenHeightDp * 0.58f).dp, 400.dp)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(Color(0xFF141420))
-            .border(1.dp, Color(0xFF2A2A3E), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .padding(16.dp)
             .heightIn(max = maxSheetHeight)
             .testTag("overlay-properties-panel-root")
@@ -145,7 +137,7 @@ fun OverlayPropertiesPanel(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "Overlay Properties",
+                    text = "Edit Overlay",
                     color = ApexPalette.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
@@ -165,32 +157,33 @@ fun OverlayPropertiesPanel(
             fontSize = 11.sp,
             modifier = Modifier.padding(top = 0.dp, bottom = 2.dp)
         )
+        Text(
+            text = "Scroll for transform, style, track and keyframes",
+            color = ApexPalette.TextPrimary.copy(alpha = 0.5f),
+            fontSize = 10.sp,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
 
-        // Horizontal control cards: swipe left/right between groups.
-        // Each card scrolls vertically on its own if its content
-        // overflows (e.g. a long keyframe list).
-        Row(
+        // All edit groups live in one vertical scroll surface, so no controls
+        // are hidden behind an undiscoverable horizontal swipe.
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(cardsHeight)
-                .horizontalScroll(rememberScrollState())
-                .testTag("overlay-properties-panel-cards"),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .testTag("overlay-properties-panel-content"),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Card 1: Transform / trim + opacity / blend.
+            // Transform and source trim.
             PropsCard {
-                // Primary transform and source-trim controls remain first in
-                // the horizontal card strip; overflow is contained here, not
-                // on the whole sheet, so the header and close action stay put.
+                PanelSectionLabel("Transform & trim", topPadding = 0.dp)
                 OverlayEditor(
                     clip = clip,
                     onLayout = onLayout,
                     onTrim = onTrim
                 )
             }
-            // A separate, fully visible card avoids nesting the blend choices
-            // below the long transform editor's vertical scrolling surface.
-            PropsCard(scrollVertically = false) {
+            PropsCard {
                 // Opacity — shows the EFFECTIVE opacity at the
                 // playhead when the overlay has keyframes (the slider
                 // auto-keyframes there), else the base pipOpacity.
@@ -434,7 +427,7 @@ fun OverlayPropertiesPanel(
             }
         }
             } // Card 4
-        } // Horizontal cards row
+        } // Vertically scrollable control groups
     }
 }
 
@@ -490,22 +483,13 @@ private fun PanelSectionLabel(text: String, topPadding: Dp = 16.dp) {
     )
 }
 
-/**
- * One horizontal card of the properties panel: a fixed-width,
- * full-cards-height column that scrolls vertically on its own when
- * its content overflows (e.g. a long keyframe list).
- */
 @Composable
-private fun PropsCard(scrollVertically: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
-    val cardScroll = rememberScrollState()
+private fun PropsCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
-            .width(264.dp)
-            .fillMaxHeight()
+            .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.04f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-            .then(if (scrollVertically) Modifier.verticalScroll(cardScroll) else Modifier)
+            .background(Color.White.copy(alpha = 0.035f))
             .padding(12.dp),
         content = content
     )

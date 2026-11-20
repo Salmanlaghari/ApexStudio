@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import com.apexstudio.app.domain.model.ClipType
 import com.apexstudio.app.domain.model.MediaClip
@@ -17,7 +18,7 @@ class OverlayPropertiesPanelScrollTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun lowerOverlayControlsRemainReachableInCappedSheet() {
+    fun overlayControlsRemainReachableInVerticalEditSheet() {
         compose.setContent {
             OverlayPropertiesPanel(
                 clip = MediaClip(
@@ -44,6 +45,9 @@ class OverlayPropertiesPanelScrollTest {
             )
         }
 
+        compose.onNodeWithText("Edit Overlay").assertExists()
+        compose.onNodeWithTag("overlay-properties-panel-content").assertExists()
+        compose.onNodeWithText("Keyframes").performScrollTo().assertExists()
         compose.onNodeWithText("OVL9").performScrollTo().assertExists()
     }
 }

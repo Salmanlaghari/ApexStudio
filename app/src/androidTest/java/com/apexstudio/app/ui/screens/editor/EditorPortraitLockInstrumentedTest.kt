@@ -25,6 +25,7 @@ import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.seekTo
 import com.apexstudio.app.ui.theme.ApexTheme
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -63,6 +64,7 @@ class EditorPortraitLockInstrumentedTest {
         }
 
         var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        val backRequested = AtomicBoolean(false)
         device.setOrientationLeft()
         try {
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
@@ -73,11 +75,11 @@ class EditorPortraitLockInstrumentedTest {
                             var editorVisible by remember { mutableStateOf(true) }
                             if (editorVisible) {
                                 EditorScreen(
-                                    projectId = project.id,
-                                    onBack = { editorVisible = false },
-                                    onExport = {},
-                                    onColor = {},
-                                    onAudio = {},
+                    projectId = project.id,
+                    onBack = { backRequested.set(true); editorVisible = false },
+                    onExport = {},
+                    onColor = {},
+                    onAudio = {},
                                     vm = vm,
                                 )
                             } else {
@@ -126,10 +128,17 @@ class EditorPortraitLockInstrumentedTest {
                     vm.previewFrameGeneration.value > 0L
                 }
 
-                device.findObject(By.desc("Back to projects")).click()
-                assertTrue("Editor did not exit", device.wait(Until.hasObject(By.text("Exited editor")), 15_000))
+                val backButton = device.findObject(By.desc("Back to projects"))
+                assertTrue("Back-to-projects control is not clickable", backButton.isClickable)
+                assertTrue("Back-to-projects click was not delivered", backButton.click())
+                await("Back-to-projects control did not invoke the editor exit callback") {
+                    backRequested.get()
+                }
                 var restoredOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                scenario.onActivity { activity -> restoredOrientation = activity.requestedOrientation }
+                await(15_000L, "Leaving the editor did not restore the Activity's prior request") {
+                    scenario.onActivity { activity -> restoredOrientation = activity.requestedOrientation }
+                    restoredOrientation == previousOrientation
+                }
                 assertEquals("Leaving the editor must restore the Activity's prior request",
                     previousOrientation, restoredOrientation)
                 await(15_000L, "device orientation was not released after leaving the editor") {

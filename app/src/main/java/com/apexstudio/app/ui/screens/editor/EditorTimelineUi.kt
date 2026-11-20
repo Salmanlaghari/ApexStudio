@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -137,16 +138,18 @@ fun TimelineTrackArea(
     focused: Boolean = false,
     onToggleFocus: () -> Unit = {},
     onToggleRippleEditing: () -> Unit = {},
+    horizontalScrollState: ScrollState? = null,
+    verticalScrollState: ScrollState? = null,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
     val clips = state.project?.clips ?: emptyList()
 
-    // Timeline scroll state, hoisted HERE (not inside VideoTimeline) so
-    // opening/closing any bottom sheet can never reset the scroll to
-    // 00:00 and strand the playhead off-screen.
-    val timelineScrollState = rememberScrollState()
-    val timelineVScrollState = rememberScrollState()
+    // Timeline scroll state is supplied by the editor screen when available,
+    // so sheets and orientation-specific workspace slots cannot reset the
+    // visible range to 00:00 and strand the playhead off-screen.
+    val timelineScrollState = horizontalScrollState ?: rememberScrollState()
+    val timelineVScrollState = verticalScrollState ?: rememberScrollState()
 
     // Filmstrip clips: main video + photo (IMAGE) clips share the V1
     // filmstrip lane, and overlay (OVERLAY) clips get frames too — the

@@ -33,14 +33,9 @@ import com.apexstudio.app.presentation.state.EditorState
 import com.apexstudio.app.presentation.viewmodel.*
 import com.apexstudio.app.ui.theme.EditorPalette
 
-/** Use available app-window bounds so config changes and multi-window layouts adapt consistently. */
-internal fun usesLandscapeEditorLayout(screenWidthDp: Int, screenHeightDp: Int): Boolean =
-    screenWidthDp > 0 && screenHeightDp > 0 && screenWidthDp > screenHeightDp
-
 /**
- * Portrait stays preview-first with an accessible timeline; landscape expands
- * the preview/inspector row above the timeline. Media aspect controls framing,
- * not the device's workspace orientation.
+ * The source aspect chooses a stacked preview/timeline workspace. Wide windows
+ * may expose video properties in a dialog without stealing preview or timeline width.
  */
 @Composable
 internal fun ColumnScope.AdaptiveEditorWorkspace(
@@ -343,16 +338,6 @@ internal fun LandscapeTimelineControls(state: EditorState, vm: EditorViewModel, 
         TextButton(onClick = { vm.togglePlay() }, enabled = state.durationMs > 0L) {
             Text(if (state.isPlaying) "Pause" else "Play", fontSize = 11.sp)
         }
-        TextButton(
-            onClick = { vm.undo() },
-            enabled = state.canUndo,
-            modifier = Modifier.widthIn(min = 48.dp).semantics { contentDescription = "Undo" }.testTag("landscape-undo"),
-        ) { Text("Undo", fontSize = 11.sp) }
-        TextButton(
-            onClick = { vm.redo() },
-            enabled = state.canRedo,
-            modifier = Modifier.widthIn(min = 48.dp).semantics { contentDescription = "Redo" }.testTag("landscape-redo"),
-        ) { Text("Redo", fontSize = 11.sp) }
         TextButton(onClick = { vm.stepFrame(false); seek(vm.livePlayheadMs()) }, enabled = state.durationMs > 0L,
             modifier = Modifier.widthIn(min = 44.dp).testTag("previous-frame")) { Text("−1f", fontSize = 11.sp) }
         TextButton(onClick = { vm.stepFrame(true); seek(vm.livePlayheadMs()) }, enabled = state.durationMs > 0L,

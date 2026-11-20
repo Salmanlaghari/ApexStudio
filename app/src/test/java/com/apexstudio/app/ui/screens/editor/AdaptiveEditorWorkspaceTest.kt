@@ -1,14 +1,8 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.ScrollState
-import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,76 +41,6 @@ class AdaptiveEditorWorkspaceTest {
 
     private fun paneHeight(tag: String): Float =
         compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.height
-
-    @Test fun actualWindowBoundsDriveLayoutAndHoistedEditorStateSurvivesOrientationChange() {
-        assertFalse(usesLandscapeEditorLayout(375, 800))
-        assertTrue(usesLandscapeEditorLayout(840, 400))
-        assertFalse(usesLandscapeEditorLayout(0, 800))
-
-        lateinit var timelineScroll: ScrollState
-        compose.setContent {
-            var windowWidthDp by remember { mutableIntStateOf(375) }
-            var windowHeightDp by remember { mutableIntStateOf(800) }
-            var selectedClipId by remember { mutableStateOf("clip-a") }
-            var playheadMs by remember { mutableLongStateOf(1_200L) }
-            val landscape = usesLandscapeEditorLayout(windowWidthDp, windowHeightDp)
-            timelineScroll = rememberScrollState()
-
-            Column(Modifier.requiredSize(windowWidthDp.dp, windowHeightDp.dp)) {
-                Button(
-                    onClick = {
-                        if (landscape) {
-                            windowWidthDp = 375
-                            windowHeightDp = 800
-                        } else {
-                            windowWidthDp = 840
-                            windowHeightDp = 400
-                        }
-                    },
-                    modifier = Modifier.testTag("rotate-editor-layout"),
-                ) { Text("Rotate") }
-                Text("Selected clip: $selectedClipId")
-                Text("Playhead: $playheadMs ms")
-                AdaptiveEditorWorkspace(
-                    landscape = landscape,
-                    focused = false,
-                    fullscreen = false,
-                    preview = { Box(Modifier.fillMaxWidth().height(100.dp).testTag("orientation-preview")) },
-                    timeline = {
-                        Row(
-                            Modifier.fillMaxWidth().height(160.dp)
-                                .horizontalScroll(timelineScroll)
-                                .testTag("orientation-timeline-scroll"),
-                        ) {
-                            Box(Modifier.width(1200.dp).height(140.dp))
-                        }
-                    },
-                    inspector = { Text("Orientation inspector") },
-                    compactTimelinePaneHeight = 160.dp,
-                )
-            }
-        }
-
-        compose.onNodeWithTag("portrait-preview-pane").assertExists()
-        compose.waitForIdle()
-        compose.runOnIdle {
-            assertTrue("Timeline should have scrollable content", timelineScroll.maxValue > 80)
-            timelineScroll.dispatchRawDelta(80f)
-            assertEquals(80, timelineScroll.value)
-        }
-
-        compose.onNodeWithTag("rotate-editor-layout").performClick()
-        compose.onNodeWithTag("landscape-preview-row").assertExists()
-        compose.onNodeWithTag("landscape-timeline").assertExists()
-        compose.onNodeWithText("Selected clip: clip-a").assertExists()
-        compose.onNodeWithText("Playhead: 1200 ms").assertExists()
-        compose.runOnIdle { assertEquals("Timeline position must survive layout rearrangement", 80, timelineScroll.value) }
-
-        compose.onNodeWithTag("rotate-editor-layout").performClick()
-        compose.onNodeWithTag("portrait-preview-pane").assertExists()
-        compose.onNodeWithText("Selected clip: clip-a").assertExists()
-        compose.runOnIdle { assertEquals("Returning to portrait must preserve timeline position", 80, timelineScroll.value) }
-    }
 
     @Test fun landscapeKeepsPreviewAboveFullWidthTimelineWithCollapsibleInspector() {
         render(true)

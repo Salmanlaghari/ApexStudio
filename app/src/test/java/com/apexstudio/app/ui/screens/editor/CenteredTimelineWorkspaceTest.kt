@@ -92,25 +92,4 @@ class CenteredTimelineWorkspaceTest {
         assertTrue("Video-layer viewport gains the space released from the old toolbar", canvas.height > track.bottom - canvas.top)
         assertTrue(track.bottom <= bounds("dock").top)
     }
-
-    @Test fun compactLandscapeTransportKeepsUndoAndRedoAvailable() {
-        val vm = EditorViewModel()
-        val state = vm.state.value.copy(durationMs = 5_000L, canUndo = true, canRedo = true)
-        compose.setContent {
-            Column(Modifier.requiredSize(840.dp, 320.dp)) {
-                EditorTransportSection(
-                    state = state,
-                    vm = vm,
-                    seekPlayerAndState = {},
-                    onOpenAddMediaMenu = {},
-                    compactLandscape = true,
-                )
-            }
-        }
-
-        compose.onNodeWithTag("landscape-undo").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithTag("landscape-redo").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithTag("previous-frame").assertIsDisplayed()
-        compose.onNodeWithTag("next-frame").assertIsDisplayed()
-    }
 }

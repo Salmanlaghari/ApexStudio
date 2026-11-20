@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.filled.*
@@ -103,8 +102,10 @@ fun EditorScreen(
             context = LocalContext.current.applicationContext,
             projectId = projectId
         )
+        )
     )
 ) {
+    EditorPortraitOrientationEffect()
     EditorScreenContent(projectId, onBack, onExport, onColor, onAudio, vm, entryWorkspace, onCloseWorkspace)
 }
 
@@ -195,28 +196,15 @@ private fun EditorScreenContent(
     )
     val horizontalProjectLayout = usesHorizontalProjectLayout(editorLayoutAspectRatio)
     val windowConfiguration = LocalConfiguration.current
-    val isLandscapeWindow = usesLandscapeEditorLayout(
-        screenWidthDp = windowConfiguration.screenWidthDp,
-        screenHeightDp = windowConfiguration.screenHeightDp,
-    )
     // Media aspect always chooses the preview/timeline arrangement. A wide
-    // source chooses preview framing, while actual window bounds choose the
-    // portrait/landscape workspace. Keep a properties action on a wide window
-    // when a landscape inspector is not being shown.
-    val showWideWindowPropertiesAction = isLandscapeWindow && !horizontalProjectLayout
-    // Keep timeline offsets outside the orientation-specific slot so layout
-    // rearrangement preserves the visible editing position and selection.
+    // window only gets a properties action; it must not replace a portrait
+    // source-first preview with a side-by-side inspector.
+    val showWideWindowPropertiesAction = windowConfiguration.screenWidthDp > windowConfiguration.screenHeightDp &&
+        !horizontalProjectLayout
+    // Keep the timeline in composition while changing only its available height;
+    // this retains its remembered scroll position, selection and media bindings.
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
     var manualTimelinePaneHeightDp by rememberSaveable(projectId) { mutableStateOf<Float?>(null) }
-    // Keep timeline position owned by the editor screen, not its portrait or
-    // landscape slot, so rearranging the workspace never sends the playhead
-    // view back to the start of the timeline.
-    val timelineHorizontalScrollState = rememberSaveable(projectId, saver = ScrollState.Saver) {
-        ScrollState(0)
-    }
-    val timelineVerticalScrollState = rememberSaveable(projectId, saver = ScrollState.Saver) {
-        ScrollState(0)
-    }
     val manualTimelinePaneHeight = manualTimelinePaneHeightDp?.dp
     val compactTimelinePaneHeight = EditorLayoutMetrics.PlaybackBarHeight +
         compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
@@ -1524,9 +1512,9 @@ private fun EditorScreenContent(
             EditorPausedSourcePreview(state.project?.clips.orEmpty(), mainPreviewClip, state.playerPositionMs)
         } else {
         AdaptiveEditorWorkspace(
-            // Project/media aspect controls preview framing; the current window
-            // bounds control the portrait-first versus landscape arrangement.
-            landscape = isLandscapeWindow,
+            // The editor follows the actual media aspect on every window size.
+            // The explicit side-inspector layout remains available to other hosts.
+            landscape = false,
             horizontalProjectMode = horizontalProjectLayout,
             focused = isTimelineFocusMode,
             fullscreen = state.isFullscreenPreview,
@@ -1569,7 +1557,7 @@ private fun EditorScreenContent(
             timeline = { timelinePaneResized ->
         if (editorChromeVisible(state.isFullscreenPreview) && !previewPlaybackSuspended) {
             EditorTransportSection(
-                compactLandscape = isLandscapeWindow && !horizontalProjectLayout,
+                compactLandscape = false,
                 state = state,
                 vm = vm,
                 seekPlayerAndState = seekPlayerAndState,
@@ -1578,8 +1566,6 @@ private fun EditorScreenContent(
                 isFullscreenPreview = state.isFullscreenPreview,
                 horizontalProjectLayout = horizontalProjectLayout,
                 timelinePaneResized = timelinePaneResized,
-                horizontalScrollState = timelineHorizontalScrollState,
-                verticalScrollState = timelineVerticalScrollState,
                 // V2 track "+" adds DIRECTLY as an overlay clip: the flag is
                 // set here and the picker launches immediately, so the pick
                 // can never be misrouted to V1 (the old bug: the ClipType was

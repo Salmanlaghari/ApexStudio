@@ -9,7 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -2104,8 +2103,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     isFullscreenPreview: Boolean = false,
     horizontalProjectLayout: Boolean = false,
     timelinePaneResized: Boolean = false,
-    horizontalScrollState: ScrollState? = null,
-    verticalScrollState: ScrollState? = null,
 ) {
     val context = LocalContext.current
     // Compact transport frees vertical room for the layered timeline.
@@ -2195,8 +2192,6 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
 
     TimelineTrackArea(
         state = state,
-        horizontalScrollState = horizontalScrollState,
-        verticalScrollState = verticalScrollState,
         compactTimeline = compactPhoneTimeline,
         showLayerControls = !(compactLandscape && !horizontalProjectLayout),
         focused = isTimelineFocusMode,

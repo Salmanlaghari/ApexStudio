@@ -76,6 +76,33 @@ class PipOverlayCanvasTest {
     }
 
     @Test
+    fun unresolvedJpegOverlayUsesImageRendererInsteadOfMoviePlaceholder() {
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(overlay()),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = emptyMap(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("pip-overlay-image-pip-image", useUnmergedTree = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Loading overlay", useUnmergedTree = true)
+            .assertDoesNotExist()
+    }
+
+    @Test
     fun laterOverlayUsesProjectPlayheadTimeInsteadOfMainClipLocalZero() {
         val later = overlay().copy(
             timelineOffsetMs = 2_000L,

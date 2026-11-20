@@ -76,6 +76,64 @@ class PipOverlayCanvasTest {
     }
 
     @Test
+    fun unmodifiedOverlayKeepsTheFullSourceAspectInItsPreviewFrame() {
+        val source = overlay().copy(id = "wide-source", overlayAspect = 2f)
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(source),
+                    selectedOverlayClipId = null,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = {},
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(source.id to false),
+                )
+            }
+        }
+
+        val frame = composeRule.onNodeWithTag(
+            "pip-overlay-item-${source.id}", useUnmergedTree = true
+        ).fetchSemanticsNode().boundsInRoot
+        assertEquals(2f, frame.width / frame.height, 0.01f)
+    }
+
+    @Test
+    fun selectionOutlineAppearsOnlyForTheSelectedOverlay() {
+        val source = overlay()
+        val selectedId = mutableStateOf<String?>(null)
+        val outlineTag = "pip-overlay-selection-outline-${source.id}"
+        composeRule.setContent {
+            Box(Modifier.size(400.dp, 300.dp)) {
+                PipOverlayCanvas(
+                    overlayClips = listOf(source),
+                    selectedOverlayClipId = selectedId.value,
+                    currentTimeMs = 1_000L,
+                    overlayPlayer = null,
+                    overlayPlayerClipId = null,
+                    onSelectOverlayClip = { selectedId.value = it },
+                    onMoveOverlayClip = { _, _, _, _ -> },
+                    onScaleOverlayClip = { _, _, _ -> },
+                    onRotateOverlayClip = { _, _, _ -> },
+                    onOverlayGestureEnd = {},
+                    onRemoveOverlayClip = {},
+                    overlayIsVideo = mapOf(source.id to false),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(outlineTag, useUnmergedTree = true).assertDoesNotExist()
+        composeRule.runOnIdle { selectedId.value = source.id }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag(outlineTag, useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
     fun laterOverlayUsesProjectPlayheadTimeInsteadOfMainClipLocalZero() {
         val later = overlay().copy(
             timelineOffsetMs = 2_000L,

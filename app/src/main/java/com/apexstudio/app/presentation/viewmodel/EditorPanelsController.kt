@@ -263,7 +263,13 @@ fun EditorViewModel.setHistoryDraftsTab(
 
 /** Records an auto-save tick (called every 30s while editing). */
 fun EditorViewModel.markAutoSaved(nowMs: Long = System.currentTimeMillis()) =
-    _state.update { it.copy(lastAutoSaveMs = nowMs) }
+    _state.update {
+        it.copy(
+            lastAutoSaveMs = nowMs,
+            projectSaveStatus = com.apexstudio.app.presentation.state.ProjectSaveStatus.SAVED,
+            projectSaveError = null
+        )
+    }
 
 /**
  * Open the Mask tool from the MAIN bottom bar — Bug 4, Mask as a

@@ -672,8 +672,8 @@ internal fun EditorViewModel.persistProject(
         refreshLegacyTextStickerFields = refreshLegacyTextStickerFields,
         refreshLegacyDrawingClipIds = refreshLegacyDrawingClipIds
     ).copy(lastEditedMs = System.currentTimeMillis())
-    if (stamped != snapshot) {
-        _state.update { it.copy(project = stamped) }
+    _state.update {
+        it.copy(project = stamped, projectSaveStatus = ProjectSaveStatus.SAVING, projectSaveError = null)
     }
     viewModelScope.launch {
         try {
@@ -681,6 +681,9 @@ internal fun EditorViewModel.persistProject(
             markAutoSaved()
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Auto-save failed", e)
+            _state.update {
+                it.copy(projectSaveStatus = ProjectSaveStatus.ERROR, projectSaveError = "Tap to retry saving.")
+            }
         }
     }
 }
@@ -697,13 +700,18 @@ fun EditorViewModel.saveDraft(name: String? = null) {
         isDraft = true,
         lastEditedMs = System.currentTimeMillis()
     )
-    _state.update { it.copy(project = draft) }
+    _state.update {
+        it.copy(project = draft, projectSaveStatus = ProjectSaveStatus.SAVING, projectSaveError = null)
+    }
     viewModelScope.launch {
         try {
             repo.saveProject(draft)
             markAutoSaved()
         } catch (e: Exception) {
             Log.w("EditorViewModel", "Draft save failed", e)
+            _state.update {
+                it.copy(projectSaveStatus = ProjectSaveStatus.ERROR, projectSaveError = "Tap to retry saving.")
+            }
         }
     }
 }

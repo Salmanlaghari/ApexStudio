@@ -1473,7 +1473,10 @@ private fun EditorScreenContent(
                 onHelp = { vm.openHelpDialog() },
                 onExport = { if (isColorWorkspace) colorExportRequest++ else onExport() },
                 exportEnabled = !isExportWorkspace,
-                resolutionEnabled = !previewPlaybackSuspended
+                resolutionEnabled = !previewPlaybackSuspended,
+                projectSaveStatus = state.projectSaveStatus,
+                projectSaveError = state.projectSaveError,
+                onRetrySave = { vm.flushProject() }
             )
 
         }

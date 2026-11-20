@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
+import com.apexstudio.app.presentation.state.ProjectSaveStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -28,7 +29,7 @@ class EditorChromeTest {
         }
         val brand = compose.onNodeWithContentDescription("ApexStudio build identity. Project project-123")
         brand.assertIsDisplayed()
-        assertTrue(compose.onAllNodesWithText("My project").fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithText("My project").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("project-123").fetchSemanticsNodes().isEmpty())
         brand.performTouchInput { longClick() }
         compose.runOnIdle { assertEquals(1, backCount) }
@@ -40,11 +41,26 @@ class EditorChromeTest {
             .performClick()
         compose.onNodeWithText("Installed build").assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
-        compose.onNodeWithText("Edit project").assertIsDisplayed()
+        compose.onNodeWithText("A long project name that must not become a title bar").assertIsDisplayed()
+        compose.onNodeWithText("Saved").assertIsDisplayed()
         compose.onNodeWithContentDescription("Resolution: 1080P; preview fit").assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         compose.onNodeWithText("1080P").assertIsDisplayed()
-        assertTrue(compose.onAllNodesWithText("A long project name that must not become a title bar").fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun saveErrorOffersATrueRetryAction() {
+        var retryCount = 0
+        compose.setContent {
+            TopAppBarSection(
+                title = "Vertical cut",
+                projectSaveStatus = ProjectSaveStatus.ERROR,
+                projectSaveError = "Tap to retry saving.",
+                onRetrySave = { retryCount++ }
+            )
+        }
+        compose.onNodeWithText("Vertical cut").assertIsDisplayed()
+        compose.onNodeWithText("Save failed · Retry").assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, retryCount) }
     }
 
     @Test fun resolutionMenuRetainsResolutionAndPreviewFitActionsAndExportIsReal() {

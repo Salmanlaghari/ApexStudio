@@ -205,8 +205,9 @@ private fun EditorScreenContent(
     var isTimelineFocusMode by remember(projectId) { mutableStateOf(false) }
     var manualTimelinePaneHeightDp by rememberSaveable(projectId) { mutableStateOf<Float?>(null) }
     val manualTimelinePaneHeight = manualTimelinePaneHeightDp?.dp
+    // The fixed timeline-host slack accommodates the empty grouped V2 add row.
     val compactTimelinePaneHeight = EditorLayoutMetrics.PlaybackBarHeight +
-        compactTimelineHeight(state, includeEmptyOverlayLane = true) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
+        compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
 
     // Clean Voice preview: ONE shared DenoiseAudioProcessor for the life
     // of the editor. The player's audio sink (DenoiseRenderersFactory)

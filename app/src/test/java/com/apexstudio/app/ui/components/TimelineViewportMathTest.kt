@@ -34,6 +34,33 @@ class TimelineViewportMathTest {
     }
 
     @Test
+    fun `successive pinch samples keep the same timeline time under the centroid`() {
+        val firstScroll = timelineScrollForCentroid(
+            currentScrollPx = 500,
+            previousCentroidX = 200f,
+            centroidX = 210f,
+            oldZoom = 1f,
+            newZoom = 1.2f,
+            density = 1f
+        )
+        val secondScroll = timelineScrollForCentroid(
+            currentScrollPx = firstScroll,
+            previousCentroidX = 210f,
+            centroidX = 230f,
+            oldZoom = 1.2f,
+            newZoom = 1.5f,
+            density = 1f
+        )
+
+        assertEquals(820, secondScroll)
+        assertEquals(
+            (500f + 200f) / 54f,
+            (secondScroll + 230f) / (54f * 1.5f),
+            0.02f
+        )
+    }
+
+    @Test
     fun `minimum zoom expands ruler label interval enough to avoid overlap`() {
         val secondWidthDp = 54f * 0.01f
         val labelWidthDp = 27f

@@ -155,6 +155,7 @@ import com.apexstudio.app.util.TimeFormat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.sample
 import androidx.compose.runtime.snapshotFlow
@@ -667,6 +668,18 @@ fun VideoTimeline(
     var activeZoomDisplay by remember { mutableFloatStateOf(effectiveZoom) }
     var showZoomHud by remember { mutableStateOf(false) }
     var hudDismissJob by remember { mutableStateOf<Job?>(null) }
+    val latestEffectiveZoom = rememberUpdatedState(effectiveZoom)
+    val latestOnZoomChange = rememberUpdatedState(onZoomChange)
+    val pinchScrollTargets = remember { Channel<Int>(Channel.CONFLATED) }
+
+    // Pinching can emit a target every pointer frame. Keep only the newest
+    // request while a scroll is being applied instead of launching competing
+    // scroll coroutines that cancel one another and make the canvas feel jumpy.
+    LaunchedEffect(scrollState, pinchScrollTargets) {
+        for (target in pinchScrollTargets) {
+            scrollState.scrollTo(target)
+        }
+    }
 
     LaunchedEffect(timelineZoom) {
         if (!isPinchZooming) {
@@ -985,11 +998,14 @@ fun VideoTimeline(
         Box(
             modifier = Modifier
                 .fillMaxSize().clipToBounds()
-                .pointerInput(effectiveZoom) {
+                // Zoom changes on every pinch sample; keeping it out of the
+                // pointer-input keys prevents recomposition from restarting
+                // the two-finger gesture midway through the pinch.
+                .pointerInput(scrollState, density.density) {
                     detectTimelinePinchZoom(
                         onPinchStart = {
                             isPinchZooming = true
-                            activeZoomDisplay = effectiveZoom
+                            activeZoomDisplay = latestEffectiveZoom.value
                             hudDismissJob?.cancel()
                             showZoomHud = true
                         },
@@ -998,7 +1014,7 @@ fun VideoTimeline(
                             val targetZoom = (oldZoom * zoomRatio).coerceIn(TIMELINE_MIN_ZOOM, TIMELINE_MAX_ZOOM)
                             if (abs(targetZoom - oldZoom) > 0.003f) {
                                 activeZoomDisplay = targetZoom
-                                onZoomChange(targetZoom)
+                                latestOnZoomChange.value(targetZoom)
                             }
                             // Keep the same timeline time under the moving two-finger centroid.
                             // This equation handles both pinch anchoring and pure two-finger panning.
@@ -1010,7 +1026,7 @@ fun VideoTimeline(
                                 newZoom = targetZoom,
                                 density = density.density
                             )
-                            coroutineScope.launch { scrollState.scrollTo(desiredScroll) }
+                            pinchScrollTargets.trySend(desiredScroll)
                         },
                         onPinchEnd = {
                             isPinchZooming = false

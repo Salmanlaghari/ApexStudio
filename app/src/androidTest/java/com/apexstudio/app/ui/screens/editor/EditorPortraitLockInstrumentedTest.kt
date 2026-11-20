@@ -66,13 +66,15 @@ class EditorPortraitLockInstrumentedTest {
         var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         val backRequested = AtomicBoolean(false)
         try {
-            device.setOrientationLeft()
-            await("test emulator did not enter landscape before launching editor") {
-                device.displayWidth > device.displayHeight
-            }
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
                 scenario.onActivity { activity ->
+                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
                     previousOrientation = activity.requestedOrientation
+                }
+                await("test Activity did not enter landscape before launching editor") {
+                    device.displayWidth > device.displayHeight
+                }
+                scenario.onActivity { activity ->
                     activity.setContent {
                         ApexTheme {
                             var editorVisible by remember { mutableStateOf(true) }

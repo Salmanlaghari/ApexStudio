@@ -5,17 +5,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
@@ -39,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -68,76 +74,87 @@ fun ShortsTemplatesScreen(
     val musicById = catalogResult.getOrNull().orEmpty()
     var selectedTemplate by remember { mutableStateOf<ShortsTemplate?>(null) }
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(ApexPalette.BgBase)
-            .padding(horizontal = 14.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ApexPalette.TextPrimary)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Shorts templates", color = ApexPalette.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("10 editable video starters", color = ApexPalette.TextSecondary, fontSize = 12.sp)
-            }
-        }
+        val columns = if (maxWidth >= 600.dp) 2 else 1
+        val templateRows = ShortsTemplateCatalog.templates.chunked(columns)
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(ApexPalette.BgElevated)
-                .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
-                .padding(12.dp)
-        ) {
-            Text(
-                "Cards preview sample text and styling; details list title/subtitle motion and soundtrack licensing. Choose one video to start editing—music downloads only when you apply the template.",
-                color = ApexPalette.TextSecondary,
-                fontSize = 12.sp,
-                lineHeight = 17.sp
-            )
-            Spacer(Modifier.height(7.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                Text("Vertical 9:16. Starts with up to 30 seconds; adjust the crop and trim in the editor.", color = ApexPalette.TextPrimary, fontSize = 11.sp)
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-        if (catalogResult.isFailure) {
-            Text(
-                "Music details could not be loaded. Reopen this page to try again.",
-                color = Color(0xFFFFB4AB),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(ShortsTemplateCatalog.templates.chunked(2), key = { row -> row.first().id }) { row ->
+            item(key = "shorts-header") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onBack, modifier = Modifier.size(42.dp)) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ApexPalette.TextPrimary)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Shorts templates", color = ApexPalette.TextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("10 editable video starters", color = ApexPalette.TextSecondary, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            item(key = "shorts-intro") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(ApexPalette.BgElevated)
+                        .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        "Cards preview sample text and styling; details list title/subtitle motion and soundtrack licensing. Choose one video to start editing—music downloads only when you apply the template.",
+                        color = ApexPalette.TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Text("Vertical 9:16. Starts with up to 30 seconds; adjust the crop and trim in the editor.", color = ApexPalette.TextPrimary, fontSize = 11.sp)
+                    }
+                }
+            }
+
+            if (catalogResult.isFailure) {
+                item(key = "shorts-catalog-error") {
+                    Text(
+                        "Music details could not be loaded. Reopen this page to try again.",
+                        color = Color(0xFFFFB4AB),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+                }
+            }
+
+            items(templateRows, key = { row -> "shorts-row-${row.first().id}" }) { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     row.forEach { template ->
                         ShortsTemplateCard(
                             template = template,
                             musicTitle = musicById[template.musicAssetId]?.trackTitle ?: "Music details unavailable",
                             musicLicense = musicById[template.musicAssetId]?.license ?: "",
+                            portraitPreview = columns == 1,
                             modifier = Modifier.weight(1f),
                             onClick = { selectedTemplate = template }
                         )
                     }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                    if (row.size < columns) Spacer(Modifier.weight(1f))
                 }
             }
-            item { Spacer(Modifier.height(8.dp)) }
+            item(key = "shorts-bottom-space") { Spacer(Modifier.height(8.dp)) }
         }
     }
 
@@ -147,49 +164,65 @@ fun ShortsTemplatesScreen(
             onDismissRequest = { selectedTemplate = null },
             title = { Text(template.title, fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(template.description, color = ApexPalette.TextSecondary, fontSize = 13.sp)
-                    Text("Sample title: ${template.sampleTitle}", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Sample subtitle: ${template.sampleSubtitle}", color = ApexPalette.TextSecondary, fontSize = 12.sp)
-                    Text(
-                        "Title motion: ${motionName(template.titleAnimationId)} · subtitle: ${motionName(template.subtitleAnimationId)}",
-                        color = ApexPalette.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                    if (music != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                            Text("${music.trackTitle} — ${music.artist}", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
+                BoxWithConstraints {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = minOf(maxHeight * 0.58f, 360.dp))
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(template.description, color = ApexPalette.TextSecondary, fontSize = 13.sp)
+                        Text("Sample title: ${template.sampleTitle}", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Sample subtitle: ${template.sampleSubtitle}", color = ApexPalette.TextSecondary, fontSize = 12.sp)
                         Text(
-                            "${music.license}${if (music.attributionRequired) " · credit required" else " · credit appreciated"} · ${formatMiB(music.bytes)} · ${music.durationMs / 1000}s",
+                            "Title motion: ${motionName(template.titleAnimationId)} · subtitle: ${motionName(template.subtitleAnimationId)}",
                             color = ApexPalette.TextSecondary,
                             fontSize = 11.sp
                         )
-                        Text(
-                            if (music.attributionRequired) "Credit to include: ${music.creditText}" else "Courtesy credit: ${music.creditText}",
-                            color = ApexPalette.TextSecondary,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = { runCatching { uriHandler.openUri(music.sourcePageUrl) } }) {
-                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Text("Source", fontSize = 11.sp)
+                        if (music != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Text("${music.trackTitle} — ${music.artist}", color = ApexPalette.TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
-                            TextButton(onClick = { runCatching { uriHandler.openUri(music.licenseUrl) } }) {
-                                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Text("License", fontSize = 11.sp)
+                            Text(
+                                "${music.license}${if (music.attributionRequired) " · credit required" else " · credit appreciated"} · ${formatMiB(music.bytes)} · ${music.durationMs / 1000}s",
+                                color = ApexPalette.TextSecondary,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                if (music.attributionRequired) "Credit to include: ${music.creditText}" else "Courtesy credit: ${music.creditText}",
+                                color = ApexPalette.TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                TextButton(
+                                    onClick = { runCatching { uriHandler.openUri(music.sourcePageUrl) } },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Text("Source", fontSize = 11.sp)
+                                }
+                                TextButton(
+                                    onClick = { runCatching { uriHandler.openUri(music.licenseUrl) } },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Text("License", fontSize = 11.sp)
+                                }
                             }
                             if (music.attribution.isNotBlank()) {
-                                TextButton(onClick = { clipboard.setText(AnnotatedString(music.creditText)) }) {
+                                TextButton(
+                                    onClick = { clipboard.setText(AnnotatedString(music.creditText)) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
                                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
                                     Text("Copy credit", fontSize = 11.sp)
                                 }
                             }
+                        } else {
+                            Text("The music metadata is unavailable, so this template cannot be applied yet.", color = Color(0xFFFFB4AB), fontSize = 12.sp)
                         }
-                    } else {
-                        Text("The music metadata is unavailable, so this template cannot be applied yet.", color = Color(0xFFFFB4AB), fontSize = 12.sp)
                     }
                 }
             },
@@ -214,6 +247,7 @@ private fun ShortsTemplateCard(
     template: ShortsTemplate,
     musicTitle: String,
     musicLicense: String,
+    portraitPreview: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -230,7 +264,8 @@ private fun ShortsTemplateCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(112.dp)
+                .then(if (portraitPreview) Modifier.aspectRatio(9f / 16f) else Modifier.height(112.dp))
+                .testTag("shorts-template-preview-${template.id}")
                 .clip(RoundedCornerShape(11.dp))
                 .background(
                     Brush.linearGradient(

@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.packs.download.PackManager
 import com.apexstudio.app.data.packs.download.PackManifestRepo
 import com.apexstudio.app.ui.components.AppTopBar
@@ -107,8 +106,7 @@ fun PacksScreen(onBack: () -> Unit) {
                     "Filters, transitions, effects and AI models download only when you want them. " +
                         "Delete anytime to free space.",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 12.sp,
-                    lineHeight = 17.sp
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
@@ -135,8 +133,7 @@ fun PacksScreen(onBack: () -> Unit) {
                     Text(
                         message,
                         color = ApexPalette.TextSecondary,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
@@ -157,7 +154,7 @@ fun PacksScreen(onBack: () -> Unit) {
                     Text(
                         "Loading pack catalog…",
                         color = ApexPalette.TextSecondary,
-                        fontSize = 13.sp
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -172,7 +169,7 @@ fun PacksScreen(onBack: () -> Unit) {
                 Text(
                     "Loading pack catalog… check your connection and pull to refresh.",
                     color = ApexPalette.TextSecondary,
-                    fontSize = 12.sp
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
         }
@@ -214,30 +211,25 @@ private fun PackRow(
     val pack = item.pack
     GlassCard(modifier = modifier.fillMaxWidth(), cornerRadius = 18.dp) {
         Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        pack.name,
-                        color = ApexPalette.TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        pack.description,
-                        color = ApexPalette.TextSecondary,
-                        fontSize = 11.sp,
-                        lineHeight = 15.sp,
-                        maxLines = 3
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "${PackManifestRepo.formatSize(pack.sizeBytes)} • v${pack.versionName}",
-                        color = ApexPalette.TextSecondary,
-                        fontSize = 10.sp
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
+            Text(
+                pack.name,
+                color = ApexPalette.TextPrimary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                pack.description,
+                color = ApexPalette.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${PackManifestRepo.formatSize(pack.sizeBytes)} • v${pack.versionName}",
+                color = ApexPalette.TextSecondary,
+                style = MaterialTheme.typography.labelSmall
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 PackAction(item = item, onDownload = onDownload, onCancel = onCancel, onDelete = onDelete)
             }
 
@@ -256,16 +248,16 @@ private fun PackRow(
                     Text(
                         "${PackManifestRepo.formatSize(state.doneBytes)} / ${PackManifestRepo.formatSize(state.totalBytes)}",
                         color = ApexPalette.TextSecondary,
-                        fontSize = 10.sp
+                        style = MaterialTheme.typography.bodySmall
                     )
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = ApexPalette.NeonCyan)
-                    Text("Downloading…", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+                    Text("Downloading…", color = ApexPalette.TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
             if (state is PackManager.PackState.Failed) {
                 Spacer(Modifier.height(4.dp))
-                Text(state.reason, color = ApexPalette.Danger, fontSize = 11.sp)
+                Text(state.reason, color = ApexPalette.Danger, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -299,7 +291,7 @@ private fun PackAction(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Icon(Icons.Default.Schedule, contentDescription = null, tint = ApexPalette.TextSecondary, modifier = Modifier.size(16.dp))
-                Text("Soon", color = ApexPalette.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text("Soon", color = ApexPalette.TextSecondary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
             }
     }
 }
@@ -314,6 +306,6 @@ private fun ActionButton(
     TextButton(onClick = onClick) {
         Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
-        Text(label, color = tint, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, color = tint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
     }
 }

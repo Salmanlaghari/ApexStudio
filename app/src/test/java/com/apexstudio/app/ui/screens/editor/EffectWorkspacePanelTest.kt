@@ -1,6 +1,7 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.Modifier
@@ -38,6 +39,45 @@ class EffectWorkspacePanelTest {
     private fun choosePreset(label: String) {
         showPresets()
         compose.onNodeWithText(label).performScrollTo().performSemanticsAction(SemanticsActions.OnClick) { it() }
+    }
+
+    @Test fun `compact portrait effect cards stack at 320dp`() = assertCompactPortraitCardsStack(320)
+
+    @Test fun `compact portrait effect cards stack at 375dp`() = assertCompactPortraitCardsStack(375)
+
+    private fun assertCompactPortraitCardsStack(widthDp: Int) {
+        val width = widthDp.dp
+        val vm = editor()
+        compose.setContent {
+            Box(Modifier.requiredSize(width, 700.dp)) {
+                EffectWorkspacePanel("project", clip, vm, false, {}, {}, {}, {})
+            }
+        }
+        compose.waitForIdle()
+        val source = compose.onNodeWithTag("workspace-source-card").fetchSemanticsNode().boundsInRoot
+        val presets = compose.onNodeWithTag("workspace-presets-card").fetchSemanticsNode().boundsInRoot
+        val tuning = compose.onNodeWithTag("workspace-tuning-card").fetchSemanticsNode().boundsInRoot
+        assertTrue("Source range starts the vertical card flow at ${widthDp}dp: $source", source.top < presets.top)
+        assertTrue("Presets precede tuning/actions at ${widthDp}dp: $presets / $tuning", presets.top < tuning.top)
+        assertEquals("Compact cards share one portrait column at ${widthDp}dp", source.left, presets.left, 1f)
+        assertEquals("Tuning/actions stays in that portrait column at ${widthDp}dp", source.left, tuning.left, 1f)
+        assertTrue("Cards use nearly the available phone width at ${widthDp}dp: $source",
+            source.width >= width.value - 30f)
+    }
+
+    @Test fun `wide effect cards remain in one horizontal row`() {
+        val wideVm = editor()
+        compose.setContent {
+            Box(Modifier.requiredSize(920.dp, 700.dp)) {
+                EffectWorkspacePanel("project", clip, wideVm, false, {}, {}, {}, {})
+            }
+        }
+        compose.waitForIdle()
+        val wideSource = compose.onNodeWithTag("workspace-source-card").fetchSemanticsNode().boundsInRoot
+        val widePresets = compose.onNodeWithTag("workspace-presets-card").fetchSemanticsNode().boundsInRoot
+        val wideTuning = compose.onNodeWithTag("workspace-tuning-card").fetchSemanticsNode().boundsInRoot
+        assertEquals("The wide source card remains in the horizontal row", wideSource.top, widePresets.top, 1f)
+        assertEquals("The wide tuning card remains in the horizontal row", wideSource.top, wideTuning.top, 1f)
     }
 
     @Test fun `source time maps live or fallback project playhead and clamps to clip trim`() {

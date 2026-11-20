@@ -3,6 +3,7 @@ package com.apexstudio.app.ui.screens.export
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
@@ -48,5 +49,38 @@ class StandaloneExportScreenTest {
         compose.onNodeWithText("Hide advanced settings").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("VIDEO SCOPE").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("EXPORT SCOPE").assertDoesNotExist()
+    }
+
+    @Test fun embeddedExportStacksItsSettingsCardsOnPortraitPhones() {
+        compose.setContent {
+            ExportScreen(
+                projectId = "embedded-portrait-test",
+                onBack = {},
+                onExport = {},
+                vm = EditorViewModel(),
+                embedded = true
+            )
+        }
+
+        compose.onNodeWithText("EXPORT SCOPE").assertIsDisplayed()
+        compose.onNodeWithText("VIDEO OUTPUT").assertIsDisplayed()
+        compose.onNodeWithText("ENCODING").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("EXPORT & SHARE").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun standaloneAdvancedOutputChoicesExposeWrappedGroupsOnPortraitPhones() {
+        compose.setContent {
+            ExportScreen(
+                projectId = "standalone-portrait-options-test",
+                onBack = {},
+                onExport = {},
+                vm = EditorViewModel()
+            )
+        }
+
+        compose.onNodeWithText("More export settings").performScrollTo().performClick()
+        compose.onNodeWithTag("export-aspect-options").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("export-frame-rate-options").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("export-bitrate-options").performScrollTo().assertIsDisplayed()
     }
 }

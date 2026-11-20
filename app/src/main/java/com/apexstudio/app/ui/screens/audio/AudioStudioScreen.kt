@@ -32,7 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.apexstudio.app.presentation.viewmodel.*
@@ -146,11 +145,11 @@ fun AudioStudioScreen(
                     Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f, "audio-eq-low") { vm.setLowEQ((it * 1000f).toInt().toShort()) }
-                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f, "audio-eq-mid") { vm.setMidEQ((it * 1000f).toInt().toShort()) }
-                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f, "audio-eq-high") { vm.setHighEQ((it * 1000f).toInt().toShort()) }
+                        EqKnob("Low", "80Hz", state.lowEQ.toFloat() / 1000f, "audio-eq-low", Modifier.weight(1f)) { vm.setLowEQ((it * 1000f).toInt().toShort()) }
+                        EqKnob("Mid", "1kHz", state.midEQ.toFloat() / 1000f, "audio-eq-mid", Modifier.weight(1f)) { vm.setMidEQ((it * 1000f).toInt().toShort()) }
+                        EqKnob("High", "5kHz", state.highEQ.toFloat() / 1000f, "audio-eq-high", Modifier.weight(1f)) { vm.setHighEQ((it * 1000f).toInt().toShort()) }
                     }
                 }
             }
@@ -478,9 +477,10 @@ private fun EqKnob(
     freq: String,
     value: Float,
     testTag: String,
+    modifier: Modifier = Modifier,
     onValueChange: (Float) -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -513,7 +513,7 @@ private fun EqKnob(
             value = value.coerceIn(-1f, 1f),
             onValueChange = onValueChange,
             valueRange = -1f..1f,
-            modifier = Modifier.width(88.dp).testTag(testTag),
+            modifier = Modifier.fillMaxWidth().testTag(testTag),
             colors = SliderDefaults.colors(
                 thumbColor = ApexPalette.NeonCyan,
                 activeTrackColor = ApexPalette.NeonCyan,

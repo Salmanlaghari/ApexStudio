@@ -320,7 +320,7 @@ private fun ThemeDialog(
                 Spacer(Modifier.height(8.dp))
                 ApexThemeOption.entries.forEach { option ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onSelect(option) }.padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).clickable { onSelect(option) }.padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = option == selected, onClick = { onSelect(option) })
@@ -337,7 +337,11 @@ private fun ThemeDialog(
                             Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(option.palette.bgElevated))
                         }
                         Spacer(Modifier.width(12.dp))
-                        Text(option.displayName, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            option.displayName,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge
+                        )
                     }
                 }
             }

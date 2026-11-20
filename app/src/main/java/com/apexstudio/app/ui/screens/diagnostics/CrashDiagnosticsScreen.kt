@@ -4,13 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,8 +39,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.crashlog.CrashLog
 import com.apexstudio.app.ui.components.AppTopBar
 import com.apexstudio.app.ui.components.GlassCard
@@ -75,32 +79,33 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
             cornerRadius = 22.dp
         ) {
             Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Crash Log",
-                            color = ApexPalette.TextPrimary,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            "Last recorded crash diagnostics",
-                            color = ApexPalette.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall
+                Column {
+                    Text(
+                        "Crash Log",
+                        color = ApexPalette.TextPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        "Last recorded crash diagnostics",
+                        color = ApexPalette.TextSecondary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        ActionPill(
+                            icon = Icons.Default.Delete,
+                            label = "Clear",
+                            color = ApexPalette.Danger,
+                            enabled = log.exists,
+                            onClick = {
+                                scope.launch {
+                                    CrashLog.clear(context)
+                                    refresh()
+                                }
+                            }
                         )
                     }
-                    ActionPill(
-                        icon = Icons.Default.Delete,
-                        label = "Clear",
-                        color = ApexPalette.Danger,
-                        enabled = log.exists,
-                        onClick = {
-                            scope.launch {
-                                CrashLog.clear(context)
-                                refresh()
-                            }
-                        }
-                    )
                 }
                 Spacer(Modifier.height(8.dp))
                 ActionPill(
@@ -127,7 +132,7 @@ fun CrashDiagnosticsScreen(onBack: () -> Unit) {
                         Text(
                             log.content,
                             color = ApexPalette.Danger,
-                            fontSize = 10.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace
                         )
                     } else {
@@ -230,10 +235,13 @@ private fun ActionPill(
                 if (enabled) color else ApexPalette.BorderGlass,
                 RoundedCornerShape(10.dp)
             )
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) color else ApexPalette.TextTertiary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             label,
             color = if (enabled) color else ApexPalette.TextTertiary,

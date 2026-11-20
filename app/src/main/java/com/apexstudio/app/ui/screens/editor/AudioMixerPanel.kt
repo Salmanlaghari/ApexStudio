@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apexstudio.app.domain.model.AudioTrack
@@ -116,6 +119,8 @@ fun AudioMixerPanel(
     originalVideoAudioUnavailableMessage: String? = null,
     onExtractOriginalVideoAudio: () -> Unit = {}
 ) {
+    val horizontalCards = LocalConfiguration.current.screenWidthDp >= 640
+    val cardModifier = if (horizontalCards) Modifier.width(292.dp) else Modifier.fillMaxWidth()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -147,25 +152,19 @@ fun AudioMixerPanel(
         }
         Spacer(Modifier.height(6.dp))
 
-        // Keep the title and close action pinned. Every feature group is a
-        // horizontal card, so the editor preview is not displaced by a tall
-        // vertical list on portrait phones.
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(214.dp)
-                .testTag("audio-mixer-panel-cards"),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // Keep the title and close action pinned. Portrait-width windows get
+        // full-width cards in a vertically scrollable list; wider windows keep
+        // the compact horizontal carousel.
+        val mixerCards: LazyListScope.() -> Unit = {
             item(key = "quick-controls") {
                 Column(
                     modifier = Modifier
-                        .width(292.dp)
+                        .then(cardModifier)
                         .clip(RoundedCornerShape(12.dp))
                         .background(ApexPalette.BgBase)
                         .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
-                        .padding(10.dp),
+                        .padding(10.dp)
+                        .testTag("audio-mixer-panel-card-quick-controls"),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     AddTrackButton(
@@ -218,11 +217,12 @@ fun AudioMixerPanel(
             item(key = "visualizer") {
                 Column(
                     modifier = Modifier
-                        .width(292.dp)
+                        .then(cardModifier)
                         .clip(RoundedCornerShape(12.dp))
                         .background(ApexPalette.BgBase)
                         .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(12.dp))
                         .padding(10.dp)
+                        .testTag("audio-mixer-panel-card-visualizer")
                 ) {
                     MixerVisualizer(audioSessionId = audioSessionId, modifier = Modifier.fillMaxWidth())
                 }
@@ -244,7 +244,8 @@ fun AudioMixerPanel(
                     onNormalizeTrack = onNormalizeTrack,
                     onAutoDuckMusic = onAutoDuckMusic,
                     onFitMusicToProject = onFitMusicToProject,
-                    onRemoveSilence = onRemoveSilence
+                    onRemoveSilence = onRemoveSilence,
+                    cardModifier = cardModifier
                 )
             }
             items(state.tracks, key = { "trim-${it.id}" }) { track ->
@@ -252,9 +253,24 @@ fun AudioMixerPanel(
                     track = track,
                     playheadMs = playheadMs,
                     onTrim = { startMs, endMs -> onTrim(track.id, startMs, endMs) },
-                    onSplit = { onSplit(track.id) }
+                    onSplit = { onSplit(track.id) },
+                    cardModifier = cardModifier
                 )
             }
+        }
+        if (horizontalCards) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().height(214.dp).testTag("audio-mixer-panel-cards"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                content = mixerCards
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().height(214.dp).testTag("audio-mixer-panel-cards"),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                content = mixerCards
+            )
         }
     }
 }
@@ -293,7 +309,8 @@ private fun AudioSourceTrimCard(
     track: AudioTrack,
     playheadMs: Long,
     onTrim: (Long, Long) -> Unit,
-    onSplit: () -> Unit
+    onSplit: () -> Unit,
+    cardModifier: Modifier
 ) {
     val sourceDuration = track.sourceEndMs
     val currentBounds = normalizedAudioSourceTrimBounds(sourceDuration, track.trimStartMs, track.trimEndMs)
@@ -305,11 +322,12 @@ private fun AudioSourceTrimCard(
     val accent = ApexPalette.NeonCyan
     Column(
         modifier = Modifier
-            .width(292.dp)
+            .then(cardModifier)
             .clip(RoundedCornerShape(12.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag("audio-mixer-panel-card-trim-${track.id}"),
         verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         Text("Source trim · ${track.name}", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -459,7 +477,8 @@ private fun AudioTrackRow(
     onNormalizeTrack: (String) -> Unit,
     onAutoDuckMusic: (String, String) -> Unit,
     onFitMusicToProject: (String) -> Unit,
-    onRemoveSilence: (String) -> Unit
+    onRemoveSilence: (String) -> Unit,
+    cardModifier: Modifier
 ) {
     val accent = when {
         track.isSolo -> ApexPalette.NeonCyan
@@ -469,11 +488,12 @@ private fun AudioTrackRow(
     val kindLabel = audioTrackKindLabel(track.kind)
     Column(
         modifier = Modifier
-            .width(292.dp)
+            .then(cardModifier)
             .clip(RoundedCornerShape(12.dp))
             .background(ApexPalette.BgBase)
             .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp)
+            .testTag("audio-mixer-panel-card-${track.id}")
     ) {
         AudioMixerRow(
             label = "${track.name} • $kindLabel",

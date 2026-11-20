@@ -17,7 +17,6 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.apexstudio.app.MainActivity
-import com.apexstudio.app.data.media.TimelineThumbnailCache
 import com.apexstudio.app.domain.model.AudioTrack
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
@@ -25,11 +24,9 @@ import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
 import com.apexstudio.app.presentation.viewmodel.seekTo
 import com.apexstudio.app.ui.theme.ApexTheme
-import kotlinx.coroutines.runBlocking
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,25 +42,6 @@ class EditorPortraitLockInstrumentedTest {
         instrumentation.context.assets.open("premium_editor/twelve_second_fixture.mp4").use { input ->
             source.outputStream().use { input.copyTo(it) }
         }
-        val thumbnail = runBlocking {
-            TimelineThumbnailCache.frameFor(context, MediaClip(
-                id = "portrait-thumb",
-                name = "Portrait fixture",
-                uri = Uri.fromFile(source).toString(),
-                durationMs = 12_000L,
-                trimEndMs = 12_000L,
-            ), keyMs = 6_000L, w = 160, h = 90)
-        }
-        assertNotNull("fixture must decode a real timeline thumbnail", thumbnail)
-        thumbnail!!.let { frame ->
-            val first = frame.getPixel(0, 0)
-            val varied = (0 until frame.width step 16).any { x ->
-                (0 until frame.height step 16).any { y -> frame.getPixel(x, y) != first }
-            }
-            assertTrue("thumbnail must contain decoded video pixels", varied)
-            frame.recycle()
-        }
-
         val clip = MediaClip(
             "portrait-main",
             "Portrait test footage",

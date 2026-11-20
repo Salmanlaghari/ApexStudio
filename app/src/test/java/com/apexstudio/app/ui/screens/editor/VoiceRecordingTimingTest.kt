@@ -3,8 +3,10 @@ package com.apexstudio.app.ui.screens.editor
 import androidx.lifecycle.Lifecycle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class VoiceRecordingTimingTest {
     @Test
@@ -39,6 +41,42 @@ class VoiceRecordingTimingTest {
         assertFalse(VoiceRecordingSavePolicy.shouldKeep(true, 999L, 20_000L))
         assertFalse(VoiceRecordingSavePolicy.shouldKeep(true, 1_000L, 0L))
         assertTrue(VoiceRecordingSavePolicy.shouldKeep(true, 1_000L, 1L))
+    }
+
+    @Test
+    fun finalizedTakeIsOnlyAddedAfterExplicitCommit() {
+        val review = VoiceRecordingReviewSession()
+        val file = File("VoiceOver_take.m4a")
+        var addCalls = 0
+        review.stage(file, durationMs = 2_500L)
+
+        assertEquals(file, review.pendingTake?.file)
+        assertEquals(0, addCalls)
+
+        val result = review.commit { uri, durationMs, name ->
+            addCalls += 1
+            assertEquals(file.absolutePath, uri)
+            assertEquals(2_500L, durationMs)
+            assertEquals("VoiceOver_take.m4a", name)
+        }
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, addCalls)
+        assertNull(review.pendingTake)
+    }
+
+    @Test
+    fun failedCommitKeepsTakeAvailableForRetryOrDiscard() {
+        val review = VoiceRecordingReviewSession()
+        val file = File("VoiceOver_retry.m4a")
+        review.stage(file, durationMs = 1_500L)
+
+        val result = review.commit { _, _, _ -> error("project save failed") }
+
+        assertTrue(result.isFailure)
+        assertEquals(file, review.pendingTake?.file)
+        assertEquals(file, review.discard())
+        assertNull(review.pendingTake)
     }
 
     @Test

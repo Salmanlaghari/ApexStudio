@@ -2,6 +2,7 @@ package com.apexstudio.app.ui.screens.editor
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.SystemClock
 import android.util.Log
@@ -56,6 +57,10 @@ fun VoiceRecorderPanel(
     var recordingTimeMs by remember { mutableLongStateOf(0L) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var outputFile by remember { mutableStateOf<File?>(null) }
+    val reviewSession = remember { VoiceRecordingReviewSession() }
+    var reviewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPreparingReview by remember { mutableStateOf(false) }
+    var isPlayingReview by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val clock = remember { RecordingClock() }
     val cleanupHolder = remember { RecordingCleanupHolder() }
@@ -98,6 +103,9 @@ fun VoiceRecorderPanel(
             mr.prepare()
             mr.start()
 
+            reviewSession.discard()?.let { previousTake ->
+                if (!previousTake.delete()) Log.w("VoiceRecorderPanel", "Could not remove retake source")
+            }
             recorder = mr
             outputFile = file
             cleanupHolder.recorder = mr
@@ -113,9 +121,7 @@ fun VoiceRecorderPanel(
             try { createdRecorder?.release() } catch (_: Exception) {}
             createdFile?.delete()
             cleanupHolder.recorder = null
-            cleanupHolder.file = null
             recorder = null
-            outputFile = null
             isRecording = false
             isPaused = false
             errorMessage = "Could not start recording. Check microphone access and try again."
@@ -140,6 +146,15 @@ fun VoiceRecorderPanel(
     }
 
     fun cancelRecording() {
+        val previewPlayer = cleanupHolder.previewPlayer
+        cleanupHolder.previewPlayer = null
+        reviewPlayer = null
+        isPreparingReview = false
+        isPlayingReview = false
+        try { previewPlayer?.release() } catch (e: Exception) {
+            Log.w("VoiceRecorderPanel", "Review playback release during cancel failed", e)
+        }
+        reviewSession.discard()
         val activeRecorder = recorder
         recorder = null
         cleanupHolder.recorder = null
@@ -161,7 +176,7 @@ fun VoiceRecorderPanel(
         onClose()
     }
 
-    fun stopAndSave() {
+    fun finishRecordingForReview() {
         val activeRecorder = recorder ?: return
         val durationAtStop = clock.elapsedMs(SystemClock.elapsedRealtime())
         var stopSucceeded = false
@@ -192,18 +207,8 @@ fun VoiceRecorderPanel(
             fileBytes = file?.takeIf { it.exists() }?.length() ?: 0L
         )
         if (keep && file != null) {
-            try {
-                onAddRecording(file.absolutePath, durationAtStop, file.name)
-            } catch (e: Exception) {
-                Log.e("VoiceRecorderPanel", "Could not add the recording to the project", e)
-                file.delete()
-                cleanupHolder.file = null
-                outputFile = null
-                errorMessage = "Could not add this recording to the project. Please try again."
-                return
-            }
-            cleanupHolder.keepFile = true
-            onClose()
+            reviewSession.stage(file, durationAtStop)
+            errorMessage = null
         } else {
             file?.delete()
             cleanupHolder.file?.delete()
@@ -214,6 +219,113 @@ fun VoiceRecorderPanel(
             } else {
                 "Recording could not be saved. Please try again."
             }
+        }
+    }
+
+    fun stopReviewPlayback() {
+        val activePlayer = reviewPlayer
+        reviewPlayer = null
+        cleanupHolder.previewPlayer = null
+        isPreparingReview = false
+        isPlayingReview = false
+        try { activePlayer?.release() } catch (e: Exception) {
+            Log.w("VoiceRecorderPanel", "Review playback release failed", e)
+        }
+    }
+
+    fun startReviewPlayback() {
+        val take = reviewSession.pendingTake ?: return
+        val player = MediaPlayer()
+        try {
+            player.setOnPreparedListener { preparedPlayer ->
+                if (reviewPlayer !== preparedPlayer || reviewSession.pendingTake?.file != take.file) {
+                    try { preparedPlayer.release() } catch (_: Exception) {}
+                    return@setOnPreparedListener
+                }
+                isPreparingReview = false
+                try {
+                    preparedPlayer.start()
+                    isPlayingReview = true
+                    errorMessage = null
+                } catch (e: Exception) {
+                    Log.e("VoiceRecorderPanel", "Review playback start failed", e)
+                    stopReviewPlayback()
+                    errorMessage = "Could not play this recording. Try again or retake it."
+                }
+            }
+            player.setOnCompletionListener { completedPlayer ->
+                if (reviewPlayer === completedPlayer) {
+                    reviewPlayer = null
+                    cleanupHolder.previewPlayer = null
+                    isPreparingReview = false
+                    isPlayingReview = false
+                }
+                try { completedPlayer.release() } catch (_: Exception) {}
+            }
+            player.setOnErrorListener { failedPlayer, _, _ ->
+                if (reviewPlayer === failedPlayer) {
+                    reviewPlayer = null
+                    cleanupHolder.previewPlayer = null
+                    isPreparingReview = false
+                    isPlayingReview = false
+                    errorMessage = "Could not play this recording. Try again or retake it."
+                }
+                try { failedPlayer.release() } catch (_: Exception) {}
+                true
+            }
+            player.setDataSource(take.file.absolutePath)
+            reviewPlayer = player
+            cleanupHolder.previewPlayer = player
+            isPreparingReview = true
+            player.prepareAsync()
+        } catch (e: Exception) {
+            Log.e("VoiceRecorderPanel", "Could not prepare voiceover preview", e)
+            if (reviewPlayer === player) stopReviewPlayback()
+            else try { player.release() } catch (_: Exception) {}
+            errorMessage = "Could not play this recording. Try again or retake it."
+        }
+    }
+
+    fun toggleReviewPlayback() {
+        if (isPreparingReview) return
+        val activePlayer = reviewPlayer
+        if (activePlayer == null) {
+            startReviewPlayback()
+            return
+        }
+        try {
+            if (isPlayingReview) {
+                activePlayer.pause()
+                isPlayingReview = false
+            } else {
+                activePlayer.start()
+                isPlayingReview = true
+            }
+        } catch (e: Exception) {
+            Log.e("VoiceRecorderPanel", "Could not toggle voiceover preview", e)
+            stopReviewPlayback()
+            errorMessage = "Could not play this recording. Try again or retake it."
+        }
+    }
+
+    fun retakeRecording() {
+        stopReviewPlayback()
+        // Keep the reviewed take unless the new recorder successfully starts.
+        requestOrStartRecording()
+    }
+
+    fun commitReviewedTake() {
+        if (reviewSession.pendingTake == null) return
+        stopReviewPlayback()
+        val result = reviewSession.commit(onAddRecording)
+        if (result.isSuccess) {
+            cleanupHolder.keepFile = true
+            cleanupHolder.file = null
+            outputFile = null
+            onClose()
+        } else {
+            result.exceptionOrNull()?.let { Log.e("VoiceRecorderPanel", "Could not add the recording to the project", it) }
+            errorMessage = "Could not add this recording to the project. Please try again."
         }
     }
 
@@ -246,6 +358,12 @@ fun VoiceRecorderPanel(
     // Leaving the foreground must never leave an invisible microphone capture running.
     // Resume is always explicit; returning from another app does not restart the microphone.
     val pauseForBackground = rememberUpdatedState<() -> Unit> {
+        if (isPreparingReview) {
+            stopReviewPlayback()
+        } else if (isPlayingReview) {
+            try { reviewPlayer?.pause() } catch (_: Exception) { stopReviewPlayback() }
+            isPlayingReview = false
+        }
         if (isRecording && !isPaused) {
             pauseRecording()
             if (!isPaused) {
@@ -287,6 +405,8 @@ fun VoiceRecorderPanel(
                 Log.w("VoiceRecorderPanel", "Recorder cleanup failed", e)
             } finally {
                 cleanupHolder.recorder = null
+                try { cleanupHolder.previewPlayer?.release() } catch (_: Exception) {}
+                cleanupHolder.previewPlayer = null
                 if (!cleanupHolder.keepFile) cleanupHolder.file?.delete()
                 cleanupHolder.file = null
             }
@@ -384,66 +504,115 @@ fun VoiceRecorderPanel(
 
         // Controls
         Row(
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (reviewSession.pendingTake != null) 12.dp else 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (!isRecording) {
-                // Record Start Button
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(ApexPalette.NeonPink, Color(0xFF8B0000))
-                            )
+            when {
+                reviewSession.pendingTake != null -> {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.NeonCyan, CircleShape)
+                            .clickable(enabled = !isPreparingReview) { toggleReviewPlayback() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (isPlayingReview) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlayingReview) "Pause recording preview" else "Play recording preview",
+                            tint = ApexPalette.NeonCyan,
+                            modifier = Modifier.size(24.dp)
                         )
-                        .clickable { requestOrStartRecording() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Mic, contentDescription = "Start Recording", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .widthIn(min = 78.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.BorderGlass, RoundedCornerShape(14.dp))
+                            .clickable { retakeRecording() }
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Retake", color = ApexPalette.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(ApexPalette.NeonEmerald)
+                            .clickable { commitReviewedTake() }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Add to timeline", color = ApexPalette.BgDeep, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-            } else {
-                // Pause / Resume
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(ApexPalette.BgElevated)
-                        .border(1.dp, ApexPalette.NeonCyan, CircleShape)
-                        .clickable {
-                            if (isPaused) resumeRecording() else pauseRecording()
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = if (isPaused) "Resume" else "Pause",
-                        tint = ApexPalette.NeonCyan,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                isRecording -> {
+                    // Pause / Resume
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.BgElevated)
+                            .border(1.dp, ApexPalette.NeonCyan, CircleShape)
+                            .clickable {
+                                if (isPaused) resumeRecording() else pauseRecording()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                            contentDescription = if (isPaused) "Resume" else "Pause",
+                            tint = ApexPalette.NeonCyan,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
 
-                // Stop & Save
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(ApexPalette.NeonEmerald)
-                        .clickable { stopAndSave() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = "Save Recording", tint = ApexPalette.BgDeep, modifier = Modifier.size(32.dp))
+                    // Stop & review before committing to the editor.
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(ApexPalette.NeonEmerald)
+                            .clickable { finishRecordingForReview() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop and review recording", tint = ApexPalette.BgDeep, modifier = Modifier.size(32.dp))
+                    }
+                }
+                else -> {
+                    // Record Start Button
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(ApexPalette.NeonPink, Color(0xFF8B0000))
+                                )
+                            )
+                            .clickable { requestOrStartRecording() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "Start Recording", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(8.dp))
         Text(
-            errorMessage ?: if (!hasRecordPermission) "Microphone permission required to record"
-            else if (!isRecording) "Tap mic to start voice recording"
-            else if (isPaused) "Recording paused"
-            else "Recording voice over...",
+            errorMessage ?: when {
+                reviewSession.pendingTake != null && isPreparingReview -> "Preparing recording preview..."
+                reviewSession.pendingTake != null -> "Listen to your take, then retake it or add it to the timeline."
+                !hasRecordPermission -> "Microphone permission required to record"
+                !isRecording -> "Tap mic to start voice recording"
+                isPaused -> "Recording paused"
+                else -> "Recording voice over..."
+            },
             color = if (errorMessage != null) ApexPalette.NeonPink else ApexPalette.TextSecondary,
             fontSize = 11.sp
         )
@@ -494,6 +663,35 @@ internal object VoiceRecordingSavePolicy {
         stopSucceeded && durationMs >= MIN_SAVE_DURATION_MS && fileBytes > 0L
 }
 
+/** A finalized take stays local until the user explicitly commits or retakes it. */
+internal data class VoiceRecordingTake(val file: File, val durationMs: Long)
+
+internal class VoiceRecordingReviewSession {
+    var pendingTake by mutableStateOf<VoiceRecordingTake?>(null)
+        private set
+
+    fun stage(file: File, durationMs: Long) {
+        pendingTake = VoiceRecordingTake(file, durationMs)
+    }
+
+    fun discard(): File? {
+        val file = pendingTake?.file
+        pendingTake = null
+        return file
+    }
+
+    fun commit(onAddRecording: (uri: String, durationMs: Long, name: String) -> Unit): Result<VoiceRecordingTake> {
+        val take = pendingTake ?: return Result.failure(IllegalStateException("No voiceover take is ready to commit"))
+        return try {
+            onAddRecording(take.file.absolutePath, take.durationMs, take.file.name)
+            pendingTake = null
+            Result.success(take)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+}
+
 /** Also guards delayed permission callbacks after a panel has been dismissed. */
 internal class RecordingLifecycleGuard {
     private var attached = false
@@ -507,6 +705,7 @@ internal class RecordingLifecycleGuard {
 
 private class RecordingCleanupHolder {
     var recorder: MediaRecorder? = null
+    var previewPlayer: MediaPlayer? = null
     var file: File? = null
     var keepFile: Boolean = false
 }

@@ -133,8 +133,8 @@ class VideoTimelineHeaderTest {
         val lowerBounds = lowerNode.fetchSemanticsNode().boundsInRoot
         val upperBounds = upperNode.fetchSemanticsNode().boundsInRoot
         assertEquals("Grouped overlay clips must share one visible row", lowerBounds.top, upperBounds.top, 0.5f)
-        compose.onNodeWithContentDescription("Overlay clip lower, track V2", useUnmergedTree = true).assertExists()
-        compose.onNodeWithContentDescription("Overlay clip upper, track V5", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("V2 overlay", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("V5 overlay", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("timeline-overlay-trim-start-overlay-v2", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("timeline-overlay-trim-start-overlay-v5", useUnmergedTree = true).assertDoesNotExist()
     }

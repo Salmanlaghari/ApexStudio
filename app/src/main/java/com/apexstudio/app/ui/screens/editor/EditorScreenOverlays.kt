@@ -1636,7 +1636,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
         contentAlignment = Alignment.TopCenter
     ) {
         val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
-            compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
+            compactTimelineHeight(state, includeEmptyOverlayLane = true) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
         val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
             maxHeight.value
         } else {
@@ -2151,7 +2151,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     val compactPhoneTimeline = !compactLandscape && !horizontalProjectLayout &&
         !isTimelineFocusMode && !timelinePaneResized
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {
-        compactTimelineHeight(state, compactWaveform = compactPhoneTimeline) +
+        compactTimelineHeight(state, compactWaveform = compactPhoneTimeline, includeEmptyOverlayLane = true) +
             (if (compactLandscape) EditorLayoutMetrics.TimelineLayerControlsHeight else EditorLayoutMetrics.TimelineHostExtraHeight) + 2.dp
     }
     CenteredTimelineWorkspace(

@@ -170,9 +170,10 @@ internal const val TIMELINE_HEADER_HEIGHT_DP = 40
 internal const val TIMELINE_RULER_HEIGHT_DP = 28
 internal const val MAIN_VIDEO_LANE_HEIGHT_DP = 52
 internal const val OVERLAY_LAYER_HEIGHT_DP = 60
-internal const val OVERLAY_LANE_HEADER_HEIGHT_DP = 48
-internal const val GROUPED_OVERLAY_LAYER_HEIGHT_DP = OVERLAY_LAYER_HEIGHT_DP + OVERLAY_LANE_HEADER_HEIGHT_DP
+internal const val OVERLAY_LANE_HEADER_HEIGHT_DP = 40
 internal const val OVERLAY_FILMSTRIP_HEIGHT_DP = 52
+internal const val GROUPED_OVERLAY_LAYER_HEIGHT_DP = OVERLAY_LANE_HEADER_HEIGHT_DP + OVERLAY_FILMSTRIP_HEIGHT_DP + 8
+internal const val EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP = OVERLAY_LANE_HEADER_HEIGHT_DP + 8
 internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
@@ -233,7 +234,11 @@ internal fun mainVideoLaneHeight(
 ): Dp = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
-internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean = true): Dp {
+internal fun compactTimelineHeight(
+    state: EditorState,
+    compactWaveform: Boolean = true,
+    includeEmptyOverlayLane: Boolean = false,
+): Dp {
     val project = state.project
     val clips = project?.clips.orEmpty()
     val layerIndex = TimelineLayerContentIndex.from(clips)
@@ -241,7 +246,9 @@ internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean 
     val additionalVideoLayers = layerIndex.videoByLayer.filter { (layer, layerClips) ->
         layer in 1..9 && layerClips.any { it.type != ClipType.OVERLAY }
     }.size
-    val overlayRows = 1 + additionalVideoLayers
+    val hasOverlayClips = overlayTimelineLaneClips(clips).isNotEmpty()
+    val hasOverlayLane = hasOverlayClips || includeEmptyOverlayLane
+    val overlayRows = (if (hasOverlayLane) 1 else 0) + additionalVideoLayers
     val textLayers = mapProjectTextLayers(
         clips,
         clips.flatMap { it.textOverlays },
@@ -281,8 +288,10 @@ internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean 
         (if (originalAudioRows > 0) 1 else 0) +
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
     if (supportRows > 0) height += 10
-    height += GROUPED_OVERLAY_LAYER_HEIGHT_DP + 10 +
-        additionalVideoLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
+    if (hasOverlayLane) {
+        height += (if (hasOverlayClips) GROUPED_OVERLAY_LAYER_HEIGHT_DP else EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP) + 10
+    }
+    height += additionalVideoLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
     if (hasText) height += textRowCount * 40 + 10
     if (hasStickers) height += stickerRowCount * 40 + 10
     if (hasFx) height += 40 + 10
@@ -863,7 +872,10 @@ fun VideoTimeline(
     val hasMainVideo = videoClips.isNotEmpty()
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
     val overlayLayerHeight = OVERLAY_LAYER_HEIGHT_DP.dp
-    val groupedOverlayLayerHeight = GROUPED_OVERLAY_LAYER_HEIGHT_DP.dp
+    val groupedOverlayLayerHeight = (
+        if (overlayLaneClips.isEmpty()) EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP
+        else GROUPED_OVERLAY_LAYER_HEIGHT_DP
+    ).dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -2273,7 +2285,7 @@ private fun TimelineVideoLayerRow(
                 if (onAddOverlay != null) {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(40.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF0D2A3A))
                             .border(1.dp, EditorPalette.NeonCyan, CircleShape)
@@ -2286,7 +2298,7 @@ private fun TimelineVideoLayerRow(
                             Icons.Default.Add,
                             contentDescription = null,
                             tint = EditorPalette.NeonCyan,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -2304,7 +2316,7 @@ private fun TimelineVideoLayerRow(
             return@Column
         }
 
-        if (groupedOverlayLane && visibleClips.isEmpty()) {
+        if (groupedOverlayLane && clips.isNotEmpty() && visibleClips.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp),
                 contentAlignment = Alignment.Center
@@ -2449,7 +2461,11 @@ private fun TimelineVideoLayerRow(
                             }
                             .clickable { if (multiSelectMode) onToggleSelectedClip(clip.id) else onSelectClip(clip.id) }
                             .semantics {
-                                contentDescription = "Overlay clip ${clip.name}, track V${clipLayerIndex + 1}"
+                                contentDescription = if (groupedOverlayLane) {
+                                    "V${clipLayerIndex + 1} overlay"
+                                } else {
+                                    "Video clip ${clip.name}, track V${clipLayerIndex + 1}"
+                                }
                                 selected = isSelected || isMultiSelected
                             }
                     ) {
@@ -2469,7 +2485,11 @@ private fun TimelineVideoLayerRow(
                             modifier = Modifier.fillMaxSize()
                         )
                         Box(Modifier.fillMaxSize().background(Color(0xFF00C7D9).copy(alpha = 0.16f)))
-                        Text(clip.name, color = Color.White, fontSize = 8.sp, maxLines = 1,
+                        Text(
+                            if (groupedOverlayLane) "${clip.name} overlay · V${clipLayerIndex + 1}" else clip.name,
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.align(Alignment.BottomStart).padding(start = 13.dp, bottom = 2.dp)
                                 .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
@@ -2510,6 +2530,7 @@ private fun TimelineVideoLayerRow(
                                 tint = Color(0xFFFBBF24),
                                 modifier = Modifier
                                     .align(if (showOverlapStackSelector) Alignment.TopStart else Alignment.TopEnd)
+                                    .then(if (showOverlapStackSelector) Modifier.offset(x = 28.dp) else Modifier)
                                     .padding(2.dp)
                                     .size(10.dp)
                             )
@@ -2517,7 +2538,7 @@ private fun TimelineVideoLayerRow(
                         if (showOverlapStackSelector) {
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
+                                    .align(Alignment.TopStart)
                                     .padding(2.dp)
                                     .size(28.dp)
                                     .clip(CircleShape)

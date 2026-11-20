@@ -23,6 +23,7 @@ import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.domain.model.Project
 import com.apexstudio.app.domain.model.TextOverlay
 import com.apexstudio.app.presentation.viewmodel.EditorViewModel
+import com.apexstudio.app.presentation.viewmodel.seekTo
 import com.apexstudio.app.ui.theme.ApexTheme
 import kotlinx.coroutines.runBlocking
 import java.io.File

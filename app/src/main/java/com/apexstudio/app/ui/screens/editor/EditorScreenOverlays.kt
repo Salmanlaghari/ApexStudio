@@ -1663,7 +1663,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             Modifier
                 .size(displayedStageSize.width.dp, displayedStageSize.height.dp)
                 .testTag("editor-preview-frame")
-                .background(Color.Black)
+                .background(Color.Black),
             contentAlignment = Alignment.TopCenter
         ) {
         // Keep player, overlays, and gesture coordinates on the same source-ratio canvas.

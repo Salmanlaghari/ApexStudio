@@ -1188,12 +1188,12 @@ fun OverlayPropertiesPanelOverlay(
     // Probe result for this clip is owned by the preview section; the
     // panel re-probes cheaply (cached) to decide whether to show volume.
     val context = LocalContext.current
-    var isVideo by remember(selectedClip.id, selectedClip.uri) {
+    var isVideo by remember(selectedClip.id, selectedClip.uri, selectedClip.name) {
         mutableStateOf<Boolean?>(null)
     }
-    LaunchedEffect(selectedClip.id, selectedClip.uri) {
+    LaunchedEffect(selectedClip.id, selectedClip.uri, selectedClip.name) {
         isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
-            context, selectedClip.uri
+            context, selectedClip.uri, selectedClip.name
         )
     }
     Box(

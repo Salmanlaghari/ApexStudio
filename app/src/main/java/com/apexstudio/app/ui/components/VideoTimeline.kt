@@ -952,7 +952,6 @@ fun VideoTimeline(
     BoxWithConstraints(
         modifier = modifier.fillMaxWidth().fillMaxHeight()
             .background(EditorPalette.BgBase)
-            .border(1.dp, EditorPalette.BorderGlass)
     ) {
         // In compact/landscape layouts let ALL rows scroll vertically,
         // rather than letting a pinned V1 consume the whole track viewport.
@@ -1924,7 +1923,6 @@ private fun TimelineTimeRuler(
         modifier = modifier
             .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
             .background(TIMELINE_RULER_BACKGROUND)
-            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
     ) {
         val totalSec = (durationMs / 1000L).toInt().coerceAtLeast(1)
         val labelStyle = remember {

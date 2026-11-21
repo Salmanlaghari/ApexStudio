@@ -1188,12 +1188,12 @@ fun OverlayPropertiesPanelOverlay(
     // Probe result for this clip is owned by the preview section; the
     // panel re-probes cheaply (cached) to decide whether to show volume.
     val context = LocalContext.current
-    var isVideo by remember(selectedClip.id, selectedClip.uri) {
+    var isVideo by remember(selectedClip.id, selectedClip.uri, selectedClip.name) {
         mutableStateOf<Boolean?>(null)
     }
-    LaunchedEffect(selectedClip.id, selectedClip.uri) {
+    LaunchedEffect(selectedClip.id, selectedClip.uri, selectedClip.name) {
         isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
-            context, selectedClip.uri
+            context, selectedClip.uri, selectedClip.name
         )
     }
     Box(
@@ -1663,16 +1663,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             Modifier
                 .size(displayedStageSize.width.dp, displayedStageSize.height.dp)
                 .testTag("editor-preview-frame")
-                .clip(RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius))
-                .background(Color.Black)
-                .then(if (isFullscreenPreview || isTimelineFocusMode) Modifier else
-                    Modifier.border(
-                        1.dp,
-                        androidx.compose.ui.graphics.Brush.linearGradient(listOf(
-                            Color(0xFF3B6978), Color(0xFF202C42), Color(0xFF60517C)
-                        )),
-                        RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)
-                    )),
+                .background(Color.Black),
             contentAlignment = Alignment.TopCenter
         ) {
         // Keep player, overlays, and gesture coordinates on the same source-ratio canvas.

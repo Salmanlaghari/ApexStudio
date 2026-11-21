@@ -17,7 +17,7 @@ class EditorLayoutMetricsTest {
     }
 
     @Test
-    fun expandedPreviewKeepsASubtleBoundedFrame() {
+    fun optionalPreviewFrameUsesASubtleCornerRadius() {
         assertEquals(14.dp, EditorLayoutMetrics.PreviewCornerRadius)
     }
 }

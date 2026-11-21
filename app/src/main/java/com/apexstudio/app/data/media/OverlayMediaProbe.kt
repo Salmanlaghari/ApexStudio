@@ -34,11 +34,11 @@ import java.util.concurrent.ConcurrentHashMap
  * decode video bytes as an image, failed silently, and the preview
  * showed an empty black box. Now: a retriever failure falls back to
  * the ContentResolver MIME type (a video MIME type → video, an image
- * MIME type → image); only a successful probe (or a MIME-backed answer) is
- * cached, and an unanswerable probe returns `null` WITHOUT caching
- * so callers treat it as unknown (never as image) and a later retry
- * can still succeed. (Note: this KDoc deliberately avoids writing a
- * MIME pattern like video-slash-star inline — the slash-star sequence
+ * MIME type → image), then to a known extension in the supplied picker
+ * display name. Definite answers are cached; unknown media returns
+ * `null` WITHOUT caching so a later retry can still succeed. (Note: this
+ * KDoc deliberately avoids writing a MIME pattern like video-slash-star inline —
+ * the slash-star sequence
  * would open a nested block comment.)
  */
 object OverlayMediaProbe {
@@ -49,6 +49,34 @@ object OverlayMediaProbe {
     private val IMAGE_EXTENSIONS = setOf(
         "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif"
     )
+    private val VIDEO_EXTENSIONS = setOf(
+        "3g2", "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov",
+        "mp4", "mpeg", "mpg", "mts", "ts", "webm", "wmv"
+    )
+
+    /** Retriever and MIME evidence are authoritative; display name is the final fallback. */
+    internal fun resolveVideoAnswer(
+        hasVideoTrack: Boolean?,
+        mimeType: String?,
+        displayName: String?
+    ): Boolean? {
+        hasVideoTrack?.let { return it }
+        val mime = mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+        when {
+            mime.startsWith("video/") -> return true
+            mime.startsWith("image/") -> return false
+        }
+        // Use the picker/OpenableColumns display name, never an extension
+        // scraped from an opaque content URI path or query.
+        val filename = displayName?.trim()?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?: return null
+        val extension = filename.substringAfterLast('.', "").substringBefore('?').lowercase()
+        return when {
+            extension in VIDEO_EXTENSIONS -> true
+            extension in IMAGE_EXTENSIONS -> false
+            else -> null
+        }
+    }
 
     /**
      * Synchronous still-image check for a media URI. CONSERVATIVE:
@@ -102,18 +130,18 @@ object OverlayMediaProbe {
 
     /**
      * Async media-kind probe: `true` = video, `false` = image, `null`
-     * = unanswerable (retriever could not open the URI AND the MIME
-     * type is unknown). `null` is NEVER cached and MUST never be
-     * read as "image" by callers: an unanswerable URI takes the
-     * video/player path (photo path requires positive image
-     * evidence), and a later re-probe can still resolve it.
+     * = unanswerable (retriever, MIME type, and supplied display name
+     * cannot answer). `null` is NEVER cached and MUST never be
+     * read as "image" by callers: it stays unresolved and is not sent
+     * to the image decoder; a later re-probe can resolve it.
      * Positive `false` (image) requires real evidence: the retriever
-     * opened the file and reports no video track, or the MIME type
-     * is an image type.
+     * opened the file and reports no video track, the MIME is an image
+     * type, or the supplied picker display name has a known image extension.
      */
-    suspend fun isVideo(context: Context, uri: String): Boolean? {
+    suspend fun isVideo(context: Context, uri: String, displayName: String? = null): Boolean? {
         cache[uri]?.let { return it }
         val result = withContext(Dispatchers.IO) {
+            var hasVideoTrack: Boolean? = null
             // 1. Ask the media itself.
             try {
                 MediaMetadataRetriever().use { retriever ->
@@ -122,9 +150,7 @@ object OverlayMediaProbe {
                         MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO
                     )
                     if (hasVideo != null) {
-                        val answer = hasVideo == "yes"
-                        cache[uri] = answer
-                        return@withContext answer
+                        hasVideoTrack = hasVideo == "yes"
                     }
                     // Retriever opened the file but reports no
                     // HAS_VIDEO — fall through to the MIME check.
@@ -137,31 +163,19 @@ object OverlayMediaProbe {
             } catch (_: Exception) {
                 // Retriever could not open the URI — MIME fallback below.
             }
-            // 2. MIME fallback: cheap, needs no codec. A video MIME type
-            // whose retriever probe failed (permissions, odd container)
-            // must still take the video-player path, not Coil.
-            try {
-                val mime = context.contentResolver.getType(Uri.parse(uri)) ?: ""
-                when {
-                    mime.startsWith("video/") -> {
-                        cache[uri] = true
-                        true
-                    }
-                    mime.startsWith("image/") -> {
-                        cache[uri] = false
-                        false
-                    }
-                    // Unanswerable: return null, do NOT cache, and
-                    // do NOT collapse to false — callers must treat
-                    // unknown as unknown, never as image.
-                    else -> null
-                }
+            // 2. MIME fallback, then a picker display name only if neither
+            // stronger source answered. Video MIME still outranks a stray
+            // image extension (and vice versa).
+            val mime = try {
+                context.contentResolver.getType(Uri.parse(uri))
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                null // Unanswerable: do NOT cache.
+                null
             }
+            resolveVideoAnswer(hasVideoTrack, mime, displayName)
         }
+        result?.let { cache[uri] = it }
         return result
     }
 }

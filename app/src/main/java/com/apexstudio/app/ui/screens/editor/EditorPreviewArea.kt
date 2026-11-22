@@ -116,6 +116,11 @@ fun VideoPreviewArea(
     onSizeScaleChange: ((String, Float) -> Unit)? = null,
     onRetryLoad: (() -> Unit)? = null,
     onTapVideo: () -> Unit = {},
+    // CapCut-style lookahead surface. The button is intentionally separate
+    // from the video tap gesture so tapping the preview keeps play/pause.
+    lookaheadVideoUri: String? = null,
+    onSeekToLookahead: (Long) -> Unit = {},
+    onPlayPreviewSnippet: () -> Unit = {},
     // Small filename chip (bottom-left inside the preview): the
     // selected clip/track name, moved here from the clip bar, where
     // it crowded the clip bar's actions. Null = nothing selected.
@@ -525,6 +530,38 @@ fun VideoPreviewArea(
                 Text(transitionPreviewNotice, color = Color(0xFFFFD98A), fontSize = 10.sp, maxLines = 3)
             }
         }
+
+        // The lookahead feature used to exist as an isolated composable with
+        // no caller, so users could never reach it. Keep it as a small
+        // transport action instead of hijacking the preview tap gesture.
+        var showUpcomingFrames by remember { mutableStateOf(false) }
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(ApexPalette.BgGlass.copy(alpha = 0.92f))
+                .border(1.dp, ApexPalette.NeonCyan.copy(alpha = 0.55f), RoundedCornerShape(9.dp))
+                .clickable { showUpcomingFrames = true }
+                .semantics { contentDescription = "Show upcoming frames" }
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.FastForward, contentDescription = null, tint = ApexPalette.NeonCyan, modifier = Modifier.size(14.dp))
+                Text("Future", color = ApexPalette.TextPrimary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        UpcomingFramesPreviewOverlay(
+            visible = showUpcomingFrames,
+            videoUri = lookaheadVideoUri,
+            currentTimeMs = projectTimeMs,
+            durationMs = durationMs,
+            onSeekTo = onSeekToLookahead,
+            onPlayPreviewSnippet = onPlayPreviewSnippet,
+            onDismiss = { showUpcomingFrames = false },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
 
         // Playback time is in the transport row; no filename/time/keyframe HUD covers the media.
         // Keyframe values stay in their editing panel; never cover the video with a debug HUD.

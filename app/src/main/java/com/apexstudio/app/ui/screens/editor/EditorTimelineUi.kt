@@ -485,7 +485,6 @@ fun BottomTimelineActionRow(
             .height(EditorLayoutMetrics.TimelineActionHeight)
             .clip(RoundedCornerShape(12.dp))
             .background(EditorPalette.BgSurface)
-            .border(1.dp, EditorPalette.BorderGlass, RoundedCornerShape(12.dp))
     ) {
         val viewportWidth = maxWidth
         Row(

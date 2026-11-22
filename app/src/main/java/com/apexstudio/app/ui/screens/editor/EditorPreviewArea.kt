@@ -313,8 +313,7 @@ fun VideoPreviewArea(
             // This is only the letterbox/frame surface around media. The
             // PlayerView/PhotoClipPreview content is not recolored or masked.
             .background(ApexPalette.BgBase)
-            .then(if (showFrame) Modifier.border(1.dp, ApexPalette.NeonPurple.copy(alpha = 0.26f),
-                RoundedCornerShape(EditorLayoutMetrics.PreviewCornerRadius)) else Modifier)
+            // Deliberately no decorative keyline: keep the preview edge-to-edge.
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTapVideo() }

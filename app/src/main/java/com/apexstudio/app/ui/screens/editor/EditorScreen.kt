@@ -560,15 +560,23 @@ private fun EditorScreenContent(
     val allOverlayClips = remember(state.project?.clips) {
         state.project?.clips?.filter { it.type == ClipType.OVERLAY } ?: emptyList()
     }
-    LaunchedEffect(allOverlayClips.map { it.id to it.uri }) {
+    LaunchedEffect(allOverlayClips.map { Triple(it.id, it.uri, it.name) }) {
         allOverlayClips.forEach { clip ->
             if (!overlayIsVideo.containsKey(clip.id)) {
-                val isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
-                    context, clip.uri
-                )
-                // Store only definite answers: null (unanswerable)
-                // stays absent, so consumers treat it as unknown —
-                // never as image — and a later re-probe can retry.
+                // Retry a few times for transient provider/permission timing.
+                // The probe still stores only positive evidence, with the
+                // picker display name as a final fallback for known file types.
+                val retryDelaysMs = longArrayOf(250L, 750L, 1_500L)
+                var isVideo: Boolean? = null
+                for (attempt in 0..retryDelaysMs.size) {
+                    isVideo = com.apexstudio.app.data.media.OverlayMediaProbe.isVideo(
+                        context, clip.uri, clip.name
+                    )
+                    if (isVideo != null) break
+                    if (attempt < retryDelaysMs.size) delay(retryDelaysMs[attempt])
+                }
+                // Store only definite answers; unresolved files remain unknown,
+                // never silently routed to the image decoder.
                 if (isVideo != null) {
                     overlayIsVideo = overlayIsVideo + (clip.id to isVideo)
                 }

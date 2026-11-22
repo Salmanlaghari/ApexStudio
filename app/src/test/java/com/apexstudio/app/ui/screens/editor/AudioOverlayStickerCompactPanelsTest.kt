@@ -73,7 +73,7 @@ class AudioOverlayStickerCompactPanelsTest {
     }
 
     @Test
-    fun overlayPropertiesKeepClosePinnedAndTransformControlsAccessibleInCards() {
+    fun overlayPropertiesKeepClosePinnedAndTransformControlsAccessibleInVerticalSheet() {
         var closed = false
         var blend: OverlayBlend? = null
         var densityScale = 1f
@@ -102,9 +102,9 @@ class AudioOverlayStickerCompactPanelsTest {
             }
         }
 
-        compose.onNodeWithTag("overlay-properties-panel-root").assertHeightAtMost280Dp(densityScale)
+        compose.onNodeWithTag("overlay-properties-panel-root").assertHeightAtMostDp(432f, densityScale)
         compose.onNodeWithContentDescription("Close").assertIsDisplayed()
-        compose.onNodeWithTag("overlay-properties-panel-cards").assertIsDisplayed()
+        compose.onNodeWithTag("overlay-properties-panel-content").assertIsDisplayed()
         compose.onNodeWithText("Position X").assertIsDisplayed()
         compose.onNodeWithText("Screen").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(OverlayBlend.SCREEN, blend) }
@@ -129,6 +129,11 @@ class AudioOverlayStickerCompactPanelsTest {
         compose.onNodeWithContentDescription("Close").performClick()
         compose.runOnIdle { assertTrue(closed) }
     }
+}
+
+private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertHeightAtMostDp(maximumDp: Float, density: Float) {
+    val measuredHeight = fetchSemanticsNode().boundsInRoot.height
+    assertTrue("Expected panel height <= ${maximumDp}dp, was ${measuredHeight / density}dp", measuredHeight <= maximumDp * density + 1f)
 }
 
 private fun androidx.compose.ui.test.SemanticsNodeInteraction.assertHeightAtMost280Dp(density: Float) {

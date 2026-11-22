@@ -480,12 +480,6 @@ private fun PipOverlayItem(
             }
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black)
-            .border(
-                width = if (isSelected) 1.5.dp else 1.dp,
-                color = if (isSelected) Color(0xFF00F0FF)
-                else Color(0xFF00F0FF).copy(alpha = 0.55f),
-                shape = RoundedCornerShape(8.dp)
-            )
     ) {
         // Soft drop shadow (properties panel): a blurred dark rect
         // behind the box. Drawn with a framework BlurMaskFilter so it
@@ -700,12 +694,18 @@ private fun PipOverlayItem(
         } // inner mask-clip box
 
         if (isSelected) {
-            // Dashed selection border (rotates with the overlay, CapCut-style).
-            Canvas(modifier = Modifier.fillMaxSize()) {
+            // One light dashed outline marks only the active edit target;
+            // unselected media stays unobscured and the user's own border
+            // setting remains a separate, export-matched effect.
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("pip-overlay-selection-outline-${clip.id}")
+            ) {
                 drawRect(
                     color = Color(0xFF00E5FF),
                     style = Stroke(
-                        width = 2.dp.toPx(),
+                        width = 1.5.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
                     )
                 )

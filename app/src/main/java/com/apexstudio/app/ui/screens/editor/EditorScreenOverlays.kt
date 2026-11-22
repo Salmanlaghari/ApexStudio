@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
@@ -426,14 +428,22 @@ fun TransitionPickerOverlay(
         it.fromClipId == state.transitionPickerFromClipId && it.toClipId == state.transitionPickerToClipId
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .background(Color.Transparent) // Pro Phase 1: locked preview stays visible
             .clickable { vm.closeTransitionPicker() },
         contentAlignment = Alignment.BottomCenter
     ) {
-        Box(modifier = Modifier.fillMaxWidth().clickable(enabled = false) {}) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .clickable(enabled = false) {}
+        ) {
             TransitionPickerSheet(
                 fromClip = fromClip,
                 toClip = toClip,

@@ -555,10 +555,29 @@ fun ContextualBottomToolbar(
     ).map(::routed)
     val easyClipItems = when (selectionKind) {
         ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
+            CtxToolItem(
+                if (isOverlaySelected) "Properties" else "Speed",
+                if (isOverlaySelected) Icons.Default.Tune else Icons.Default.Speed,
+                tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onSpeed
+            ),
+            CtxToolItem(
+                "Volume",
+                Icons.Default.VolumeUp,
+                tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onVolume
+            ),
             CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
-            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            if (isOverlaySelected) {
+                CtxToolItem(
+                    if (isLayerHidden) "Show" else "Hide",
+                    if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
+                    tint = ApexPalette.NeonCyan,
+                    onClick = onToggleLayerVisibility
+                )
+            } else {
+                CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters)
+            },
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         ).map(::routed)
         ToolbarSelectionKind.AUDIO -> listOf(

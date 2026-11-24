@@ -251,7 +251,9 @@ private fun VideoPropertiesDialog(
 }
 
 private val TIMELINE_RESIZE_HANDLE_HEIGHT = 32.dp
-private val TIMELINE_PREVIEW_MIN_HEIGHT = 180.dp
+// Keep a little more vertical room for the actual media frame on phones. The
+// timeline remains resizable and its compact height is unchanged.
+private val TIMELINE_PREVIEW_MIN_HEIGHT = 200.dp
 
 internal fun clampTimelinePaneHeight(
     requestedTimelinePaneHeight: Dp,

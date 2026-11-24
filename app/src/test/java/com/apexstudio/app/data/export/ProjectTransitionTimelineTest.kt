@@ -182,6 +182,21 @@ class ProjectTransitionTimelineTest {
     }
 
     @Test
+    fun `normalization drops transition whose trimmed overlap is zero`() {
+        val clips = listOf(
+            video("a", trimEnd = 1L, duration = 1L),
+            video("b", trimEnd = 1L, duration = 1L)
+        )
+
+        assertTrue(
+            ProjectTransitionTimeline.normalizeTransitions(
+                clips,
+                listOf(transition("a", "b", 100L))
+            ).isEmpty()
+        )
+    }
+
+    @Test
     fun `transition and clip ranges use exact half open endpoints`() {
         val plan = ProjectTransitionTimeline.build(
             listOf(video("a"), video("b")),

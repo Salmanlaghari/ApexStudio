@@ -200,7 +200,9 @@ fun TextPanel(
             .fillMaxWidth()
             .navigationBarsPadding()
             .imePadding()
-            .heightIn(max = 280.dp)
+            // Text editing needs enough vertical room for readable labels and
+            // the IME; the inner content still scrolls on compact phones.
+            .heightIn(max = 420.dp)
             .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
             .background(ApexThemeTokens.current.bgSurface)
             .border(1.dp, ApexThemeTokens.current.border, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
@@ -237,6 +239,7 @@ fun TextPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .clip(RoundedCornerShape(10.dp))
                 .background(ApexThemeTokens.current.bgElevated)
                 .padding(3.dp),
@@ -252,7 +255,7 @@ fun TextPanel(
                 val isSel = activeTab == tab
                 Box(
                     modifier = Modifier
-                        .weight(1f)
+                        .widthIn(min = 92.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isSel) ApexThemeTokens.current.primary else Color.Transparent)
                         .clickable { activeTab = tab }

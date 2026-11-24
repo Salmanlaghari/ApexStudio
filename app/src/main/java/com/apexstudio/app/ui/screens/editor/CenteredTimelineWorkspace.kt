@@ -1,12 +1,16 @@
 package com.apexstudio.app.ui.screens.editor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
@@ -26,7 +30,19 @@ internal fun ColumnScope.CenteredTimelineWorkspace(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (compactHeight == null) Modifier.weight(layoutWeight) else Modifier.height(compactHeight))
-            .background(Color(0xFF0D1524))
+            .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF14233A), Color(0xFF0D1524), Color(0xFF0A101C))
+                )
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.horizontalGradient(
+                    listOf(Color(0x006BE7FF), Color(0x806BE7FF), Color(0x007A6CFF))
+                ),
+                shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
+            )
             .testTag("centered-timeline-workspace"),
         content = content
     )

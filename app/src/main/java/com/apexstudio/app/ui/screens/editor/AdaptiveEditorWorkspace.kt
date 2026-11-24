@@ -17,6 +17,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
@@ -277,8 +278,16 @@ private fun TimelineResizeHandle(onReset: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         Box(
-            Modifier.width(40.dp).height(4.dp).clip(RoundedCornerShape(2.dp))
-                .background(EditorPalette.TextSecondary.copy(alpha = 0.7f))
+            Modifier.width(44.dp).height(5.dp).clip(RoundedCornerShape(3.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            EditorPalette.NeonCyan.copy(alpha = 0.25f),
+                            EditorPalette.TextPrimary.copy(alpha = 0.82f),
+                            EditorPalette.NeonPurple.copy(alpha = 0.25f),
+                        )
+                    )
+                )
         )
     }
 }

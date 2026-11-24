@@ -1935,6 +1935,17 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             onTapVideo = {
                 vm.togglePlay()
             },
+            lookaheadVideoUri = mainPreviewClip?.uri,
+            onSeekToLookahead = { targetMs -> seekPlayerAndState(targetMs) },
+            onPlayPreviewSnippet = {
+                val startMs = vm.livePlayheadMs().coerceIn(0L, state.durationMs)
+                seekPlayerAndState(startMs)
+                vm.setPlaying(true)
+                scope.launch {
+                    delay(3_000L)
+                    vm.setPlaying(false)
+                }
+            },
             onRetryLoad = {
                 exoPlayer?.let { player ->
                     vm.setPlayerError(null)

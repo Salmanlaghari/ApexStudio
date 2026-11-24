@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.apexstudio.app.data.stickers.StickerEntry
 import com.apexstudio.app.data.stickers.StickerImageCache
 import com.apexstudio.app.data.stickers.StickerPack
+import com.apexstudio.app.data.stickers.OnlineStickerRepository
 import com.apexstudio.app.domain.model.StickerOverlay
 import com.apexstudio.app.data.animation.AnimationPresetOptions
 import com.apexstudio.app.data.animation.AnimationPresetMode
@@ -48,7 +49,10 @@ import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.rememberLottieComposition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import coil.compose.AsyncImage
 
 private const val ALL_CATEGORY = "All"
 
@@ -83,11 +87,36 @@ fun StickerPanel(
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(ALL_CATEGORY) }
     var showAnimated by remember { mutableStateOf(false) }
+    var onlineResults by remember { mutableStateOf<List<OnlineStickerRepository.Result>>(emptyList()) }
+    var onlineLoading by remember { mutableStateOf(false) }
+    var onlineError by remember { mutableStateOf<String?>(null) }
+    var downloadingOnlineId by remember { mutableStateOf<String?>(null) }
+    var downloadError by remember { mutableStateOf<String?>(null) }
+    val onlineScope = rememberCoroutineScope()
 
     val filtered = remember(entries, query, selectedCategory) {
         val byCategory = if (selectedCategory == ALL_CATEGORY) entries
         else entries.filter { it.category == selectedCategory }
         StickerPack.search(byCategory, query)
+    }
+
+    LaunchedEffect(query) {
+        val clean = query.trim()
+        if (clean.length < 2) {
+            onlineResults = emptyList()
+            onlineError = null
+            return@LaunchedEffect
+        }
+        delay(450L)
+        onlineLoading = true
+        onlineError = null
+        runCatching { OnlineStickerRepository.search(clean) }
+            .onSuccess { onlineResults = it }
+            .onFailure {
+                onlineResults = emptyList()
+                onlineError = "Online search unavailable"
+            }
+        onlineLoading = false
     }
 
     Column(
@@ -201,10 +230,60 @@ fun StickerPanel(
         )
 
         Text(
-            "Offline · bundled stickers only",
+            if (query.trim().length >= 2) "Online results from Openverse · tap to download" else "Offline pack + optional online search",
             color = ApexPalette.TextSecondary,
             fontSize = 10.sp
         )
+
+        if (query.trim().length >= 2) {
+            if (onlineLoading) {
+                Text("Searching online…", color = ApexPalette.TextSecondary, fontSize = 10.sp)
+            } else if (onlineError != null) {
+                Text(onlineError!!, color = ApexPalette.Warning, fontSize = 10.sp)
+            } else if (onlineResults.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(onlineResults, key = { it.id }) { result ->
+                        Column(Modifier.width(72.dp)) {
+                            AsyncImage(
+                                model = result.previewUrl,
+                                contentDescription = result.title,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable(enabled = canAddStickers && downloadingOnlineId == null) {
+                                        onlineScope.launch {
+                                            downloadingOnlineId = result.id
+                                            downloadError = null
+                                            val path = OnlineStickerRepository.download(context, result)
+                                            if (path != null) onAddSticker(path, "online", result.title)
+                                            else downloadError = "Could not download this image"
+                                            downloadingOnlineId = null
+                                        }
+                                    }
+                            )
+                            Text(
+                                text = buildString {
+                                    append(result.title)
+                                    result.creator?.let { append(" · ").append(it) }
+                                    result.license?.let { append(" · ").append(it.uppercase()) }
+                                },
+                                color = ApexPalette.TextSecondary,
+                                fontSize = 8.sp,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+            if (downloadError != null) {
+                Text(downloadError!!, color = ApexPalette.Warning, fontSize = 10.sp)
+            }
+        }
 
         Spacer(Modifier.height(4.dp))
 

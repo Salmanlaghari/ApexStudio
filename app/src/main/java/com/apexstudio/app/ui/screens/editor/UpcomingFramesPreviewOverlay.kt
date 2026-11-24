@@ -80,21 +80,18 @@ fun UpcomingFramesPreviewOverlay(
     }
 
     // 4 Upcoming Target Times (+0.75s, +1.5s, +2.25s, +3.0s)
-    val totalDur = durationMs.coerceAtLeast(1000L)
-    val offsets = listOf(750L, 1500L, 2250L, 3000L)
     val upcomingItems = remember(currentTimeMs, durationMs) {
-        offsets.map { off ->
-            val targetTime = (currentTimeMs + off).coerceIn(0L, totalDur)
-            val label = String.format(java.util.Locale.US, "+%.1fs", off / 1000f)
-            Triple(off, targetTime, label)
-        }
+        upcomingFrameTargets(currentTimeMs, durationMs)
     }
 
     var upcomingThumbnails by remember(currentTimeMs, videoUri) {
         mutableStateOf<Map<Long, Bitmap>>(emptyMap())
     }
 
-    LaunchedEffect(currentTimeMs, videoUri) {
+    // `visible` is part of the key intentionally. The overlay is normally
+    // composed while hidden; without it, opening the already-composed overlay
+    // never starts extraction until the playhead moves.
+    LaunchedEffect(visible, currentTimeMs, videoUri) {
         if (!visible) return@LaunchedEffect
         val uri = videoUri
         if (!uri.isNullOrBlank()) {
@@ -338,5 +335,18 @@ fun UpcomingFramesPreviewOverlay(
                 }
             }
         }
+    }
+}
+
+/** Stable look-ahead targets shared by the overlay and its JVM tests. */
+internal fun upcomingFrameTargets(
+    currentTimeMs: Long,
+    durationMs: Long,
+): List<Triple<Long, Long, String>> {
+    val totalDur = durationMs.coerceAtLeast(1000L)
+    return listOf(750L, 1500L, 2250L, 3000L).map { offsetMs ->
+        val targetTime = (currentTimeMs + offsetMs).coerceIn(0L, totalDur)
+        val label = String.format(java.util.Locale.US, "+%.1fs", offsetMs / 1000f)
+        Triple(offsetMs, targetTime, label)
     }
 }

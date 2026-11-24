@@ -1076,11 +1076,22 @@ fun EditorViewModel.trimClip(clipId: String, startMs: Long, endMs: Long) {
                 )
             } else c
         }
-        val newDuration = computeTimelineDurationMs(updatedClips, audioTracks, proj.transitions)
+        // Trimming can make an existing overlap impossible (for example, a
+        // short clip can clamp a 1s transition to zero). Keep the stored
+        // junction list in the same adjacent-video shape used by the picker;
+        // otherwise the boundary badge may show stale transition metadata.
+        val transitions = com.apexstudio.app.data.export.ProjectTransitionTimeline
+            .normalizeTransitions(updatedClips, proj.transitions)
+        val newDuration = computeTimelineDurationMs(updatedClips, audioTracks, transitions)
         newDurationMs = newDuration
         val newPlayhead = liveBefore.coerceIn(0L, newDuration)
         s.copy(
-            project = proj.copy(clips = updatedClips, audioTracks = audioTracks, durationMs = newDuration),
+            project = proj.copy(
+                clips = updatedClips,
+                audioTracks = audioTracks,
+                transitions = transitions,
+                durationMs = newDuration
+            ),
             durationMs = newDuration,
             playerPositionMs = newPlayhead,
             currentTimeMs = newPlayhead,

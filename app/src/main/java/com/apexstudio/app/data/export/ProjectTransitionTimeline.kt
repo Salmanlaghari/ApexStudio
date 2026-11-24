@@ -215,7 +215,10 @@ internal object ProjectTransitionTimeline {
         val seen = mutableSetOf<Pair<String, String>>()
         return transitions.filter { transition ->
             val pair = transition.fromClipId to transition.toClipId
-            pair in adjacentVideoPairs && seen.add(pair)
+            pair in adjacentVideoPairs &&
+                transition.durationMs > 0L &&
+                plannedDurationMs(clips, transition) > 0L &&
+                seen.add(pair)
         }
     }
 

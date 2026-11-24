@@ -1645,6 +1645,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorPreviewSection(
             .semantics { contentDescription = "Editor preview stage" },
         contentAlignment = Alignment.TopCenter
     ) {
+        // The compact timeline host's fixed extra slack accommodates an empty add-only V2 row.
         val reservedTimelineChrome = EditorLayoutMetrics.PlaybackBarHeight +
             compactTimelineHeight(state) + EditorLayoutMetrics.TimelineHostExtraHeight + 2.dp
         val stageHeightLimit = if (isFullscreenPreview || fitAvailableHeight) {
@@ -2152,6 +2153,7 @@ fun androidx.compose.foundation.layout.ColumnScope.EditorTransportSection(
     val compactPhoneTimeline = !compactLandscape && !horizontalProjectLayout &&
         !isTimelineFocusMode && !timelinePaneResized
     val compactTimelineHostHeight = if (isTimelineFocusMode || horizontalProjectLayout || timelinePaneResized) null else {
+        // Keep the empty grouped V2 add row within the existing host slack; reserve a new row only once populated.
         compactTimelineHeight(state, compactWaveform = compactPhoneTimeline) +
             (if (compactLandscape) EditorLayoutMetrics.TimelineLayerControlsHeight else EditorLayoutMetrics.TimelineHostExtraHeight) + 2.dp
     }

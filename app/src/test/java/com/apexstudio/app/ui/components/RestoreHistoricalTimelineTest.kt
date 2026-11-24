@@ -56,6 +56,7 @@ class RestoreHistoricalTimelineTest {
         )
         assertEquals(28.dp, compactTimelineHeight(empty))
         assertEquals(90.dp, compactTimelineHeight(main))
-        assertEquals(170.dp, compactTimelineHeight(withOverlay))
+        assertEquals(158.dp, compactTimelineHeight(main, includeEmptyOverlayLane = true))
+        assertEquals(210.dp, compactTimelineHeight(withOverlay))
     }
 }

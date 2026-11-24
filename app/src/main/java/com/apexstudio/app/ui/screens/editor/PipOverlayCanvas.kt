@@ -1,5 +1,6 @@
 package com.apexstudio.app.ui.screens.editor
 
+import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -86,6 +87,36 @@ import kotlin.math.roundToInt
  * a 16:9 box. The export GL effect uses the same per-clip aspect.
  */
 const val PIP_BOX_ASPECT = 16f / 9f
+
+private val STILL_IMAGE_EXTENSIONS = setOf(
+    "jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif", "avif", "tif", "tiff"
+)
+private val VIDEO_FILE_EXTENSIONS = setOf(
+    "mp4", "m4v", "mov", "webm", "mkv", "avi", "3gp", "ts", "mpeg", "mpg", "ogv", "m2ts", "mts"
+)
+
+/** Filename fallback only; opaque content URIs are never inferred from their path/query. */
+internal fun MediaClip.hasKnownStillImageFilename(): Boolean {
+    val parsedUri = runCatching { Uri.parse(uri) }.getOrNull()
+    val uriFilename = parsedUri
+        ?.takeIf {
+            when (it.scheme?.lowercase()) {
+                "file", "http", "https" -> true
+                else -> false
+            }
+        }
+        ?.lastPathSegment
+    fun extension(filename: String?): String? = filename
+        ?.substringBefore('?')
+        ?.substringBefore('#')
+        ?.substringAfterLast('.', "")
+        ?.lowercase()
+
+    val uriExtension = extension(uriFilename).orEmpty()
+    val nameExtension = extension(name).orEmpty()
+    if (uriExtension in VIDEO_FILE_EXTENSIONS || nameExtension in VIDEO_FILE_EXTENSIONS) return false
+    return uriExtension in STILL_IMAGE_EXTENSIONS || nameExtension in STILL_IMAGE_EXTENSIONS
+}
 
 /** Use the same TextureView-backed player surface as the main preview. */
 internal fun createOverlayPlayerView(
@@ -551,9 +582,9 @@ private fun PipOverlayItem(
                         )
                     }
                 }
-                isVideo == null -> {
-                    // Probe still running: neutral placeholder while the
-                    // media kind resolves.
+                isVideo == null && !clip.hasKnownStillImageFilename() -> {
+                    // Unknown media kind stays unresolved unless a trusted
+                    // filename gives the existing image loader a safe path.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()

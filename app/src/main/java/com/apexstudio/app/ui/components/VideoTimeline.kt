@@ -171,7 +171,10 @@ internal const val TIMELINE_HEADER_HEIGHT_DP = 40
 internal const val TIMELINE_RULER_HEIGHT_DP = 28
 internal const val MAIN_VIDEO_LANE_HEIGHT_DP = 52
 internal const val OVERLAY_LAYER_HEIGHT_DP = 60
+internal const val OVERLAY_LANE_HEADER_HEIGHT_DP = 40
 internal const val OVERLAY_FILMSTRIP_HEIGHT_DP = 52
+internal const val GROUPED_OVERLAY_LAYER_HEIGHT_DP = OVERLAY_LANE_HEADER_HEIGHT_DP + OVERLAY_FILMSTRIP_HEIGHT_DP + 8
+internal const val EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP = OVERLAY_LANE_HEADER_HEIGHT_DP + 8
 internal const val OVERLAY_CLIP_HEIGHT_DP = 42
 internal const val AUDIO_LANE_ROW_HEIGHT_DP = 46
 internal const val AUDIO_TRACK_ITEM_HEIGHT_DP = 40
@@ -180,6 +183,13 @@ private const val TIMELINE_HEADER_PAN_GAP_HEIGHT_DP = 10
 private const val SOURCE_WAVEFORM_HEIGHT_DP = 36
 private const val COMPACT_SOURCE_WAVEFORM_SPACING_DP = 6
 private const val COMPACT_SOURCE_WAVEFORM_HEIGHT_DP = 20
+
+/** Stable, composition-ordered overlay clips for the single shared timeline lane. */
+internal fun overlayTimelineLaneClips(clips: List<MediaClip>): List<MediaClip> =
+    clips.withIndex()
+        .filter { (_, clip) -> clip.type == ClipType.OVERLAY && clip.trackIndex in 1..9 }
+        .sortedWith(compareBy<IndexedValue<MediaClip>> { it.value.trackIndex }.thenBy { it.index })
+        .map { it.value }
 
 private fun Modifier.timelineHeaderActionSurface(tint: Color): Modifier {
     val shape = RoundedCornerShape(11.dp)
@@ -225,12 +235,21 @@ internal fun mainVideoLaneHeight(
 ): Dp = if (hasMainVideo) MAIN_VIDEO_LANE_HEIGHT_DP.dp else 0.dp
 
 /** Content-bounded height for normal editor mode; focused mode may still fill its viewport. */
-internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean = true): Dp {
+internal fun compactTimelineHeight(
+    state: EditorState,
+    compactWaveform: Boolean = true,
+    includeEmptyOverlayLane: Boolean = false,
+): Dp {
     val project = state.project
     val clips = project?.clips.orEmpty()
     val layerIndex = TimelineLayerContentIndex.from(clips)
     val hasMain = layerIndex.videoByLayer[0].orEmpty().any { it.type != ClipType.OVERLAY }
-    val overlayLayers = layerIndex.videoByLayer.keys.count { it in 1..9 }
+    val additionalVideoLayers = layerIndex.videoByLayer.filter { (layer, layerClips) ->
+        layer in 1..9 && layerClips.any { it.type != ClipType.OVERLAY }
+    }.size
+    val hasOverlayClips = overlayTimelineLaneClips(clips).isNotEmpty()
+    val hasOverlayLane = hasOverlayClips || includeEmptyOverlayLane
+    val overlayRows = (if (hasOverlayLane) 1 else 0) + additionalVideoLayers
     val textLayers = mapProjectTextLayers(
         clips,
         clips.flatMap { it.textOverlays },
@@ -265,12 +284,15 @@ internal fun compactTimelineHeight(state: EditorState, compactWaveform: Boolean 
             SOURCE_WAVEFORM_SPACING_DP + SOURCE_WAVEFORM_HEIGHT_DP
         }
     }
-    val supportRows = overlayLayers + (if (hasText) 1 else 0) +
+    val supportRows = overlayRows + (if (hasText) 1 else 0) +
         (if (hasStickers) 1 else 0) + (if (hasFx) 1 else 0) +
         (if (originalAudioRows > 0) 1 else 0) +
         (if (musicRows > 0) 1 else 0) + (if (voiceRows > 0) 1 else 0)
     if (supportRows > 0) height += 10
-    height += overlayLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
+    if (hasOverlayLane) {
+        height += (if (hasOverlayClips) GROUPED_OVERLAY_LAYER_HEIGHT_DP else EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP) + 10
+    }
+    height += additionalVideoLayers * (OVERLAY_LAYER_HEIGHT_DP + 10)
     if (hasText) height += textRowCount * 40 + 10
     if (hasStickers) height += stickerRowCount * 40 + 10
     if (hasFx) height += 40 + 10
@@ -575,6 +597,7 @@ fun VideoTimeline(
     /** Hoisted vertical scroll state (same ownership as [scrollState]). */
     vScrollState: ScrollState = rememberScrollState(),
     compactTimeline: Boolean = false,
+    onAddOverlay: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
@@ -850,19 +873,22 @@ fun VideoTimeline(
     val videoClips = remember(layerContentIndex) {
         layerContentIndex.videoByLayer[0].orEmpty().filter { it.type != ClipType.OVERLAY }
     }
-    // Multi-layer video tracks: distinct trackIndex values across all
-    // video clips (0..9). A layer appears ONLY when it holds clips —
-    // empty tracks are never shown (no "+ Add overlay (OVLx)" / "+ OVL2"
-    // placeholder rows; a track is created automatically when the user
-    // adds an overlay from the bottom bar). Unlike the old editor, an empty
-    // project does not reserve a black V1 lane: hiding that presentation
-    // must not rewrite clips, offsets, or intentional timeline gaps.
-    val videoLayers = remember(layerContentIndex) {
-        layerContentIndex.videoByLayer.keys.sorted().take(10)
+    // Keep every PiP clip on one visible lane, but retain each clip's true
+    // trackIndex so per-layer visibility, locking, and render order survive.
+    val overlayLaneClips = remember(clips) { overlayTimelineLaneClips(clips) }
+    val additionalVideoLayers = remember(layerContentIndex) {
+        layerContentIndex.videoByLayer.filter { (layer, layerClips) ->
+            layer in 1..9 && layerClips.any { it.type != ClipType.OVERLAY }
+        }.keys.sorted()
     }
+    val hasOverlayLane = onAddOverlay != null || overlayLaneClips.isNotEmpty()
     val hasMainVideo = videoClips.isNotEmpty()
     // Overlay row: readable 42dp filmstrip + 10dp keyframes + 8dp padding.
     val overlayLayerHeight = OVERLAY_LAYER_HEIGHT_DP.dp
+    val groupedOverlayLayerHeight = (
+        if (overlayLaneClips.isEmpty()) EMPTY_GROUPED_OVERLAY_LAYER_HEIGHT_DP
+        else GROUPED_OVERLAY_LAYER_HEIGHT_DP
+    ).dp
     var draggingClipId by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedOffsetPx by remember { mutableFloatStateOf(0f) }
     var targetDropIndex by remember { mutableIntStateOf(-1) }
@@ -938,8 +964,9 @@ fun VideoTimeline(
     } else {
         SOURCE_WAVEFORM_SPACING_DP
     }
-    val overlayRowsTotal = videoLayers.filter { it in 1..9 }
-        .sumOf { overlayLayerHeight.value.toInt() + 10 }
+    val overlayRowsTotal =
+        (if (hasOverlayLane) groupedOverlayLayerHeight.value.toInt() + 10 else 0) +
+            additionalVideoLayers.size * (overlayLayerHeight.value.toInt() + 10)
     val textLaneTotal = if (textOverlays.isNotEmpty()) textLaneHeight + 10 else 0
     val stickerLaneTotal = if (timelineStickerLayers.isNotEmpty()) stickerLaneHeight + 10 else 0
     val fxLaneTotal = if (hasFx) fxLaneHeight + 10 else 0
@@ -1409,14 +1436,51 @@ fun VideoTimeline(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
 
-                            // TRACKS 2..N: Overlay video layers V2..V10 (CapCut-style).
-                            // Only layers holding clips render — videoLayers
-                            // already excludes empty layers. Each layer gets
-                            // its own PiP row, absolutely positioned by
-                            // timelineOffsetMs. Hide/lock live in the
-                            // contextual bar of the selected clip.
-                            videoLayers.filter { it in 1..9 }.forEach { layer ->
+                            // All PiP clips share one visual lane. Each chip
+                            // still retains its original track for compositing
+                            // order and per-layer hide/lock behavior.
+                            if (hasOverlayLane) {
+                                TimelineVideoLayerRow(
+                                    layerIndex = 1,
+                                    clips = overlayLaneClips,
+                                    filmstripFrames = filmstripFrames,
+                                    frameIntervalMs = frameIntervalMs,
+                                    visibleWindowPx = visibleWindowPx,
+                                    selectedClipId = selectedClipId,
+                                    selectedClipIds = selectedClipIds,
+                                    multiSelectMode = multiSelectMode,
+                                    onToggleSelectedClip = onToggleSelectedClip,
+                                    msToDp = msToDp,
+                                    isHidden = false,
+                                    isLocked = false,
+                                    hiddenLayerIndices = hiddenVideoLayers,
+                                    lockedLayerIndices = lockedVideoLayers,
+                                    groupedOverlayLane = true,
+                                    onAddOverlay = onAddOverlay,
+                                    onSelectClip = onSelectClip,
+                                    onMoveClipOffset = onMoveClipOffset,
+                                    onDeleteClip = onDeleteClip,
+                                    onSeekToKeyframe = onScrub,
+                                    onMoveKeyframe = onMoveKeyframe,
+                                    onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
+                                    playheadMsProvider = playheadMsProvider,
+                                    snapEdges = allSnapEdges,
+                                    magneticSnapping = magneticSnapping,
+                                    snapToBeat = snapToBeat,
+                                    beatMarkersMs = beatMarkersMs,
+                                    onTrimClip = onTrimClip,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(groupedOverlayLayerHeight)
+                                        .semantics {
+                                            contentDescription = "Overlay lane, V2 through V10"
+                                        }
+                                        .testTag("timeline-overlay-lane")
+                                )
+                            }
+                            additionalVideoLayers.forEach { layer ->
                                 val layerClips = layerContentIndex.videoByLayer[layer].orEmpty()
+                                    .filter { it.type != ClipType.OVERLAY }
                                 TimelineVideoLayerRow(
                                     layerIndex = layer,
                                     clips = layerClips,
@@ -1436,13 +1500,7 @@ fun VideoTimeline(
                                     onSeekToKeyframe = onScrub,
                                     onMoveKeyframe = onMoveKeyframe,
                                     onToggleKeyframeAtPlayhead = onToggleKeyframeAtPlayhead,
-                                    // Provider, not the ticking Long: rows
-                                    // read the playhead only at drag end
-                                    // (snap), so ticks never recompose them.
                                     playheadMsProvider = playheadMsProvider,
-                                    // Snap edges: every clip's start/end
-                                    // across all video tracks (remembered
-                                    // above, not rebuilt per recomposition).
                                     snapEdges = allSnapEdges,
                                     magneticSnapping = magneticSnapping,
                                     snapToBeat = snapToBeat,
@@ -1452,7 +1510,7 @@ fun VideoTimeline(
                                         .fillMaxWidth()
                                         .height(overlayLayerHeight)
                                         .semantics(mergeDescendants = true) {
-                                            contentDescription = "V${layer + 1} overlay"
+                                            contentDescription = "V${layer + 1} video layer"
                                         }
                                 )
                             }
@@ -1804,6 +1862,7 @@ fun VideoTimeline(
     onToggleSnapToBeat: () -> Unit = {},
     onAutoCutSelected: () -> Unit = {},
     compactTimeline: Boolean = false,
+    onAddOverlay: (() -> Unit)? = null,
 ) {
     val project = state.project
     val autoCutAvailable = state.selectedAudioTrackId?.let { trackId ->
@@ -1874,6 +1933,7 @@ fun VideoTimeline(
         onDeselect = onDeselect,
         onReorderClips = onReorderClips,
         onAddMedia = onAddMedia,
+        onAddOverlay = onAddOverlay ?: { onAddMedia(ClipType.OVERLAY) },
         onSplitClip = onSplitClip,
         onDuplicateClip = onDuplicateClip,
         onDeleteClip = onDeleteClip,
@@ -2169,12 +2229,12 @@ private fun FilmstripCells(
 }
 
 /**
- * One overlay video layer row (V2..V10, CapCut-style multi-layer).
+ * One PiP lane or ordinary V2..V10 video layer row.
  *
- * Clips are absolutely positioned by [MediaClip.timelineOffsetMs] and render
- * as PiP blocks with a filmstrip thumbnail strip, matching the main V1
- * track's look. Locked layers ignore gestures; hidden layers show a muted
- * placeholder row.
+ * In grouped mode, clips from V2..V10 share one display row while keeping
+ * their source track indices for z-order, visibility, and lock semantics.
+ * Every chip is positioned by [MediaClip.timelineOffsetMs] with a filmstrip
+ * and keyframe strip matching the main V1 track's look.
  */
 @Composable
 private fun TimelineVideoLayerRow(
@@ -2187,6 +2247,10 @@ private fun TimelineVideoLayerRow(
     selectedClipIds: Set<String> = emptySet(),
     multiSelectMode: Boolean = false,
     onToggleSelectedClip: (String) -> Unit = {},
+    hiddenLayerIndices: Set<Int> = emptySet(),
+    lockedLayerIndices: Set<Int> = emptySet(),
+    groupedOverlayLane: Boolean = false,
+    onAddOverlay: (() -> Unit)? = null,
     msToDp: Float,
     isHidden: Boolean,
     isLocked: Boolean,
@@ -2212,17 +2276,51 @@ private fun TimelineVideoLayerRow(
     // local state during the drag so a trim never spams undo entries).
     onTrimClip: (clipId: String, startMs: Long, endMs: Long) -> Unit = { _, _, _ -> }
 ) {
-    // Readable historical overlay filmstrip with its own name and keyframe
-    // strip. Four dp of vertical inset leaves a 52dp filmstrip inside the
-    // allocated 60dp lane.
-    // The row renders ONLY when the layer holds clips (the caller
-    // never passes an empty layer), so there is no empty branch.
+    val visibleClips = if (groupedOverlayLane) {
+        clips.filter { it.trackIndex !in hiddenLayerIndices }
+    } else clips
+    val allGroupedClipsHidden = groupedOverlayLane && clips.isNotEmpty() && visibleClips.isEmpty()
+    // Readable filmstrip with a source name and keyframe strip. In grouped
+    // mode the header reserves space for the real add action, even when no
+    // overlay clips exist yet.
     Column(
         modifier = modifier
-            .background(if (isHidden) Color(0xFF111827) else Color(0xFF0A1B2D))
+            .background(if (isHidden || allGroupedClipsHidden) Color(0xFF111827) else Color(0xFF0A1B2D))
             .padding(vertical = 4.dp)
     ) {
-        if (isHidden) {
+        if (groupedOverlayLane) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(OVERLAY_LANE_HEADER_HEIGHT_DP.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (onAddOverlay != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0D2A3A))
+                            .border(1.dp, EditorPalette.NeonCyan, CircleShape)
+                            .clickable(onClick = onAddOverlay)
+                            .semantics { contentDescription = "Add overlay" }
+                            .testTag("timeline-add-overlay"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null,
+                            tint = EditorPalette.NeonCyan,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                TimelineLaneIdentity("PiP overlays · V2–V10", EditorPalette.NeonCyan)
+            }
+        }
+        if (isHidden && !groupedOverlayLane) {
             Text(
                 "Layer OVL$layerIndex hidden",
                 color = Color(0xFF64748B),
@@ -2232,17 +2330,47 @@ private fun TimelineVideoLayerRow(
             return@Column
         }
 
+        if (groupedOverlayLane && clips.isNotEmpty() && visibleClips.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (allGroupedClipsHidden) "Overlay clips are hidden by layer visibility"
+                    else "Add a photo or video overlay",
+                    color = Color(0xFF64748B),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
         // Filmstrip plus keyframe strip, sharing the lane rail geometry.
-        Box(modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)) {
-            clips.forEach { clip ->
+        if (visibleClips.isNotEmpty()) Box(modifier = Modifier.fillMaxWidth().height(OVERLAY_FILMSTRIP_HEIGHT_DP.dp)) {
+            visibleClips.forEach { clip ->
                 val isSelected = clip.id == selectedClipId
                 val isMultiSelected = clip.id in selectedClipIds
+                val clipLayerIndex = if (groupedOverlayLane) clip.trackIndex else layerIndex
+                val clipStartMs = clip.timelineOffsetMs
+                val clipEndMs = clipStartMs + clip.effectiveDurationMs().coerceAtLeast(1L)
+                val overlapStackChoices = if (groupedOverlayLane) visibleClips.filter { candidate ->
+                    if (candidate.id == clip.id) true else {
+                        val candidateStartMs = candidate.timelineOffsetMs
+                        val candidateEndMs = candidateStartMs + candidate.effectiveDurationMs().coerceAtLeast(1L)
+                        clipStartMs < candidateEndMs && candidateStartMs < clipEndMs
+                    }
+                } else emptyList()
+                val showOverlapStackSelector = overlapStackChoices.size > 1 &&
+                    overlapStackChoices.lastOrNull()?.id == clip.id
+                val clipIsLocked = if (groupedOverlayLane) {
+                    clip.trackIndex in lockedLayerIndices
+                } else isLocked
                 // Speed-ramped clips occupy their OUTPUT length.
                 val clipDur = clip.effectiveDurationMs().coerceAtLeast(500L)
                 val clipWidthDp = maxOf((clipDur * msToDp).dp, 56.dp)
                 val clipOffsetDp = (clip.timelineOffsetMs * msToDp).dp
                 var dragDx by remember(clip.id) { mutableFloatStateOf(0f) }
                 var isDragging by remember(clip.id) { mutableStateOf(false) }
+                var showOverlapStackMenu by remember(clip.id) { mutableStateOf(false) }
                 // Trim-handle drag state (pixels, local until commit).
                 var trimStartDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
                 var trimEndDxPx by remember(clip.id) { mutableFloatStateOf(0f) }
@@ -2290,8 +2418,8 @@ private fun TimelineVideoLayerRow(
                                 else EditorPalette.NeonCyan.copy(alpha = 0.5f),
                                 shape = RoundedCornerShape(7.dp)
                             )
-                            .pointerInput(clip, isLocked, msToDp, density.density) {
-                                if (!isLocked) {
+                            .pointerInput(clip, clipIsLocked, msToDp, density.density) {
+                                if (!clipIsLocked) {
                                     // Let ordinary horizontal swipes pan the
                                     // timeline; moving an overlay is an explicit
                                     // long-press drag so the two gestures do not
@@ -2347,7 +2475,11 @@ private fun TimelineVideoLayerRow(
                             }
                             .clickable { if (multiSelectMode) onToggleSelectedClip(clip.id) else onSelectClip(clip.id) }
                             .semantics {
-                                contentDescription = "Overlay clip ${clip.name}, track V${layerIndex + 1}"
+                                contentDescription = if (groupedOverlayLane) {
+                                    "V${clipLayerIndex + 1} overlay"
+                                } else {
+                                    "Video clip ${clip.name}, track V${clipLayerIndex + 1}"
+                                }
                                 selected = isSelected || isMultiSelected
                             }
                     ) {
@@ -2367,7 +2499,11 @@ private fun TimelineVideoLayerRow(
                             modifier = Modifier.fillMaxSize()
                         )
                         Box(Modifier.fillMaxSize().background(Color(0xFF00C7D9).copy(alpha = 0.16f)))
-                        Text(clip.name, color = Color.White, fontSize = 8.sp, maxLines = 1,
+                        Text(
+                            if (groupedOverlayLane) "${clip.name} overlay · V${clipLayerIndex + 1}" else clip.name,
+                            color = Color.White,
+                            fontSize = 8.sp,
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.align(Alignment.BottomStart).padding(start = 13.dp, bottom = 2.dp)
                                 .background(Color(0xBB111B28), RoundedCornerShape(3.dp)).padding(horizontal = 3.dp))
@@ -2381,7 +2517,7 @@ private fun TimelineVideoLayerRow(
                                     .testTag("timeline-selection-accent-${clip.id}")
                             )
                             Text(
-                                text = if (clipWidthDp >= 96.dp) "SELECTED · V${layerIndex + 1}" else "V${layerIndex + 1}",
+                                text = if (clipWidthDp >= 96.dp) "SELECTED · V${clipLayerIndex + 1}" else "V${clipLayerIndex + 1}",
                                 color = Color(0xFF061A22),
                                 fontSize = 7.sp,
                                 fontWeight = FontWeight.Black,
@@ -2395,29 +2531,68 @@ private fun TimelineVideoLayerRow(
                                     .border(0.75.dp, Color.White.copy(alpha = 0.85f), RoundedCornerShape(4.dp))
                                     .testTag("timeline-selection-chip-${clip.id}")
                                     .semantics {
-                                        contentDescription = "Selected overlay clip ${clip.name} (V${layerIndex + 1})"
+                                        contentDescription = "Selected overlay clip ${clip.name} (V${clipLayerIndex + 1})"
                                         selected = true
                                     }
                                     .padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
-                        if (isLocked) {
+                        if (clipIsLocked) {
                             Icon(
                                 Icons.Default.Lock,
                                 contentDescription = "Locked",
                                 tint = Color(0xFFFBBF24),
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
+                                    .align(if (showOverlapStackSelector) Alignment.TopStart else Alignment.TopEnd)
+                                    .then(if (showOverlapStackSelector) Modifier.offset(x = 28.dp) else Modifier)
                                     .padding(2.dp)
                                     .size(10.dp)
                             )
+                        }
+                        if (showOverlapStackSelector) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(2.dp)
+                                    .size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(TIMELINE_RULER_BACKGROUND.copy(alpha = 0.92f))
+                                    .clickable { showOverlapStackMenu = true }
+                                    .semantics {
+                                        contentDescription = "Choose from ${overlapStackChoices.size} overlapping overlays"
+                                    }
+                                    .testTag("timeline-overlay-stack-${clip.id}"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Layers,
+                                    contentDescription = null,
+                                    tint = EditorPalette.NeonCyan,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                DropdownMenu(
+                                    expanded = showOverlapStackMenu,
+                                    onDismissRequest = { showOverlapStackMenu = false }
+                                ) {
+                                    overlapStackChoices.forEach { choice ->
+                                        DropdownMenuItem(
+                                            text = { Text("${choice.name} · V${choice.trackIndex + 1}") },
+                                            onClick = {
+                                                showOverlapStackMenu = false
+                                                if (multiSelectMode) onToggleSelectedClip(choice.id)
+                                                else onSelectClip(choice.id)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
                         }
                         // Trim handles (both edges): drag to trim, commit
                         // once at drag end. Children win the gesture over
                         // the chip's move-drag (they consume the drag).
                         // Minimum trimmed span is 100ms (matches
                         // trimClip's own enforcement).
-                        if (!isLocked) {
+                        if (!clipIsLocked) {
                             // Left edge → trimStartMs.
                             Box(
                                 modifier = Modifier
@@ -2520,8 +2695,10 @@ private fun TimelineVideoLayerRow(
                     )
                 }
             }
-            Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
-                TimelineLaneIdentity("PiP overlay · V${layerIndex + 1}", EditorPalette.NeonCyan)
+            if (!groupedOverlayLane) {
+                Box(Modifier.align(Alignment.TopStart).padding(start = 4.dp, top = 2.dp).zIndex(5f)) {
+                    TimelineLaneIdentity("PiP overlay · V${layerIndex + 1}", EditorPalette.NeonCyan)
+                }
             }
         }
     }

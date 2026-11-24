@@ -66,6 +66,7 @@ object OnlineStickerRepository {
             .joinToString("") { "%02x".format(it) }
         val output = File(directory, "$digest.png")
         if (output.length() > 0L) return@withContext output.absolutePath
+        val temporary = File(directory, "$digest.part")
         val connection = (URL(result.imageUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8_000
             readTimeout = 15_000
@@ -76,7 +77,7 @@ object OnlineStickerRepository {
             if (connection.responseCode !in 200..299) return@withContext null
             if (connection.contentLengthLong > 12L * 1024L * 1024L) return@withContext null
             connection.inputStream.use { input ->
-                output.outputStream().use { out ->
+                temporary.outputStream().use { out ->
                     val buffer = ByteArray(16 * 1024)
                     var total = 0L
                     while (true) {
@@ -84,14 +85,22 @@ object OnlineStickerRepository {
                         if (count < 0) break
                         total += count
                         if (total > 12L * 1024L * 1024L) {
-                            output.delete()
+                            temporary.delete()
                             return@withContext null
                         }
                         out.write(buffer, 0, count)
                     }
                 }
             }
-            output.takeIf { it.length() > 0L }?.absolutePath
+            if (temporary.length() <= 0L) {
+                temporary.delete()
+                return@withContext null
+            }
+            if (!temporary.renameTo(output)) {
+                temporary.delete()
+                return@withContext null
+            }
+            output.absolutePath
         } finally {
             connection.disconnect()
         }

@@ -29,7 +29,10 @@ fun EditorViewModel.setPhotoEditTab(tab: PhotoEditTab) =
 fun EditorViewModel.selectedPhotoClip(): MediaClip? {
     val s = _state.value
     val clip = s.project?.clips?.firstOrNull { it.id == s.selectedClipId } ?: return null
-    return clip.takeIf { it.type == com.apexstudio.app.domain.model.ClipType.IMAGE }
+    return clip.takeIf {
+        it.type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+            it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY
+    }
 }
 
 fun EditorViewModel.updatePhotoEdit(
@@ -122,7 +125,8 @@ fun EditorViewModel.setPhotoKenBurns(clipId: String, enabled: Boolean) =
 fun EditorViewModel.setPhotoCanvas(clipId: String, canvas: com.apexstudio.app.domain.model.PhotoCanvasSettings) {
     if (canvas.aspectPreset !in com.apexstudio.app.domain.model.PhotoCanvasSettings.PRESETS) return
     if (_state.value.project?.clips?.none {
-            it.id == clipId && it.type == com.apexstudio.app.domain.model.ClipType.IMAGE
+            it.id == clipId && (it.type == com.apexstudio.app.domain.model.ClipType.IMAGE ||
+                it.type == com.apexstudio.app.domain.model.ClipType.OVERLAY)
         } != false) return
     updatePhotoEdit(clipId) { it.copy(canvas = canvas.copy(backgroundArgb = canvas.backgroundArgb or 0xFF000000L)) }
 }

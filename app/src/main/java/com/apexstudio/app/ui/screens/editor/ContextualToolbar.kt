@@ -554,11 +554,36 @@ fun ContextualBottomToolbar(
         CtxToolItem("More", Icons.Outlined.MoreHoriz, tint = ApexPalette.TextPrimary, onClick = { showMoreTools = !showMoreTools })
     ).map(::routed)
     val easyClipItems = when (selectionKind) {
-        ToolbarSelectionKind.VIDEO -> listOf(
-            CtxToolItem("Speed", Icons.Default.Speed, tint = ApexPalette.NeonCyan, onClick = onSpeed),
-            CtxToolItem("Volume", Icons.Default.VolumeUp, tint = ApexPalette.NeonCyan, onClick = onVolume),
-            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+        ToolbarSelectionKind.VIDEO -> listOfNotNull(
+            CtxToolItem(
+                if (isOverlaySelected) "Properties" else "Speed",
+                if (isOverlaySelected) Icons.Default.Tune else Icons.Default.Speed,
+                tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onSpeed
+            ),
+            CtxToolItem(
+                "Volume",
+                Icons.Default.VolumeUp,
+                tint = ApexPalette.NeonCyan,
+                onClick = if (isOverlaySelected) onOverlayProps else onVolume
+            ),
             CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            if (isOverlaySelected) {
+                CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPurple, onClick = onEffects)
+            } else {
+                null
+            },
+            CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
+            if (isOverlaySelected) {
+                CtxToolItem(
+                    if (isLayerHidden) "Show" else "Hide",
+                    if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
+                    tint = ApexPalette.NeonCyan,
+                    onClick = onToggleLayerVisibility
+                )
+            } else {
+                null
+            },
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         ).map(::routed)
         ToolbarSelectionKind.AUDIO -> listOf(

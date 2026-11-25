@@ -71,6 +71,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.WorkspaceEffectGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
 import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
@@ -147,6 +148,62 @@ private data class EffOverlayTransform(
     val opacity: Float
 )
 
+/** Safe normalized center range for an overlay's rotated bounding box. */
+internal fun overlayCenterBounds(
+    canvasWpx: Float,
+    canvasHpx: Float,
+    boxWpx: Float,
+    boxHpx: Float,
+    rotationDeg: Float,
+): Pair<Pair<Float, Float>, Pair<Float, Float>> {
+    val radians = Math.toRadians(rotationDeg.toDouble())
+    val cosAbs = kotlin.math.abs(cos(radians).toFloat())
+    val sinAbs = kotlin.math.abs(sin(radians).toFloat())
+    val halfW = (boxWpx * cosAbs + boxHpx * sinAbs) / 2f
+    val halfH = (boxWpx * sinAbs + boxHpx * cosAbs) / 2f
+    val xInset = (halfW / canvasWpx.coerceAtLeast(1f)).coerceAtMost(0.5f)
+    val yInset = (halfH / canvasHpx.coerceAtLeast(1f)).coerceAtMost(0.5f)
+    return (xInset to 1f - xInset) to (yInset to 1f - yInset)
+}
+
+internal fun clampOverlayCenter(
+    x: Float,
+    y: Float,
+    canvasWpx: Float,
+    canvasHpx: Float,
+    boxWpx: Float,
+    boxHpx: Float,
+    rotationDeg: Float,
+): Pair<Float, Float> {
+    val (xBounds, yBounds) = overlayCenterBounds(canvasWpx, canvasHpx, boxWpx, boxHpx, rotationDeg)
+    return x.coerceIn(xBounds.first, xBounds.second) to
+        y.coerceIn(yBounds.first, yBounds.second)
+}
+
+/** Largest scale that keeps the rotated overlay inside the current viewport at a center. */
+private fun maxOverlayScaleAtCenter(
+    clip: MediaClip,
+    canvasWpx: Float,
+    canvasHpx: Float,
+    centerX: Float,
+    centerY: Float,
+    rotationDeg: Float,
+): Float {
+    var low = MediaClipPipScale.MIN
+    var high = MediaClipPipScale.MAX
+    repeat(14) {
+        val candidate = (low + high) / 2f
+        val (w, h) = pipBoxSizePx(clip, canvasWpx, candidate)
+        val (xBounds, yBounds) = overlayCenterBounds(canvasWpx, canvasHpx, w, h, rotationDeg)
+        if (centerX in xBounds.first..xBounds.second && centerY in yBounds.first..yBounds.second) {
+            low = candidate
+        } else {
+            high = candidate
+        }
+    }
+    return low
+}
+
 private fun effectiveOverlayTransform(clip: MediaClip, timeMs: Long): EffOverlayTransform {
     if (clip.keyframes.keyframes.isEmpty()) {
         return EffOverlayTransform(
@@ -211,9 +268,10 @@ fun PipOverlayCanvas(
         val activeClips = overlayClips.filter { it.isOverlayActiveAt(currentTimeMs) }
         val selectedId = selectedOverlayClipId
         val playerClip = activeClips.firstOrNull { it.id == overlayPlayerClipId }
-        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop) {
+        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop, playerClip?.workspaceEffects) {
             overlayPlayer?.setVideoEffects(
-                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop))
+                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop)) +
+                    WorkspaceEffectGlEffect.forClip(playerClip)
             )
         }
 
@@ -329,29 +387,37 @@ private fun PipOverlayItem(
     }
     fun moveBy(dx: Float, dy: Float, persist: Boolean) {
         val c = latest
+        val e = effectiveOverlayTransform(c, latestTimeMs)
+        val (moveW, moveH) = pipBoxSizePx(c, canvasWpx, e.scale)
+        val (safeX, safeY) = clampOverlayCenter(
+            e.x + dx, e.y + dy, canvasWpx, canvasHpx, moveW, moveH, e.rotationDeg
+        )
         if (latest.keyframes.keyframes.isNotEmpty() && latestOnUpsertKeyframe != null) {
-            val e = effectiveOverlayTransform(c, latestTimeMs)
             latestOnUpsertKeyframe?.invoke(
                 c.id, upsertTimeMs(),
-                (e.x + dx).coerceIn(0f, 1f), (e.y + dy).coerceIn(0f, 1f),
+                safeX, safeY,
                 e.scale, e.rotationDeg, e.opacity, persist
             )
         } else {
-            latestOnMove(c.id, dx, dy, persist)
+            latestOnMove(c.id, safeX - e.x, safeY - e.y, persist)
         }
     }
     fun scaleTo(scale: Float, persist: Boolean) {
         val c = latest
+        val e = effectiveOverlayTransform(c, latestTimeMs)
+        val safeScale = scale.coerceIn(
+            MediaClipPipScale.MIN,
+            maxOverlayScaleAtCenter(c, canvasWpx, canvasHpx, e.x, e.y, e.rotationDeg)
+        )
         if (latest.keyframes.keyframes.isNotEmpty() && latestOnUpsertKeyframe != null) {
-            val e = effectiveOverlayTransform(c, latestTimeMs)
             latestOnUpsertKeyframe?.invoke(
                 c.id, upsertTimeMs(),
                 e.x, e.y,
-                scale.coerceIn(MediaClipPipScale.MIN, MediaClipPipScale.MAX),
+                safeScale,
                 e.rotationDeg, e.opacity, persist
             )
         } else {
-            latestOnScale(c.id, scale, persist)
+            latestOnScale(c.id, safeScale, persist)
         }
     }
     fun rotateBy(deltaDeg: Float, persist: Boolean) {
@@ -367,9 +433,16 @@ private fun PipOverlayItem(
         }
     }
 
-    val (boxWpx, boxHpx) = pipBoxSizePx(clip, canvasWpx, eff.scale)
-    val cxPx = eff.x.coerceIn(0f, 1f) * canvasWpx
-    val cyPx = eff.y.coerceIn(0f, 1f) * canvasHpx
+    val safeScale = eff.scale.coerceIn(
+        MediaClipPipScale.MIN,
+        maxOverlayScaleAtCenter(clip, canvasWpx, canvasHpx, 0.5f, 0.5f, eff.rotationDeg)
+    )
+    val (boxWpx, boxHpx) = pipBoxSizePx(clip, canvasWpx, safeScale)
+    val (safeX, safeY) = clampOverlayCenter(
+        eff.x, eff.y, canvasWpx, canvasHpx, boxWpx, boxHpx, eff.rotationDeg
+    )
+    val cxPx = safeX * canvasWpx
+    val cyPx = safeY * canvasHpx
     val borderPx = clip.overlayBorderWidth.coerceIn(0f, 0.05f) * boxWpx
     val shadowAlpha = clip.overlayShadow.coerceIn(0f, 1f) * 0.45f
 
@@ -598,6 +671,25 @@ private fun PipOverlayItem(
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
+                isVideo == false -> {
+                    // Still overlays use the same rotate/flip/crop/adjust/filter
+                    // pipeline as IMAGE clips. This keeps the preview and the
+                    // exported overlay pixels consistent instead of showing a
+                    // raw Coil bitmap while edits are only stored in metadata.
+                    PhotoClipPreview(
+                        uri = clip.uri,
+                        settings = clip.photoEdit,
+                        cropActive = false,
+                        onCropChange = {},
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            val crop = clip.videoCrop.sanitized()
+                            scaleX = 1f / crop.width
+                            scaleY = 1f / crop.height
+                            translationX = (0.5f - (crop.left + crop.right) * 0.5f) * size.width * scaleX
+                            translationY = (0.5f - (crop.top + crop.bottom) * 0.5f) * size.height * scaleY
+                        }.testTag("pip-overlay-image-${clip.id}")
+                    )
                 }
                 else -> {
                     // Image overlay: Coil decodes the still. A failed

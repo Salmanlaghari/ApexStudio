@@ -1240,6 +1240,9 @@ fun OverlayPropertiesPanelOverlay(
                 },
                 onShadow = { vm.setOverlayShadow(selectedClip.id, it) },
                 onFlip = { h, v -> vm.setOverlayFlip(selectedClip.id, h, v) },
+                onPhotoEdit = {
+                    vm.openPhotoEditPanel(com.apexstudio.app.presentation.state.PhotoEditTab.CROP)
+                },
                 onVolume = { vm.setOverlayVolume(selectedClip.id, it) },
                 onTrack = { layer -> vm.moveClipToVideoLayer(selectedClip.id, layer) },
                 onAddKeyframe = {

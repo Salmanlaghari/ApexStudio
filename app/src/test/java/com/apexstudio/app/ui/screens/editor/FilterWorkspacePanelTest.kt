@@ -174,7 +174,7 @@ class FilterWorkspacePanelTest {
         val invalid = clip.copy(uri = "")
         val vm = editor(invalid)
         compose.setContent { FilterWorkspacePanel("p", invalid, vm, false, {}, {}, {}, {}, onReopen = {}) }
-        compose.onNodeWithText("Only a main-track video", substring = true).assertExists()
+        compose.onNodeWithText("Only a valid video or overlay source", substring = true).assertExists()
         compose.onNodeWithTag("filter-apply").assertIsNotEnabled()
         compose.onNodeWithTag("filter-reopen").assertDoesNotExist()
     }

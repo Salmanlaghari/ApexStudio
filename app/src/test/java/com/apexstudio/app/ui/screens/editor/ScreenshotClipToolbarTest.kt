@@ -199,6 +199,20 @@ class ScreenshotClipToolbarTest {
     }
 
     @Test
+    fun `overlay properties is visible in the mobile clip row`() {
+        val calls = mutableMapOf<String, Int>()
+        composeRule.setContent {
+            testToolbar(calls, isOverlaySelected = true, horizontalProjectLayout = true)
+        }
+
+        composeRule.onNode(
+            hasText("Properties").and(hasAnyAncestor(hasTestTag("mobile-editor-clip-options")))
+        ).performScrollTo().performClick()
+        assertEquals("Properties opens the real overlay editor", 1, calls["overlay-props"] ?: 0)
+        composeRule.onNodeWithText("Speed").assertDoesNotExist()
+    }
+
+    @Test
     fun `legacy audio keeps clip actions but omits track-only actions with an explanation`() {
         val calls = mutableMapOf<String, Int>()
         composeRule.setContent {

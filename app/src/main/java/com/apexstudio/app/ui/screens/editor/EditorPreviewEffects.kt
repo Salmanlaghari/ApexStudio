@@ -75,7 +75,7 @@ internal fun usesHorizontalProjectLayout(aspectRatio: Float?): Boolean =
     aspectRatio?.takeIf { it.isFinite() && it in 0.1f..10f }?.let { it > 1.1f } == true
 
 /** Keep the phone preview usable above the adaptive workspace's scrollable timeline pane. */
-internal const val MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP = 200f
+internal const val MIN_STABLE_PHONE_PREVIEW_HEIGHT_DP = 180f
 
 /**
  * Use the preview pane's allocated height directly. The legacy [reservedHeight] argument stays

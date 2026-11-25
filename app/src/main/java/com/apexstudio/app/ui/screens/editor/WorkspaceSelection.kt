@@ -9,7 +9,7 @@ import com.apexstudio.app.presentation.state.EditorState
 internal fun selectedWorkspaceVideo(project: Project?, selectedClipId: String?): MediaClip? {
     val id = selectedClipId ?: return null
     return project?.clips?.firstOrNull { it.id == id }?.takeIf {
-        it.type == ClipType.VIDEO && it.trackIndex == 0 && it.uri.isNotBlank() &&
+        (it.type == ClipType.VIDEO || it.type == ClipType.OVERLAY) && it.uri.isNotBlank() &&
             it.trimStartMs >= 0L && it.trimEndMs > it.trimStartMs && it.trimEndMs <= it.durationMs
     }
 }

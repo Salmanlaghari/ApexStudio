@@ -58,10 +58,10 @@ internal fun workspaceApplyTargetReason(
     val persistedClip = project?.clips?.firstOrNull { it.id == originalClip.id }
     val targetCurrent = project?.id == projectId && selectedClipId == originalClip.id &&
         persistedClip == originalClip
-    val isMainVideo = originalClip.type == ClipType.VIDEO && originalClip.trackIndex == 0 &&
+    val isEditableMedia = (originalClip.type == ClipType.VIDEO || originalClip.type == ClipType.OVERLAY) &&
         originalClip.uri.isNotBlank()
     return when {
-        !isMainVideo -> "Only a main-track video with a valid source can receive these effects."
+        !isEditableMedia -> "Only a valid video or overlay source can receive these effects."
         !targetCurrent -> WORKSPACE_STALE_TARGET_REASON
         else -> null
     }

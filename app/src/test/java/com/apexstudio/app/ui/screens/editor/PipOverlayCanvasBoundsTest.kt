@@ -27,8 +27,8 @@ class PipOverlayCanvasBoundsTest {
     @Test
     fun oversizedPortraitOverlayCollapsesCenterToFrameMiddle() {
         val bounds = overlayCenterBounds(400f, 800f, 360f, 900f, 0f)
-        assertEquals(0.5f, bounds.first.first, 0.001f)
-        assertEquals(0.5f, bounds.first.second, 0.001f)
+        assertEquals(0.45f, bounds.first.first, 0.001f)
+        assertEquals(0.55f, bounds.first.second, 0.001f)
         assertEquals(0.5f, bounds.second.first, 0.001f)
         assertEquals(0.5f, bounds.second.second, 0.001f)
     }

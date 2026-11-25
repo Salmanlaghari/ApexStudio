@@ -567,17 +567,9 @@ fun ContextualBottomToolbar(
                 tint = ApexPalette.NeonCyan,
                 onClick = if (isOverlaySelected) onOverlayProps else onVolume
             ),
+            CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters),
+            CtxToolItem("Effects", Icons.Default.AutoAwesome, tint = ApexPalette.NeonPurple, onClick = onEffects),
             CtxToolItem("Animation", Icons.Default.Layers, tint = ApexPalette.NeonCyan, onClick = onAnimation),
-            if (isOverlaySelected) {
-                CtxToolItem(
-                    if (isLayerHidden) "Show" else "Hide",
-                    if (isLayerHidden) Icons.Default.LayersClear else Icons.Default.Layers,
-                    tint = ApexPalette.NeonCyan,
-                    onClick = onToggleLayerVisibility
-                )
-            } else {
-                CtxToolItem("Filters", Icons.Default.FilterVintage, tint = ApexPalette.NeonCyan, onClick = onFilters)
-            },
             CtxToolItem("Delete", Icons.Default.DeleteOutline, tint = ApexPalette.NeonPink, onClick = onDelete)
         ).map(::routed)
         ToolbarSelectionKind.AUDIO -> listOf(

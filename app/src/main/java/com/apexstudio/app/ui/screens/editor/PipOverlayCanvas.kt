@@ -71,6 +71,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.apexstudio.app.domain.model.MediaClip
 import com.apexstudio.app.data.effect.VideoCropGlEffect
+import com.apexstudio.app.data.effect.WorkspaceEffectGlEffect
 import com.apexstudio.app.domain.model.OverlayBlend
 import com.apexstudio.app.domain.model.croppedOverlayAspect
 import com.apexstudio.app.presentation.viewmodel.MediaClipPipScale
@@ -267,9 +268,10 @@ fun PipOverlayCanvas(
         val activeClips = overlayClips.filter { it.isOverlayActiveAt(currentTimeMs) }
         val selectedId = selectedOverlayClipId
         val playerClip = activeClips.firstOrNull { it.id == overlayPlayerClipId }
-        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop) {
+        LaunchedEffect(overlayPlayer, playerClip?.id, playerClip?.videoCrop, playerClip?.workspaceEffects) {
             overlayPlayer?.setVideoEffects(
-                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop))
+                listOfNotNull(VideoCropGlEffect.fromSettings(playerClip?.videoCrop)) +
+                    WorkspaceEffectGlEffect.forClip(playerClip)
             )
         }
 
@@ -669,6 +671,25 @@ private fun PipOverlayItem(
                             modifier = Modifier.size(24.dp)
                         )
                     }
+                }
+                isVideo == false -> {
+                    // Still overlays use the same rotate/flip/crop/adjust/filter
+                    // pipeline as IMAGE clips. This keeps the preview and the
+                    // exported overlay pixels consistent instead of showing a
+                    // raw Coil bitmap while edits are only stored in metadata.
+                    PhotoClipPreview(
+                        uri = clip.uri,
+                        settings = clip.photoEdit,
+                        cropActive = false,
+                        onCropChange = {},
+                        modifier = Modifier.fillMaxSize().graphicsLayer {
+                            val crop = clip.videoCrop.sanitized()
+                            scaleX = 1f / crop.width
+                            scaleY = 1f / crop.height
+                            translationX = (0.5f - (crop.left + crop.right) * 0.5f) * size.width * scaleX
+                            translationY = (0.5f - (crop.top + crop.bottom) * 0.5f) * size.height * scaleY
+                        }.testTag("pip-overlay-image-${clip.id}")
+                    )
                 }
                 else -> {
                     // Image overlay: Coil decodes the still. A failed

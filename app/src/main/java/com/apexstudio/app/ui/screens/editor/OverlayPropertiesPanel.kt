@@ -82,6 +82,7 @@ fun OverlayPropertiesPanel(
     onBorder: (widthFraction: Float, colorArgb: Int) -> Unit,
     onShadow: (Float) -> Unit,
     onFlip: (flipH: Boolean, flipV: Boolean) -> Unit,
+    onPhotoEdit: () -> Unit,
     onVolume: (Float) -> Unit,
     onTrack: (layer: Int) -> Unit,
     onAddKeyframe: () -> Unit,
@@ -320,6 +321,13 @@ fun OverlayPropertiesPanel(
         }
 
         // Volume (video overlays only — images have no audio).
+        if (!isVideo) {
+            PanelChip(
+                label = "Photo Edit",
+                selected = false,
+                onClick = onPhotoEdit
+            )
+        }
         if (isVideo) {
             PanelSliderRow(
                 label = "Volume",

@@ -1876,8 +1876,12 @@ private fun EditorScreenContent(
     }
     if (activeEditorPanel == EditorPanelKey.ADJUSTMENTS) AdjustmentsPanelOverlay(state = state, vm = vm)
 
-    // Photo-editing sheet (PR F): only for the selected IMAGE clip.
-    val photoEditClip = currentSelectedClip?.takeIf { it.type == ClipType.IMAGE }
+    // Photo-editing sheet: main-track images and probed still-image overlays
+    // share the same per-clip PhotoEditSettings pipeline.
+    val photoEditClip = currentSelectedClip?.takeIf {
+        it.type == ClipType.IMAGE ||
+            (it.type == ClipType.OVERLAY && overlayIsVideo[it.id] == false)
+    }
     if (activeEditorPanel == EditorPanelKey.PHOTO_EDIT && state.photoEditPanelOpen && photoEditClip != null) {
         PhotoEditSheet(
             photoEditClip = photoEditClip,

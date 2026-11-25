@@ -17,11 +17,16 @@ class WorkspaceSelectionTest {
         assertNull(selectedWorkspaceVideo(project, "missing"))
         assertEquals(second, selectedWorkspaceVideo(project, "second"))
     }
-    @Test fun `unsupported types layers and invalid source ranges cannot launch editing`() {
-        listOf(first.copy(type = ClipType.OVERLAY, trackIndex = 1), first.copy(type = ClipType.IMAGE),
+    @Test fun `unsupported types and invalid source ranges cannot launch editing`() {
+        listOf(first.copy(type = ClipType.IMAGE),
             first.copy(trimEndMs = 0L), first.copy(trimEndMs = 6000L), first.copy(uri = "")).forEach { invalid ->
             assertNull(selectedWorkspaceVideo(project.copy(clips = listOf(invalid)), invalid.id))
         }
+    }
+
+    @Test fun `video overlays with valid ranges can launch editing`() {
+        val overlay = first.copy(type = ClipType.OVERLAY, trackIndex = 1)
+        assertEquals(overlay, selectedWorkspaceVideo(project.copy(clips = listOf(overlay)), overlay.id))
     }
 
     @Test fun `explicit restart dismisses before opening only the latest saved selected snapshot`() {
@@ -39,12 +44,10 @@ class WorkspaceSelectionTest {
     }
 
     @Test fun `invalid restart closes and never substitutes another available main video`() {
-        val overlay = second.copy(type = ClipType.OVERLAY, trackIndex = 1)
         val invalidRange = second.copy(trimEndMs = 0L)
         val cases = listOf(
             EditorState(project = project, selectedClipId = null),
             EditorState(project = project, selectedClipId = "missing"),
-            EditorState(project = project.copy(clips = listOf(first, overlay)), selectedClipId = overlay.id),
             EditorState(project = project.copy(clips = listOf(first, invalidRange)), selectedClipId = invalidRange.id),
             EditorState(project = project.copy(id = "different"), selectedClipId = first.id),
             EditorState(project = null, selectedClipId = first.id),

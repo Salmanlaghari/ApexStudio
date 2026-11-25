@@ -82,7 +82,7 @@ fun OverlayPropertiesPanel(
     onBorder: (widthFraction: Float, colorArgb: Int) -> Unit,
     onShadow: (Float) -> Unit,
     onFlip: (flipH: Boolean, flipV: Boolean) -> Unit,
-    onPhotoEdit: () -> Unit,
+    onPhotoEdit: () -> Unit = {},
     onVolume: (Float) -> Unit,
     onTrack: (layer: Int) -> Unit,
     onAddKeyframe: () -> Unit,
